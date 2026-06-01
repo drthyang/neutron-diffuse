@@ -1,30 +1,57 @@
 # neutron-diffuse
 
-**3D diffuse neutron scattering data processing — aluminum background removal and inpainting.**
+**3D diffuse neutron scattering processing — from reduced HKL data to 3D-ΔPDF.**
 
-Neutron single-crystal diffuse scattering experiments are contaminated by powder rings from aluminum (sample environment, cryostats). This toolkit provides:
+Takes over after instrument data reduction and provides a two-stage pipeline:
 
-- **Precise Al-ring detection** in 3D reciprocal space given any UB matrix
-- **Robust adaptive masking** with minimal boundary artifacts
-- **Advanced inpainting** to fill masked regions using symmetry, interpolation, and variational methods
-- **Uncertainty quantification** for filled voxels
+```
+[ Reduced 3D HKL volume ]
+        │
+        ▼  DATA PROCESSING
+        │  (1) Symmetrize
+        │  (2) Remove Al signals
+        │  (3) Backfill Al holes
+        │
+        ▼  FURTHER ANALYSIS
+        │  (4) Remove Bragg peaks  (punch-and-fill)
+        │  (5) Backfill Bragg holes
+        │  (6) 3D-ΔPDF via Fourier transform
+        ▼
+  [ 3D-ΔPDF in real space ]
+```
 
 ## Quickstart
 
 ```python
 import ndiff
 
-# Load 3D HKL volume
+# Load reduced 3D HKL volume
 vol = ndiff.load("experiment.h5")
 
-# Detect and mask Al powder rings
-mask = ndiff.background.aluminum_mask(vol, al_lattice=4.046)
+# ── Data Processing ─────────────────────────────────────────────
+# (1) Symmetrize
+vol_sym, outliers = ndiff.preprocessing.symmetrize(vol, laue_class="m3m")
 
-# Fill masked voxels
-filled = ndiff.inpainting.fill(vol, mask, method="symmetry+tv")
+# (2) Remove Al signals
+al_keep = ndiff.preprocessing.aluminum_mask(vol_sym, al_lattice=4.046)
+vol_sym.apply_mask(al_keep)
 
-# Export
-ndiff.save(filled, "experiment_cleaned.h5")
+# (3) Backfill Al holes
+vol_clean = ndiff.preprocessing.backfill_al(vol_sym)
+
+# ── Further Analysis ─────────────────────────────────────────────
+# (4) Remove Bragg peaks
+bragg_keep = ndiff.analysis.bragg_mask(vol_clean, punch_radius_hkl=0.3)
+vol_clean.apply_mask(bragg_keep)
+
+# (5) Backfill Bragg holes
+vol_diffuse = ndiff.analysis.backfill_bragg(vol_clean)
+
+# (6) 3D-ΔPDF
+dpdf = ndiff.analysis.compute_delta_pdf(vol_diffuse, apodization="hann")
+
+# Save results
+ndiff.save(vol_diffuse, "diffuse_only.h5")
 ```
 
 ## Installation
@@ -40,9 +67,10 @@ cd neutron-diffuse && pip install -e ".[dev]"
 
 See [ROADMAP.md](ROADMAP.md) for the phased development plan.
 
-## Documentation
+## Algorithm documentation
 
-See [docs/algorithms/](docs/algorithms/) for detailed method descriptions.
+- [Al removal](docs/algorithms/al_removal.md)
+- [Inpainting methods](docs/algorithms/inpainting.md)
 
 ## License
 

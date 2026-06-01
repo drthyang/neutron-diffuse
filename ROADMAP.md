@@ -1,133 +1,181 @@
 # Roadmap
 
-## Vision
+## Pipeline overview
 
-A reproducible, scientifically rigorous pipeline for cleaning 3D diffuse neutron scattering data:  
-detect → mask → fill, with minimal artifacts and full uncertainty propagation.
+The package takes over immediately after instrument data reduction (binned 3D HKL volume).
+It provides two sequential stages:
+
+```
+[ Raw 3D HKL volume ]
+        │
+        ▼  ── DATA PROCESSING ──────────────────────────────
+        │  (1) Symmetrize
+        │  (2) Remove Al signals
+        │  (3) Backfill Al holes
+        │
+        ▼  ── FURTHER ANALYSIS ──────────────────────────────
+        │  (4) Remove Bragg peaks  (punch-and-fill)
+        │  (5) Backfill Bragg holes
+        │  (6) 3D-ΔPDF via Fourier transform
+        │
+        ▼
+  [ 3D-ΔPDF in real space ]
+```
 
 ---
 
 ## Phase 1 — Foundation (months 1–2)
 
-**Goal:** working I/O, data structures, and visualization.
+**Goal:** solid I/O, data structures, and visualization.
 
 | Task | Details |
 |------|---------|
-| Data structures | `HKLVolume`: 3D ndarray + UB matrix + Q-extent + Ewald mask |
-| I/O — NeXus/HDF5 | Read SXD, CORELLI, TOPAZ, BL-12 processed HDF5 outputs |
-| I/O — ASCII | Read legacy `.hkl`, Meerkat `nxs`, and DIFFUSE-formatted text grids |
-| I/O — write | Export HDF5 + ASCII; round-trip fidelity tests |
-| Visualization | Slice viewer (h=const, k=const, l=const), |Q|-shell projections |
-| CI / packaging | pytest, GitHub Actions, pyproject.toml, pre-commit (ruff + mypy) |
+| `HKLVolume` | 3D ndarray + UB matrix + Q-extent + validity mask + σ |
+| I/O — HDF5/NeXus | Read SXD, CORELLI, TOPAZ, Meerkat outputs |
+| I/O — ASCII | Legacy `.hkl`, tab/space-delimited grids |
+| I/O — write | Round-trip HDF5 + ASCII; unit tests |
+| Slice viewer | h=const, k=const, l=const + \|Q\| shell projections |
+| CI | pytest, GitHub Actions, ruff, mypy |
 
-**Milestone:** load a real dataset, display three orthogonal slices, save back.
-
----
-
-## Phase 2 — Aluminum Peak Detection (months 2–4)
-
-**Goal:** reliably identify which voxels are Al-contaminated.
-
-### 2a. Crystallographic model
-- Al FCC structure (Fm-3m, a = 4.046 Å); enumerate all allowed hkl up to user-set Q_max
-- Compute |Q|_Al for each allowed reflection
-- Given sample UB matrix, express Al powder ring shells in fractional HKL coordinates
-
-### 2b. Adaptive masking
-- Per-shell mask radius: σ-clipping on radial intensity profile to tune width automatically
-- Anisotropic option: elliptical masks when instrumental resolution varies with direction
-- Boundary softening: sigmoid-tapered mask weights → avoids Gibbs-like ringing
-
-### 2c. Validation
-- Metrics: fraction of sample signal lost, mask volume, boundary sharpness
-- Visual overlay: plot predicted Al rings on data slices
-
-**Milestone:** on a benchmark dataset, mask > 98 % of Al signal while losing < 2 % of diffuse signal.
+**Milestone:** load real dataset → display slices → save back.
 
 ---
 
-## Phase 3 — Robust Removal (months 4–6)
+## Phase 2 — Data Processing (months 2–5)
 
-**Goal:** subtract residual Al background below the mask threshold.
+### 2-1. Symmetrize
 
-### 3a. Profile-based subtraction
-- Fit radial profiles of Al peaks (Voigt / pseudo-Voigt in |Q|)
-- Subtract fitted profile from the raw data before masking (reduces mask width needed)
+Apply the crystal Laue symmetry to the raw data **before** any removal step. This:
+- Averages symmetry-equivalent voxels → improves statistics
+- Makes subsequent Al detection more reliable (symmetry axis peaks become obvious)
+- Flags voxels with high inter-equivalent variance (possible contamination)
 
-### 3b. Multi-material support
-- Generalize to vanadium, copper, steel, MgO containers
-- User-supplied CIF or lattice parameters
+Implementation:
+- Accept a list of (3×3) point-group rotation matrices or a Laue class string
+- Weighted average (inverse-variance) of all symmetry equivalents in the grid
+- Output: symmetrized volume + per-voxel symmetry-averaged σ
 
-### 3c. Artifact reduction
-- Soft-mask convolution to avoid step-function artifacts at mask boundary
-- Q-dependent scale factor to handle absorption-varying background
+### 2-2. Remove Al signals
 
-### 3d. Error propagation
-- Propagate raw counting statistics through subtraction step
-- Output σ(I) volume alongside cleaned I volume
+Al (FCC, Fm-3m, a ≈ 4.046 Å) produces powder rings at fixed |Q| values.
 
-**Milestone:** residual at masked positions < 1 % of peak Al signal after subtraction.
+- Enumerate Al reflection |Q| positions up to Q_max
+- Map to HKL space via sample UB matrix: `|Q|_voxel = ||UB · hkl||`
+- **Adaptive mask width**: σ-clipping on radial intensity profile per peak
+- **Soft boundary**: sigmoid taper (width τ ≈ 0.01 Å⁻¹) to avoid Gibbs ringing
+- Optional: fit and subtract Al peak profile before masking → smaller mask footprint
 
----
+### 2-3. Backfill Al holes
 
-## Phase 4 — Advanced Inpainting / Filling (months 6–9)
+Restore physically meaningful values in masked Al regions:
 
-**Goal:** reconstruct physically plausible values in masked regions.
+1. **Symmetry fill** (primary): use Laue equivalents from the symmetrized data
+2. **TV inpainting** (secondary): Chambolle-Pock total-variation on remaining gaps
+3. **RBF / biharmonic** (fallback): smooth interpolation for isolated residual gaps
 
-### 4a. Symmetry-based averaging (highest priority)
-- Use sample crystal point group to map each masked voxel to symmetry-equivalent positions
-- Average over unmasked equivalents; propagate statistical weights
-- Works best when masks are small and symmetry multiplicity is high
+Output: cleaned volume with filled-voxel flags and inflated σ.
 
-### 4b. Interpolation methods
-- **RBF / kriging**: smooth radial-basis-function interpolation in 3D from surrounding unmasked voxels
-- **3D spline**: tensor-product B-spline for anisotropic but smooth regions
-- **Nearest-neighbor baseline**: fast fallback, useful for diagnostics
-
-### 4c. Variational inpainting
-- **Total-variation (TV) minimization**: Chambolle–Pock primal-dual algorithm on 3D masked volume; preserves sharp diffuse features while being stable
-- **Biharmonic / diffusion**: solve ∇⁴u = 0 inside mask (smoother, appropriate for broad diffuse features)
-
-### 4d. Hybrid pipeline
-- Default: symmetry → TV, falling back to RBF where symmetry coverage is insufficient
-- Configurable via method string, e.g. `"symmetry+tv"`, `"rbf"`, `"diffusion"`
-
-### 4e. Uncertainty maps
-- Assign σ_fill based on inter-equivalent variance (symmetry method) or kriging variance
-- Flag filled voxels in output mask channel
-
-**Milestone:** on synthetic test data with known ground truth, relative RMS error < 5 % in filled region.
+**Phase 2 milestone:** on benchmark data, < 2 % diffuse signal lost; residual Al < 1 %.
 
 ---
 
-## Phase 5 — Validation, Integration & Release (months 9–12)
+## Phase 3 — Further Analysis (months 5–9)
 
-### 5a. Synthetic test suite
-- Simulate diffuse scattering from known disorder models (e.g. correlated displacements)
-- Inject synthetic Al rings; run pipeline; compare to ground truth
-- Benchmark all filling methods against each other
+### 3-1. Remove Bragg peaks (punch)
 
-### 5b. Real-data benchmarks
-- At least two experimental datasets from different instruments (CORELLI, SXD)
-- Manual expert annotation for comparison
+Bragg peaks at integer (h,k,l) are orders of magnitude stronger than diffuse signal
+and must be excised before computing the 3D-ΔPDF.
 
-### 5c. Software integration
-- **Mantid**: plugin or workflow algorithm callable from Mantid scripts
-- **mcs3d / DISCUS**: export in compatible format for RMC refinement
-- **VESTA**: export as VESTA-readable reciprocal-space map
+- **Detection**: enumerate integer reflections within the HKL grid; optionally read a
+  peak list from a `.peaks` / `.integrate` file (Mantid format)
+- **Adaptive punch radius**: scale with |F|² or with observed peak intensity to avoid
+  over- or under-punching
+- **Anisotropic punch**: ellipsoidal mask aligned with instrumental resolution function
+  (δh, δk, δl may differ)
+- **Profile subtraction** (optional): fit 3D Gaussian + background, subtract fitted
+  Bragg contribution → reduces punch size, preserves diffuse signal near Bragg peaks
+- Output: volume with Bragg holes masked
 
-### 5d. Documentation & tutorials
-- Algorithm reference (this repo's `docs/algorithms/`)
-- Jupyter notebook tutorials for common use cases
-- API reference (Sphinx + autodoc)
+### 3-2. Backfill Bragg holes
 
-### 5e. PyPI release v1.0
-- Semantic versioning, changelog, DOI via Zenodo
+Bragg holes are typically larger and more numerous than Al holes.
+
+- **Symmetry fill**: strongest tool when Laue multiplicity is high
+- **TV inpainting**: preserves diffuse streaks that run through Bragg positions
+- **Local polynomial fit**: fit smooth background in a shell around each Bragg position
+  using only unmasked voxels, then evaluate at hole voxels
+- **Uncertainty**: filled Bragg voxels carry larger σ; downstream ΔPDF analysis should
+  weight accordingly
+
+### 3-3. 3D-ΔPDF
+
+The 3D difference pair distribution function is the real-space Fourier transform of the
+diffuse scattering:
+
+```
+Δρ(r) = FT[ I_diffuse(Q) ]  =  FT[ I_total(Q) - I_Bragg(Q) ]
+```
+
+Implementation:
+- **Normalization**: convert measured counts to absolute units or normalise by monitor
+- **Apodization**: apply a 3D window function (Hann, Gaussian, or "punch-and-fill"
+  specific weight) to suppress termination ripples
+- **Zero-padding**: pad to next power-of-2 grid for efficient FFT
+- **3D FFT** (`numpy.fft.fftn` / `scipy.fft.fftn`): output is Δρ(r) on a real-space grid
+- **Symmetrisation**: apply point-group to Δρ(r) to improve signal-to-noise
+- **Origin removal**: set r=0 peak to zero or model its contribution
+- **Output**: real-space `HKLVolume`-like object with (Δx, Δy, Δz) axes in Å
+
+Visualisation:
+- 2D slices of Δρ(Δx, Δy, 0) etc.
+- 1D projected pair distances
+- Comparison with model ΔPDF from RMC / DFT structures
+
+**Phase 3 milestone:** reproduce published 3D-ΔPDF from a reference dataset.
+
+---
+
+## Phase 4 — Validation, Integration & Release (months 9–12)
+
+| Task | Details |
+|------|---------|
+| Synthetic tests | Simulate diffuse + Al rings + Bragg peaks; compare pipeline output to ground truth |
+| Real benchmarks | ≥ 2 datasets (CORELLI + SXD) with manual expert reference |
+| Mantid plugin | Workflow algorithm callable from Mantid scripts |
+| DISCUS / mcs3d export | Compatible format for RMC refinement |
+| Jupyter tutorials | Step-by-step notebooks for each pipeline stage |
+| PyPI v1.0 | Changelog, DOI via Zenodo, semantic versioning |
+
+---
+
+## Module layout
+
+```
+src/ndiff/
+├── core.py                        # HKLVolume data structure
+├── io/                            # File I/O (HDF5, ASCII)
+├── preprocessing/
+│   ├── symmetrize.py              # (1) Symmetrize
+│   ├── aluminum.py                # (2) Al removal
+│   └── backfill.py                # (3) Al hole filling (calls inpainting/)
+├── analysis/
+│   ├── bragg.py                   # (4) Bragg removal (punch)
+│   ├── bragg_fill.py              # (5) Bragg hole filling
+│   └── delta_pdf.py               # (6) 3D-ΔPDF via FFT
+├── inpainting/                    # Filling algorithms (shared)
+│   ├── symmetry.py
+│   ├── tv_inpainting.py
+│   ├── interpolation.py
+│   └── pipeline.py
+└── utils/
+    └── reciprocal_space.py
+```
 
 ---
 
 ## Out of scope (v1)
 
-- Background from incoherent scattering (treated as flat offset, trivial to subtract)
-- Multi-crystal twins (complex case; flagged for v2)
-- GPU acceleration (NumPy/SciPy first; CuPy wrapper deferred)
+- Incoherent background (treated as flat; trivial to subtract before this pipeline)
+- Multi-crystal twins
+- GPU acceleration (NumPy/SciPy first)
+- Phonon / magnetic diffuse separation (future v2 feature)
