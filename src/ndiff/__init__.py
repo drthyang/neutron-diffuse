@@ -1,16 +1,17 @@
 """ndiff — neutron diffuse scattering processing toolkit.
 
+Input: symmetrized 3D HKL volume (e.g. from Mantid).
+
 Pipeline
 --------
 Data processing:
-    preprocessing.symmetrize     → (1) symmetrize data
-    preprocessing.aluminum_mask  → (2) remove Al signals
-    preprocessing.backfill_al    → (3) backfill Al holes
+    preprocessing.PowderRingRemover  → (1) detect & subtract powder rings
+    preprocessing.backfill           → (2) fill ring holes in diffuse signal
 
 Further analysis:
-    analysis.bragg_mask          → (4) remove Bragg peaks (punch)
-    analysis.backfill_bragg      → (5) backfill Bragg holes
-    analysis.compute_delta_pdf   → (6) 3D-ΔPDF via FFT
+    analysis.BraggRemover            → (3) punch Bragg peaks
+    analysis.backfill_bragg          → (4) fill Bragg holes
+    analysis.compute_delta_pdf       → (5) 3D-ΔPDF via FFT
 """
 
 from ndiff._version import __version__
