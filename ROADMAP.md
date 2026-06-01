@@ -9,21 +9,21 @@ Input: symmetrised 3D HKL volume from Mantid (or equivalent).
         │
         ▼  DATA PROCESSING
         │
-        │  (1) Empty-scan subtraction
+        │  (1) Empty-scan subtraction                       [implemented]
         │        Removes environment ring (cryostat, furnace, etc.).
-        │        Residual: sample-holder Al ring remains.
+        │        Residual: sample-holder ring remains.
         │
-        │  (2) Factored ring model — fit and subtract
+        │  (2) Factored ring model — fit and subtract       [implemented]
         │        I_ring(Q, φ) = T(φ) × Σᵢ Aᵢ G(|Q|−qᵢ, σᵢ)
-        │        See "Residual ring removal" section below.
+        │        Removes residual sample-holder ring.
         │
-        │  (3) Backfill subtracted region
+        │  (3) Backfill subtracted region                   [implemented]
         │        Radial interpolation from nearest uncontaminated neighbours.
         │
         ▼  FURTHER ANALYSIS
         │
-        │  (4) Bragg peak removal  (punch-and-fill)
-        │  (5) 3D-ΔPDF via Fourier transform
+        │  (4) Bragg peak removal  (punch-and-fill)         [implemented]
+        │  (5) 3D-ΔPDF via Fourier transform                [implemented]
         │
         ▼
   [ 3D-ΔPDF in real space ]
@@ -31,32 +31,31 @@ Input: symmetrised 3D HKL volume from Mantid (or equivalent).
 
 ---
 
-## Phase 1 — Foundation (months 1–2)
+## Phase 1 — Foundation  ✓ complete
 
-| Task | Details |
-|------|---------|
-| `HKLVolume` | 3D ndarray + UB matrix + validity mask + σ array |
-| I/O — HDF5/NeXus | Read Mantid-output SXD, CORELLI, TOPAZ formats |
-| I/O — ASCII | Legacy `.hkl`, tab-delimited grids |
-| Slice viewer | h/k/l = const slices + \|Q\| shell projections |
-| CI | pytest, GitHub Actions, ruff, mypy |
+| Task | Status |
+|------|--------|
+| `HKLVolume` — 3D ndarray + UB matrix + mask + σ | done |
+| I/O — HDF5/NeXus read/write | done |
+| I/O — ASCII legacy `.hkl`, tab-delimited | done |
+| CI — pytest, ruff, mypy | skeleton done |
 
 **Milestone:** load real Mantid output → display slices → save back.
 
 ---
 
-## Phase 2 — Powder Ring Removal (months 2–6)
+## Phase 2 — Powder Ring Removal  ✓ implemented (needs real-data trial)
 
-### 2-1. Empty-scan subtraction
+### 2-1. Empty-scan subtraction  ✓
 
 ```
 I_residual(Q) = I_sample(Q) − s × I_empty(Q)
 ```
 
 Scale factor `s` estimated analytically from ring-dominated |Q| shells.
-Removes environment ring; sample-holder Al ring remains.
+Removes environment ring; sample-holder ring remains.
 
-### 2-2. Residual ring removal: factored patch model
+### 2-2. Factored ring model  ✓
 
 **Physical model:**
 
@@ -70,10 +69,9 @@ I_ring(Q, φ) = T(φ) × Σᵢ Aᵢ × G(|Q| − qᵢ, σᵢ)
 
 **Coordinate system:**
 
-φ = azimuthal angle in the reference plane (default: hk0).
-  `φ = atan2(k_Q, h_Q)` where (h_Q, k_Q) are Cartesian Q-space coordinates.
-Gaussians G are evaluated at the full 3D |Q| of each voxel.
-This extends the 2D fit naturally to the full 3D dataset.
+φ = azimuthal angle in the hk0 plane.  `φ = atan2(k_Q, h_Q)` where
+(h_Q, k_Q) are Cartesian Q-space coordinates.  Gaussians are evaluated
+at the full 3D |Q| of each voxel — extends the 2D fit to the full 3D dataset.
 
 **Fitting procedure:**
 
@@ -81,80 +79,82 @@ This extends the 2D fit naturally to the full 3D dataset.
 (a) Divide φ ∈ [0, 2π) into N overlapping patches
     (Hann weighting within overlap; typical N = 24–72, overlap 30 %)
 
-(b) Per patch: fit Gaussians to weighted 1D profile I(|Q|)
+(b) Per patch: NNLS fit of Gaussian amplitudes to weighted 1D profile I(|Q|)
     Ring positions qᵢ and widths σᵢ shared across patches (global fit).
-    Non-negative least-squares for per-patch amplitudes Aᵢ(P).
     → Amplitude matrix A[n_rings × n_patches]
 
 (c) Rank-1 SVD factorisation of A:
     A[i, P] ≈ Aᵢ × T[P]
-    → first singular vectors give per-ring amplitudes Aᵢ
-      and per-patch texture T[P]
+    First singular vectors give per-ring amplitudes Aᵢ and per-patch texture T[P].
 
-(d) Fit Fourier series to {φ_P, T[P]}:
+(d) Fourier series fit to {φ_P, T[P]}:
     T(φ) = c₀ + Σₖ (aₖ cos kφ + bₖ sin kφ)
-    → smooth, periodic, C∞ → C¹ continuity automatic
-    (typical n_fourier = 4–8)
+    Smooth, periodic, C∞  → C¹ continuity automatic (typical n_fourier = 4–8)
 
-(e) Subtract full model from data:
-    I_est(voxel) = I_measured(voxel) − T(φ_voxel) × Σᵢ Aᵢ G(|Q_voxel|−qᵢ,σᵢ)
+(e) Subtract full model:
+    I_residual(voxel) = I(voxel) − T(φ_voxel) × Σᵢ Aᵢ G(|Q_voxel|−qᵢ, σᵢ)
     Mask voxels where I_ring / σ_data > threshold.
 ```
 
-**Why no assumption on diffuse signal:**
-- Gaussians in |Q| are fitted to the local radial profile within each patch.
-  The diffuse signal averages differently from the ring (it is not Gaussian in |Q|
-  and varies anisotropically), so the Gaussian captures mainly the ring.
-- The shared texture T(φ) further constrains the fit: the diffuse signal
-  does not share the same azimuthal pattern across all rings.
+**Diagnostics:**
 
-**Open design questions:**
+- `rank1_variance` — fraction of amplitude-matrix variance explained by rank-1.
+  Should be ≥ 0.90.  Lower values indicate per-ring texture differs between rings.
+- `per_ring_texture_residual()` — per-ring RMS deviation from the shared T(φ).
+
+**Open design questions (to resolve with real data):**
+
 - How many patches and what overlap for a typical dataset?
-- What to do when a patch has very few voxels (detector gap)?
+- Is n_fourier = 6 sufficient, or do high-|Q| rings require more harmonics?
+- What SNR threshold for the ring mask gives the best ΔPDF quality?
 - How to handle overlapping Gaussian peaks (closely spaced rings)?
-- Validation: what residual ring level is acceptable for 3D-ΔPDF quality?
 
-### 2-3. Backfill
+### 2-3. Backfill  ✓
 
-Masked voxels (where ring dominated) are filled by:
-1. Finding nearest valid 3D-HKL neighbours outside the ring |Q| range.
-2. Weighted interpolation in |Q| → C¹ at shell boundary by construction.
-3. TV inpainting fallback for voxels with too few clean neighbours.
-
-No assumption is imposed on the diffuse signal.
+Masked voxels (ring-dominated) filled by:
+1. KDTree on valid voxel indices; filter to uncontaminated (outside all ring |Q|).
+2. Weighted interpolation across the thin gap → C¹ by construction.
+3. TV inpainting (Chambolle-Pock) fallback for voxels with too few clean neighbours.
 
 ---
 
-## Phase 3 — Bragg Peak Removal (months 6–8)
+## Phase 3 — Bragg Peak Removal  ✓ implemented
 
 - Ellipsoidal punch at each integer (h,k,l).
 - Adaptive punch radius (scale with intensity).
 - Sigmoid-tapered boundary.
 - TV inpainting backfill.
 
+**Pending refinements:**
+- Profile subtraction before punch (reduces punch radius needed).
+- Absolute monitor normalisation.
+
 ---
 
-## Phase 4 — 3D-ΔPDF (months 8–10)
+## Phase 4 — 3D-ΔPDF  ✓ implemented
 
 ```
 Δρ(r) = FT[ I_diffuse(Q) ]
 ```
 
-1. Hann apodization in 3D.
+1. Hann / Gaussian / no apodization (selectable).
 2. Zero-pad to next power-of-2.
 3. `scipy.fft.fftn` → fftshift → real part.
 4. Real-space axes in Å via UB matrix.
 
+**Pending:** absolute units / monitor normalisation.
+
 ---
 
-## Phase 5 — Validation & Release (months 10–12)
+## Phase 5 — Validation & Release  (pending)
 
-| Task | Details |
-|------|---------|
-| Synthetic tests | Inject anisotropic ring + diffuse; evaluate ΔPDF quality |
-| Real benchmarks | ≥ 2 datasets with Mantid-symmetrised input |
-| Mantid integration | Export-compatible format |
-| PyPI v1.0 | Changelog, DOI via Zenodo |
+| Task | Status |
+|------|--------|
+| Real-data trial: load, ring remove, ΔPDF | **next step** |
+| Synthetic benchmark: injected ring + diffuse, evaluate ΔPDF quality | pending |
+| Per-ring T_i(φ) if rank1_variance < 0.90 | pending |
+| Mantid integration — export-compatible format | pending |
+| PyPI v1.0 — changelog, DOI via Zenodo | pending |
 
 ---
 
@@ -164,19 +164,21 @@ No assumption is imposed on the diffuse signal.
 src/ndiff/
 ├── core.py
 ├── io/
+│   └── hkl_reader.py
 ├── preprocessing/
-│   ├── empty_subtraction.py    # (1) subtract empty-environment scan
-│   ├── ring_model.py           # (2) PatchedRingModel: fit + subtract
-│   ├── powder_rings.py         # utilities: detect_ring_shells, radial_profile
-│   └── backfill.py             # (3) radial interpolation backfill
+│   ├── empty_subtraction.py    (1) subtract empty-environment scan      ✓
+│   ├── ring_model.py           (2) PatchedRingModel: fit + subtract     ✓
+│   ├── powder_rings.py         utilities: detect_ring_shells, mask      ✓
+│   ├── backfill.py             (3) radial interpolation backfill        ✓
+│   └── residual_rings.py       alternative (kept for comparison)        ✓
 ├── analysis/
-│   ├── bragg.py                # (4) Bragg punch
-│   ├── bragg_fill.py           # (4b) Bragg backfill
-│   └── delta_pdf.py            # (5) 3D-ΔPDF
+│   ├── bragg.py                (4) Bragg punch                          ✓
+│   ├── bragg_fill.py           (4b) Bragg backfill                      ✓
+│   └── delta_pdf.py            (5) 3D-ΔPDF                             ✓
 ├── inpainting/
-│   ├── tv_inpainting.py
-│   ├── interpolation.py
-│   └── pipeline.py
+│   ├── tv_inpainting.py        Chambolle-Pock TV inpainting             ✓
+│   ├── interpolation.py        RBF / biharmonic fill                    ✓
+│   └── pipeline.py             orchestration: symmetry → TV → RBF      ✓
 └── utils/
-    └── reciprocal_space.py
+    └── reciprocal_space.py     ub_from_lattice, d_spacing, q_to_hkl    ✓
 ```
