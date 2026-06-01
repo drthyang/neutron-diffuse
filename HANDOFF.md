@@ -2,7 +2,34 @@
 
 **Date:** 2026-06-01  
 **Repo:** `neutron-diffuse`  
-**Status:** Design + skeleton implementation complete; ready for first real-data trial.
+**Status:** Design + skeleton implementation complete; docs/packaging cleaned;
+ready for first real-data trial. I/O layer is next.
+
+---
+
+## Progress log
+
+### 2026-06-01 — Docs/packaging cleanup
+- Corrected the algorithm docs that wrongly described the powder ring as
+  "isotropic in |Q|" — it is azimuthally anisotropic, captured by the
+  factored T(φ) model (`powder_rings.md`, this file).
+- Clarified `inpainting.md` scope: it is the general-purpose inpainter (mainly
+  for Bragg holes); ring shells use radial interpolation, not symmetry averaging.
+- Fixed README quickstart to the real API; fixed clone URL.
+- Fixed `pyproject` build-backend and static version.
+- Removed the dead `background/` (Al masking) module + test.
+- Rewrote the integration test against the real pipeline API.
+- Decision: repo/dist name stays `neutron-diffuse`, import stays `ndiff`.
+- Commits authored by Tsung-Han Yang only (no co-author trailer).
+
+### Next phase (planned)
+User prepares a real input file, then we build, in order:
+1. **Readers/loaders** matched to that real input format (do not assume the
+   current skeleton `io/hkl_reader.py` matches — inspect the real file first).
+2. **Data presentation / visualisation.**
+3. **Writers.**
+Design guidance: keep components separated, in small focused pieces, so each
+stage (reader / processing / presentation / writer) is independently swappable.
 
 ---
 
@@ -90,9 +117,12 @@ src/ndiff/
 ## Key design decisions and their rationale
 
 ### Why not use crystal symmetry for ring removal?
-Powder rings are isotropic in |Q|: all Laue-equivalents of a masked voxel
-sit on the same |Q| shell and are equally (or differently) contaminated.
-Symmetry averaging does not separate ring from diffuse signal.
+A powder ring is localised in |Q| (a thin shell) but its amplitude varies
+with azimuthal direction — it is *not* isotropic. Regardless, all Laue
+equivalents of a masked ring voxel sit on the same |Q| shell and are
+equally contaminated, so symmetry averaging cannot separate ring from
+diffuse signal. The azimuthal variation is instead captured by the
+factored T(φ) model below.
 
 ### Why the factored model T(φ) × Σ Aᵢ G(|Q|)?
 All rings from the same polycrystalline material share the same detector
