@@ -1,0 +1,38 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# virtual envs
+.venv/
+venv/
+env/
+
+# testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# type checkers
+.mypy_cache/
+
+# editors
+.vscode/
+.idea/
+*.swp
+
+# notebooks
+.ipynb_checkpoints/
+
+# data files (large — track with DVC or store externally)
+*.nxs
+*.nxspe
+data/raw/
+data/processed/
+!data/.gitkeep
+
+# macOS
+.DS_Store
