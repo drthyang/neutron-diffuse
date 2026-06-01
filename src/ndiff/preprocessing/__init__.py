@@ -6,20 +6,20 @@ Step 1 — Empty-scan subtraction  (``EmptySubtractor``)
     Removes the environment ring (cryostat, furnace, etc.).
     Residual rings from the sample holder remain.
 
-Step 2 — Ring detection in 1D |Q|  (``detect_ring_shells``)
-    Rolling-median baseline on the radial profile — no assumption on the
-    diffuse signal.  Returns |Q| ranges of detected ring shells.
+Step 2 — Factored ring model  (``PatchedRingModel``)
+    Fits  I_ring(Q, φ) = T(φ) × Σᵢ Aᵢ G(|Q| − qᵢ, σᵢ)
+    by dividing φ into overlapping patches, fitting Gaussians per patch,
+    then extracting T(φ) via SVD + Fourier smoothing.
+    Subtracts the model; masks voxels where ring dominates.
 
-Step 3 — Masking  (``mask_ring_shells``)
-    Marks ring-shell voxels invalid.  Sigmoid-tapered boundary for C¹
-    continuity at the shell edge.
-
-Step 4 — Backfill  (``backfill_ring_shells``)
+Step 3 — Backfill  (``backfill_ring_shells``)
     Fills masked voxels by radial interpolation from nearest uncontaminated
-    neighbours.  C¹ continuity is guaranteed by the interpolation itself.
+    neighbours.  C¹ continuity comes from the interpolation itself.
 """
 
 from ndiff.preprocessing.empty_subtraction import EmptySubtractor
+from ndiff.preprocessing.ring_model import PatchedRingModel, RingParams, FittedRingModel
+from ndiff.preprocessing.backfill import backfill_ring_shells
 from ndiff.preprocessing.powder_rings import (
     RingShell,
     detect_ring_shells,
@@ -27,14 +27,18 @@ from ndiff.preprocessing.powder_rings import (
     radial_profile,
     al_ring_q_positions,
 )
-from ndiff.preprocessing.backfill import backfill_ring_shells
 
 __all__ = [
+    # Primary pipeline
     "EmptySubtractor",
+    "PatchedRingModel",
+    "RingParams",
+    "FittedRingModel",
+    "backfill_ring_shells",
+    # Utilities / diagnostics
     "RingShell",
     "detect_ring_shells",
     "mask_ring_shells",
     "radial_profile",
     "al_ring_q_positions",
-    "backfill_ring_shells",
 ]
