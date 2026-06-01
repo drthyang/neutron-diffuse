@@ -11,16 +11,13 @@ Input: symmetrised 3D HKL volume from Mantid (or equivalent).
         │
         │  (1) Empty-scan subtraction
         │        Subtract monitor-normalised empty-environment scan.
-        │        Removes: cryostat, furnace, pressure-cell walls, etc.
-        │        Residual: sample-holder Al remains (not in empty scan).
+        │        Removes environment ring (cryostat, furnace, etc.).
+        │        Residual: sample-holder Al ring remains.
         │
-        │  (2) Residual ring detection & fill  [open research problem]
-        │        Ring amplitude is UNEVEN around the shell (detector
-        │        coverage, absorption, normalisation). Exploit this:
-        │        within each Laue equivalent group, flag anomalously-high
-        │        voxels and fill from the cleaner equivalents.
-        │        Fallback: 3D inpainting for voxels with too few clean
-        │        equivalents.
+        │  (2) Residual ring removal  [active research]
+        │        Ring amplitude is uneven → must work locally.
+        │        Process patch by patch; enforce C¹ continuity across
+        │        patch boundaries via overlapping Hann-window blending.
         │
         ▼  FURTHER ANALYSIS
         │
@@ -51,67 +48,84 @@ Input: symmetrised 3D HKL volume from Mantid (or equivalent).
 
 ### 2-1. Empty-scan subtraction
 
-Straightforward monitor-normalised subtraction:
+Monitor-normalised subtraction:
 
 ```
 I_residual(Q) = I_sample(Q) − s × I_empty(Q)
 ```
 
-where `s` is a scale factor fit from ring-dominated |Q| shells
-(minimises the residual in those shells, solved analytically).
+Scale factor `s` is estimated analytically by minimising the residual
+in ring-dominated |Q| shells.  Removes the environment ring; sample-holder
+Al ring remains.
 
-This removes the bulk of the ring from the sample environment.
-The sample holder contribution is **not** removed here because the
-sample holder is absent from the empty scan.
+### 2-2. Residual ring removal  *(active research — algorithm TBD)*
 
-### 2-2. Residual ring removal  *(active research — no final algorithm yet)*
+**The problem in full:**
 
-**The challenge:**
+- The residual ring (sample-holder Al) is not in the empty scan.
+- Its amplitude varies across the |Q| shell: stronger where detector
+  coverage is dense, weaker or absent in gaps.
+- A global model (fit one Gaussian to the whole ring) fails because the
+  amplitude is not constant.
+- Crystal Laue symmetry is **not** applied here: the ring and the
+  diffuse signal are both local quantities, and a global symmetry
+  operation does not separate them cleanly.
 
-The residual ring (from sample holder Al) is:
-- Not present in the empty scan.
-- Non-uniform in amplitude around the |Q| shell — stronger where more
-  frames contribute at that scattering geometry, weaker or absent in
-  detector gaps.
+**Approach: local patch-by-patch processing with C¹ continuity**
 
-**The key insight:**
+Work in small overlapping patches in HKL (or |Q| × solid-angle) space:
 
-Non-uniform amplitude is actually exploitable via crystal Laue symmetry.
-Within a set of Laue-equivalent voxels (all at the same |Q|), voxels in
-a high-ring-amplitude sector will be anomalously high compared to voxels
-in a low-ring-amplitude sector. An asymmetric sigma-clip within each
-equivalent group identifies the contaminated voxels; the clean equivalents
-fill them.
+```
+Within each patch:
+  1. Estimate smooth local diffuse background
+     (low-order polynomial or spline fit to uncontaminated voxels).
+  2. Ring excess = data − background.
+     Flag voxels where excess > threshold.
+  3. Fill flagged voxels from the smooth background estimate
+     (local interpolation, not symmetry equivalents).
+  4. Weight the processed patch by a Hann window.
 
-This requires:
-- Input symmetrised (from Mantid) so that genuine diffuse asymmetry is
-  already removed.
-- Enough Laue multiplicity that some equivalents escape the ring.
+Combine patches:
+  I_out(voxel) = Σ_patches  w_p(voxel) × I_p(voxel)
+               / Σ_patches  w_p(voxel)
+```
 
-**Current status:** Initial implementation in `residual_rings.py`.
-Algorithm needs validation on real data; threshold tuning is dataset-dependent.
+**Why Hann windows guarantee C¹ continuity:**
 
-**Open questions:**
-- What fraction of equivalents are typically contaminated? (Depends on ring
-  width and crystal symmetry.)
-- What to do when all equivalents are contaminated (low-multiplicity or
-  wide ring)? → 3D inpainting fallback.
-- Does the method work for monoclinic / triclinic crystals?
+The Hann window is zero at both patch edges, with zero first derivative
+at the edges.  Overlapping Hann windows form a partition of unity
+(they sum to 1 everywhere in the interior).  Because the weight is C¹
+and the blending is a weighted average, the output is automatically C¹
+across all patch boundaries — no post-processing stitch step needed.
 
-**Alternative approaches (for future consideration):**
-- Profile model per solid-angle sector (fit ring independently per patch).
-- Iterative diffuse/ring separation (alternate between smooth diffuse estimate
-  and ring residual).
-- Instrument-geometry-based prediction of ring amplitude per HKL direction.
+**Open design questions:**
+
+| Question | Options |
+|----------|---------|
+| Patch geometry | Cartesian HKL boxes vs. |Q| shells × angular sectors |
+| Patch size | Must be large enough to fit background; small enough that ring amplitude is ~constant |
+| Background model | Low-order polynomial, local spline, median filter |
+| Detection threshold | Per-patch adaptive (MAD-based) |
+| Patch overlap fraction | 50 % is standard; may need tuning |
+
+**What NOT to do:**
+- Do not apply symmetry averaging within the ring removal step — the ring
+  and diffuse signal are both local; symmetry is a global operation that
+  conflates them.
+- Do not process without overlap — hard patch edges produce C⁰
+  discontinuities that appear as ringing in the 3D-ΔPDF.
+- Do not fill with a flat value — the diffuse signal underneath the ring
+  must be estimated from the local smooth background, not set to zero or
+  the shell mean.
 
 ---
 
 ## Phase 3 — Bragg Peak Removal (months 6–8)
 
-- Ellipsoidal punch at each integer (h,k,l).
-- Adaptive radius: scale with peak intensity.
-- Soft (sigmoid-tapered) boundary.
-- Backfill with TV inpainting.
+- Enumerate integer (h,k,l) within the grid.
+- Ellipsoidal punch mask with soft (sigmoid-tapered) boundary.
+- Adaptive punch radius: scale with peak intensity.
+- Backfill with TV inpainting (C¹-continuous by construction).
 
 ---
 
@@ -121,10 +135,10 @@ Algorithm needs validation on real data; threshold tuning is dataset-dependent.
 Δρ(r) = FT[ I_diffuse(Q) ]
 ```
 
-1. Normalise / apodize (Hann window in 3D).
+1. Apodize with 3D Hann window.
 2. Zero-pad to next power-of-2.
-3. `scipy.fft.fftn` → fftshift → take real part.
-4. Output real-space axes in Å via UB matrix.
+3. `scipy.fft.fftn` → fftshift → real part.
+4. Real-space axes in Å via UB matrix.
 
 ---
 
@@ -132,7 +146,7 @@ Algorithm needs validation on real data; threshold tuning is dataset-dependent.
 
 | Task | Details |
 |------|---------|
-| Synthetic tests | Inject ring + Bragg into known diffuse; evaluate pipeline |
+| Synthetic tests | Inject ring + Bragg into known diffuse; evaluate ΔPDF quality |
 | Real benchmarks | ≥ 2 datasets with Mantid-symmetrised input |
 | Mantid integration | Export-compatible format |
 | PyPI v1.0 | Changelog, DOI via Zenodo |
@@ -147,9 +161,8 @@ src/ndiff/
 ├── io/
 ├── preprocessing/
 │   ├── empty_subtraction.py    # (1) subtract empty-environment scan
-│   ├── residual_rings.py       # (2) symmetry-based residual detection & fill
-│   ├── backfill.py             # (2b) 3D inpainting fallback for unfillable voxels
-│   └── powder_rings.py         # diagnostic / exploratory tools
+│   ├── residual_rings.py       # (2) patch-by-patch ring removal [TBD]
+│   └── backfill.py             # (2b) 3D inpainting for unfillable voxels
 ├── analysis/
 │   ├── bragg.py                # (3) Bragg punch
 │   ├── bragg_fill.py           # (3b) Bragg backfill
