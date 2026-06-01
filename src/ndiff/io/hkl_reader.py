@@ -15,13 +15,17 @@ _PathLike = Union[str, Path]
 def load(path: _PathLike, **kwargs: object) -> HKLVolume:
     """Load an HKLVolume from *path*.
 
-    Supported formats (auto-detected by extension):
-    - ``.h5`` / ``.hdf5`` / ``.nxs``: NeXus/HDF5
+    Supported formats (auto-detected by extension and file content):
+    - ``.nxs``: Mantid MDHistoWorkspace (auto-detected) or ndiff HDF5
+    - ``.h5`` / ``.hdf5``: ndiff HDF5
     - ``.txt`` / ``.dat`` / ``.hkl``: whitespace-delimited ASCII (h k l I [sigma])
     """
     path = Path(path)
     ext = path.suffix.lower()
     if ext in {".h5", ".hdf5", ".nxs"}:
+        from ndiff.io.mantid_nxs import is_mantid_nxs, load_mantid_nxs
+        if is_mantid_nxs(path):
+            return load_mantid_nxs(path)
         return _load_hdf5(path, **kwargs)
     if ext in {".txt", ".dat", ".hkl"}:
         return _load_ascii(path, **kwargs)

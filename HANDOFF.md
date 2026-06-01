@@ -2,12 +2,32 @@
 
 **Date:** 2026-06-01  
 **Repo:** `neutron-diffuse`  
-**Status:** Design + skeleton implementation complete; docs/packaging cleaned;
-ready for first real-data trial. I/O layer is next.
+**Status:** Mantid NeXus reader complete; real data loaded successfully.
+Next: data presentation / visualisation, then writers.
 
 ---
 
 ## Progress log
+
+### 2026-06-01 — Mantid NeXus reader
+Real data files confirmed: Mantid MDHistoWorkspace NeXus format (`.nxs`),
+401×501×151 grid (K×L×H in file, permuted to H×K×L = 151×401×501).
+Orthorhombic lattice a=5.48, b=10.32, c=24.83 Å. ~38.5% voxels valid
+(rest outside detector coverage, stored as NaN in file).
+
+New module `src/ndiff/io/mantid_nxs.py` — modular Mantid reader:
+- `load_mantid_nxs(path)` — public entry point, returns HKLVolume
+- `is_mantid_nxs(path)` — format probe for auto-dispatch
+- 6 private single-purpose helpers (dim-axis parsing, UB reading, array
+  assembly with permutation to canonical H,K,L order)
+- `load()` in `hkl_reader.py` auto-detects Mantid format for `.nxs` files
+
+Background file has no UB matrix in the file (no experiment0 group);
+reader falls back to identity matrix. Background counts peak at ~11,740
+vs data ~283 — scale factor `s` in `EmptySubtractor` will be well below 1
+(estimated automatically from ring-dominated |Q| shells).
+
+Next: data presentation / visualisation, then writers.
 
 ### 2026-06-01 — Docs/packaging cleanup
 - Corrected the algorithm docs that wrongly described the powder ring as
@@ -23,13 +43,12 @@ ready for first real-data trial. I/O layer is next.
 - Commits authored by Tsung-Han Yang only (no co-author trailer).
 
 ### Next phase (planned)
-User prepares a real input file, then we build, in order:
-1. **Readers/loaders** matched to that real input format (do not assume the
-   current skeleton `io/hkl_reader.py` matches — inspect the real file first).
-2. **Data presentation / visualisation.**
-3. **Writers.**
+1. ~~**Readers/loaders**~~ ✓ done (Mantid MDHistoWorkspace `.nxs`)
+2. **Data presentation / visualisation** — slice views, radial profiles,
+   azimuthal maps to inspect ring structure and validate the pipeline.
+3. **Writers** — save processed volumes back to `.nxs` or ndiff HDF5.
 Design guidance: keep components separated, in small focused pieces, so each
-stage (reader / processing / presentation / writer) is independently swappable.
+stage is independently swappable.
 
 ---
 
@@ -64,7 +83,15 @@ src/ndiff/
 ├── core.py                        HKLVolume: main data container
 │                                  (3D array + UB matrix + mask + σ)
 │
-├── io/hkl_reader.py               load() / save()  — HDF5 and ASCII
+├── io/
+│   ├── hkl_reader.py              load() / save()  — auto-dispatch by format
+│   │                              .nxs → Mantid reader (auto-detected)
+│   │                              .h5/.hdf5 → ndiff HDF5 schema
+│   │                              .txt/.dat/.hkl → ASCII (h k l I sigma)
+│   └── mantid_nxs.py              load_mantid_nxs() / is_mantid_nxs()
+│                                  Reads MDHistoWorkspace: signal, σ, mask,
+│                                  bin-edge axes, UB matrix.  Permutes file
+│                                  (D2,D1,D0) order to canonical (H,K,L).
 │
 ├── preprocessing/
 │   ├── empty_subtraction.py       EmptySubtractor
