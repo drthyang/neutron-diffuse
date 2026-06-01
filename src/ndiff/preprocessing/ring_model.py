@@ -44,7 +44,6 @@ from typing import Optional
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.optimize import curve_fit
 
 from ndiff.core import HKLVolume
 

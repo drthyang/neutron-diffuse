@@ -41,43 +41,37 @@ diffuse signal.
 
 ```python
 import ndiff
-from ndiff.preprocessing import EmptySubtractor, PatchedRingModel, backfill_ring_shells
+from ndiff.preprocessing import (
+    EmptySubtractor, PatchedRingModel, backfill_ring_shells, detect_ring_shells,
+)
+from ndiff.analysis import bragg_mask, backfill_bragg, compute_delta_pdf
 
 # Load symmetrised 3D HKL volume (from Mantid or equivalent)
 vol = ndiff.load("experiment_sym.h5")
 vol_empty = ndiff.load("empty_environment.h5")
 
 # ── Step 1: empty-scan subtraction ──────────────────────────────────────────
-sub = EmptySubtractor()
-vol1, scale = sub.subtract(vol, vol_empty)
-print(f"Empty scan scale factor: {scale:.4f}")
+sub = EmptySubtractor(vol_empty)            # empty scan is a constructor arg
+vol1 = sub.subtract(vol)                    # scale estimated automatically
+print(f"Empty scan scale factor: {sub.scale:.4f}")
 
 # ── Step 2: factored ring model (residual sample-holder ring) ────────────────
-model_fitter = PatchedRingModel(n_patches=36, overlap_frac=0.3, n_fourier=6)
-fitted = model_fitter.fit(vol1)
+model = PatchedRingModel(n_patches=36, overlap_frac=0.3, n_fourier=6)
+fitted = model.fit(vol1)                     # or fit(vol1, ring_hints=[2.69, 3.10])
 print(f"Rank-1 variance: {fitted.rank1_variance:.3f}")   # > 0.90 is good
 print("Per-ring texture residual:", fitted.per_ring_texture_residual())
 
-vol2, ring_snr = model_fitter.subtract(vol1, fitted)
+vol2, i_ring = model.subtract(vol1, fitted)  # ring-dominated voxels are masked
 
-# ── Step 3: backfill ring holes ──────────────────────────────────────────────
-from ndiff.preprocessing import detect_ring_shells, mask_ring_shells
-rings, *_ = detect_ring_shells(vol1)
-keep = mask_ring_shells(vol1, rings)
-
-import dataclasses
-vol2_masked = dataclasses.replace(vol2, mask=vol2.mask & keep)
-vol_clean = backfill_ring_shells(vol2_masked, rings, n_neighbors=16)
+# ── Step 3: backfill the masked ring shells ──────────────────────────────────
+rings, *_ = detect_ring_shells(vol1)         # |Q| ranges to treat as contaminated
+vol_clean = backfill_ring_shells(vol2, rings, n_neighbors=16)
 
 # ── Step 4–5: Bragg punch and fill ──────────────────────────────────────────
-from ndiff.analysis import BraggRemover, backfill_bragg
-bragg_keep = BraggRemover().mask(vol_clean)
-import dataclasses
-vol_punched = dataclasses.replace(vol_clean, mask=vol_clean.mask & bragg_keep)
-vol_diffuse = backfill_bragg(vol_punched)
+vol_clean.apply_mask(bragg_mask(vol_clean, punch_radius_hkl=0.3))
+vol_diffuse = backfill_bragg(vol_clean)
 
 # ── Step 6: 3D-ΔPDF ─────────────────────────────────────────────────────────
-from ndiff.analysis import compute_delta_pdf
 dpdf = compute_delta_pdf(vol_diffuse, apodization="hann")
 
 # Save
@@ -87,7 +81,7 @@ ndiff.save(vol_diffuse, "diffuse_only.h5")
 ## Installation
 
 ```bash
-git clone https://github.com/thyang-phys/neutron-diffuse
+git clone https://github.com/drthyang/neutron-diffuse
 cd neutron-diffuse && pip install -e ".[dev]"
 ```
 

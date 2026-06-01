@@ -2,12 +2,21 @@
 
 ## Overview
 
-After masking Al-contaminated voxels we need to reconstruct physically reasonable
-intensities. Three complementary strategies are implemented, applied in a pipeline.
+After masking contaminated voxels (Bragg punches, or ring shells when radial
+interpolation cannot fill them) we need to reconstruct physically reasonable
+intensities. Several complementary strategies are implemented, combined in a pipeline.
+
+> **Scope.** This pipeline is the **general-purpose** inpainter, used primarily for
+> **Bragg holes** (`backfill_bragg`). Powder-ring shells are filled first by
+> `backfill_ring_shells`, which interpolates radially across the thin shell from
+> uncontaminated neighbours (see [powder_rings.md](powder_rings.md)); the methods below
+> are the fallback when a masked voxel has too few clean neighbours. Symmetry averaging
+> is **not** used for ring removal, because the Laue equivalents of a ring voxel lie on
+> the same ring and are equally contaminated.
 
 ---
 
-## 1. Symmetry-based averaging (primary)
+## 1. Symmetry-based averaging
 
 **Principle:** In a single crystal the diffuse scattering respects the Laue symmetry of
 the crystal. Symmetry-related voxels at **g** and **Rg** (R ∈ Laue group) should have

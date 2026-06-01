@@ -5,13 +5,14 @@ Input: symmetrized 3D HKL volume (e.g. from Mantid).
 Pipeline
 --------
 Data processing:
-    preprocessing.PowderRingRemover  → (1) detect & subtract powder rings
-    preprocessing.backfill           → (2) fill ring holes in diffuse signal
+    preprocessing.EmptySubtractor      → (1) subtract empty-environment scan
+    preprocessing.PatchedRingModel     → (2) fit & subtract residual ring
+    preprocessing.backfill_ring_shells → (3) fill ring holes in diffuse signal
 
 Further analysis:
-    analysis.BraggRemover            → (3) punch Bragg peaks
-    analysis.backfill_bragg          → (4) fill Bragg holes
-    analysis.compute_delta_pdf       → (5) 3D-ΔPDF via FFT
+    analysis.BraggRemover              → (4) punch Bragg peaks
+    analysis.backfill_bragg            → (5) fill Bragg holes
+    analysis.compute_delta_pdf         → (6) 3D-ΔPDF via FFT
 """
 
 from ndiff._version import __version__

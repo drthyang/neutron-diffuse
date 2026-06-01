@@ -143,7 +143,6 @@ def backfill_ring_shells(
     # Fallback: TV inpainting for voxels with too few clean neighbours
     if unfilled and fallback_tv:
         from ndiff.inpainting.tv_inpainting import tv_inpaint
-        temp = dataclasses.replace(vol, data=data_out, sigma=sigma_out, mask=mask_out)
         data_out = tv_inpaint(data_out, mask_out, lam=tv_lam, max_iter=tv_iter)
         for ih, ik, il in unfilled:
             mask_out[ih, ik, il] = True

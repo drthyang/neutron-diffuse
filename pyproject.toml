@@ -1,11 +1,11 @@
 [build-system]
-requires = ["setuptools>=68", "setuptools-scm"]
-build-backend = "setuptools.backends.legacy:build"
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "neutron-diffuse"
-dynamic = ["version"]
-description = "3D diffuse neutron scattering processing: Al background removal and inpainting"
+version = "0.1.0.dev0"
+description = "3D diffuse neutron scattering processing: powder ring removal and 3D-ΔPDF"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
@@ -40,12 +40,10 @@ docs = [
 ]
 
 [project.urls]
-Repository = "https://github.com/thyang-phys/neutron-diffuse"
+Repository = "https://github.com/drthyang/neutron-diffuse"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.setuptools-scm]
 
 [tool.ruff]
 line-length = 100

@@ -123,11 +123,15 @@ Masked voxels (ring-dominated) filled by:
 - Ellipsoidal punch at each integer (h,k,l).
 - Adaptive punch radius (scale with intensity).
 - Sigmoid-tapered boundary.
-- TV inpainting backfill.
+- Backfill via `backfill_bragg` (default `symmetry+tv`).
 
 **Pending refinements:**
 - Profile subtraction before punch (reduces punch radius needed).
 - Absolute monitor normalisation.
+- Symmetry fill helps little for Bragg-adjacent diffuse: the Laue
+  equivalents of a near-Bragg voxel sit next to other (also-punched)
+  Bragg peaks, so TV inpainting does most of the work.  Consider making
+  `method="tv"` the Bragg-fill default.
 
 ---
 
@@ -170,7 +174,7 @@ src/ndiff/
 │   ├── ring_model.py           (2) PatchedRingModel: fit + subtract     ✓
 │   ├── powder_rings.py         utilities: detect_ring_shells, mask      ✓
 │   ├── backfill.py             (3) radial interpolation backfill        ✓
-│   └── residual_rings.py       alternative (kept for comparison)        ✓
+│   └── residual_rings.py       experimental symmetry-sector alternative ⚠ not wired in
 ├── analysis/
 │   ├── bragg.py                (4) Bragg punch                          ✓
 │   ├── bragg_fill.py           (4b) Bragg backfill                      ✓
