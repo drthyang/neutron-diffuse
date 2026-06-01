@@ -81,6 +81,10 @@ class FittedRingModel:
     patch_centers: φ value (rad) at each patch centre.
     A_matrix     : raw per-patch amplitude matrix, shape (n_rings, n_patches).
     texture_values: per-patch T[P] values before Fourier smoothing.
+    singular_values : full singular value spectrum of A_matrix.
+        rank1_variance gives the fraction explained by the shared-T model.
+        A second significant singular value signals that higher-|Q| rings
+        have a different azimuthal texture and may need per-ring T_i(φ).
     """
     rings: list[RingParams]
     texture_coeffs: NDArray[np.float64]
@@ -88,10 +92,44 @@ class FittedRingModel:
     patch_centers: NDArray[np.float64]
     A_matrix: NDArray[np.float64]
     texture_values: NDArray[np.float64]
+    singular_values: NDArray[np.float64] = field(default_factory=lambda: np.array([]))
 
     def texture(self, phi: NDArray) -> NDArray[np.float64]:
         """Evaluate T(φ) at arbitrary angles (radians)."""
         return _eval_fourier(self.texture_coeffs, phi)
+
+    @property
+    def rank1_variance(self) -> float:
+        """Fraction of amplitude-matrix variance explained by the shared T(φ).
+
+        Close to 1.0 → shared texture is a good approximation for all rings.
+        Significantly below 1.0 (e.g. < 0.90) → higher-|Q| rings likely have
+        a different azimuthal texture; consider per-ring T_i(φ) fitting.
+        """
+        if len(self.singular_values) == 0:
+            return float("nan")
+        s2 = self.singular_values ** 2
+        return float(s2[0] / s2.sum()) if s2.sum() > 0 else float("nan")
+
+    def per_ring_texture_residual(self) -> NDArray[np.float64]:
+        """RMS residual of each ring's amplitude from the shared T(φ) model.
+
+        Shape: (n_rings,).  Large values for a specific ring indicate its
+        azimuthal texture deviates from the shared T(φ) — typically the
+        outer (higher-|Q|) rings.
+        """
+        if self.A_matrix.size == 0:
+            return np.array([])
+        T_norm = self.texture_values / (self.texture_values.mean() + 1e-12)
+        residuals = []
+        for i, ring in enumerate(self.rings):
+            row = self.A_matrix[i]
+            scale = row.mean() / (T_norm.mean() + 1e-12)
+            predicted = scale * T_norm
+            rms = float(np.sqrt(np.mean((row - predicted) ** 2)))
+            rms_rel = rms / (row.mean() + 1e-12)
+            residuals.append(rms_rel)
+        return np.array(residuals)
 
     def evaluate(self, q_mag: NDArray, phi: NDArray) -> NDArray[np.float64]:
         """Ring contribution at voxels with given |Q| and φ arrays."""
@@ -191,7 +229,7 @@ class PatchedRingModel:
             raise RuntimeError("Too few usable patches for texture fitting.")
 
         # Step 4: rank-1 SVD → T[P] and Aᵢ
-        texture_values, ring_amplitudes = _rank1_factorize(A_matrix)
+        texture_values, ring_amplitudes, singular_values = _rank1_factorize(A_matrix)
 
         for ring, amp in zip(ring_params, ring_amplitudes):
             ring.amplitude = float(amp)
@@ -206,6 +244,7 @@ class PatchedRingModel:
             patch_centers=patch_centers,
             A_matrix=A_matrix,
             texture_values=texture_values,
+            singular_values=singular_values,
         )
         return self._model
 
@@ -455,31 +494,35 @@ def _eval_fourier(coeffs: NDArray, phi: NDArray) -> NDArray[np.float64]:
 
 def _rank1_factorize(
     A: NDArray[np.float64],
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
     """Factorise A[n_rings × n_patches] ≈ ring_amps × texture^T.
 
-    Uses the first singular vector pair.
+    Uses the first singular vector pair (rank-1 approximation).
+
+    The full singular value spectrum S is returned so the caller can
+    assess whether the shared-texture assumption holds:
+      - rank1_variance = S[0]² / sum(S²)
+      - Values well below 1.0 suggest rings differ in azimuthal texture,
+        with higher-|Q| rings typically being the worst offenders.
 
     Returns
     -------
-    texture : (n_patches,)  — T[P], normalised so mean = 1
-    ring_amps : (n_rings,)  — Aᵢ
+    texture   : (n_patches,)  — T[P], normalised so mean = 1
+    ring_amps : (n_rings,)    — Aᵢ
+    singular_values : (min(n_rings, n_patches),) — full spectrum for diagnostics
     """
     U, S, Vt = np.linalg.svd(A, full_matrices=False)
-    # First mode
-    left = U[:, 0] * S[0]   # ring amplitudes direction (n_rings,)
-    right = Vt[0, :]         # texture direction (n_patches,)
+    left = U[:, 0] * S[0]
+    right = Vt[0, :]
 
-    # Ensure both left and right are positive (sign ambiguity)
     if left.mean() < 0:
         left, right = -left, -right
 
-    # Normalise texture so its mean = 1; absorb scale into ring_amps
     t_mean = right.mean() if right.mean() != 0 else 1.0
     texture = right / t_mean
     ring_amps = left * t_mean
 
-    return texture, ring_amps
+    return texture, ring_amps, S
 
 
 # ---------------------------------------------------------------------------
