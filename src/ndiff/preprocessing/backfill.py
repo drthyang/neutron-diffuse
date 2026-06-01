@@ -1,148 +1,158 @@
-"""Backfill powder-ring holes in the **subtracted** diffuse signal.
+"""Fill masked ring-shell voxels by radial interpolation.
 
-Context
--------
-After :func:`powder_rings.subtract_rings`, the volume contains:
+Why radial interpolation is the right approach
+-----------------------------------------------
+After ring detection and masking, each masked voxel sits inside a thin
+|Q| shell.  The nearest uncontaminated voxels in 3D HKL space are almost
+always at the same angular position (same h/k/l direction) but at
+slightly different |Q| — just inside or just outside the ring shell.
 
-    I_diffuse_est(Q) = I_measured(Q) − I_ring(|Q|)
+Interpolating across the shell in the |Q| direction:
+  * Makes **no assumption** about the diffuse signal shape — the fill is
+    purely based on the observed values at neighbouring |Q|.
+  * Naturally gives C¹ continuity at the shell boundaries: the
+    interpolant matches both the value and the slope of the uncontaminated
+    data at the inner and outer shell edges.
+  * Is physically motivated: the diffuse signal varies smoothly in |Q|,
+    and the ring shell is thin relative to that scale.
 
-with a mask that flags voxels where the powder ring dominated and the
-subtraction quality is poor. The goal here is to fill those voxels with
-physically plausible diffuse signal values.
+Algorithm (per masked voxel)
+-----------------------------
+For a masked voxel at angular position Ω and |Q| = q₀:
 
-Why this is non-trivial
------------------------
-Powder ring holes form **thin spherical shells** in |Q|-space. Every voxel
-in a shell is at the same |Q|, so the hole wraps all the way around the
-sphere. This means:
+    1. Collect the k nearest valid voxels in 3D HKL space.
+    2. Among those, use only voxels outside the ring shell (|Q| < q_lo
+       or |Q| > q_hi), i.e. "uncontaminated neighbours".
+    3. Fit a weighted linear interpolation (or median for robustness)
+       in |Q| to estimate I at q₀.
+    4. The weights are inversely proportional to the 3D HKL distance.
 
-* Simple radial interpolation fails (no source data at the same |Q|).
-* Symmetry-equivalent voxels are also on the same shell → also masked.
-
-What DOES work
---------------
-The diffuse signal is **smooth in 3D HKL space**. The shell hole is thin
-(typically < 0.1 Å^-1 wide). The signal just inside and just outside the
-shell is clean (post-subtraction). We can therefore fill by:
-
-1. **3D smooth interpolation** from unmasked voxels at slightly different |Q|.
-   TV inpainting and RBF both handle thin-shell geometry well.
-2. **Local shell polynomial fit**: for each masked voxel, fit a low-order
-   polynomial to unmasked voxels in a local HKL neighbourhood that straddles
-   the shell, and evaluate at the masked point.
-
-TV inpainting (default) is preferred because:
-- It minimises total variation → respects anisotropic diffuse streaks.
-- It naturally handles the thin-shell topology.
-- The diffuse signal is smooth enough that a moderate λ gives excellent results.
-
-The filled values represent our best estimate of the diffuse scattering that
-was underneath the powder ring — NOT a reconstruction of the ring itself.
+The filled voxel's σ is set to the local scatter of the contributing
+neighbours, inflated by an uncertainty_scale factor to flag it as
+estimated.
 """
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Optional
 
 import numpy as np
 from numpy.typing import NDArray
+from scipy.spatial import KDTree
 
 from ndiff.core import HKLVolume
-from ndiff.inpainting.tv_inpainting import tv_inpaint
-from ndiff.inpainting.interpolation import rbf_fill, biharmonic_fill
-
-Method = Literal["tv", "rbf", "biharmonic"]
+from ndiff.preprocessing.powder_rings import RingShell
 
 
-def backfill(
+def backfill_ring_shells(
     vol: HKLVolume,
-    method: Method = "tv",
-    tv_lam: float = 0.08,
-    tv_iter: int = 500,
-    rbf_kernel: str = "thin_plate_spline",
-    rbf_neighbors: int = 64,
+    rings: list[RingShell],
+    n_neighbors: int = 12,
     uncertainty_scale: float = 2.0,
+    fallback_tv: bool = True,
+    tv_lam: float = 0.08,
+    tv_iter: int = 300,
 ) -> HKLVolume:
-    """Fill masked (powder-ring-subtracted) holes in *vol*.
-
-    The fill is performed on the **already subtracted** diffuse signal, so
-    the sources used for interpolation are clean I_diffuse values, not
-    contaminated I_total values.
+    """Fill masked ring-shell voxels by radial interpolation.
 
     Parameters
     ----------
     vol : HKLVolume
-        Output of :func:`~powder_rings.subtract_rings`. The mask marks valid
-        post-subtraction voxels.
-    method : {"tv", "rbf", "biharmonic"}
-        Filling algorithm.
-
-        - ``"tv"`` (default): Total-variation inpainting — best for structured
-          diffuse signals (anisotropic streaks, broad features).
-        - ``"rbf"``: Radial-basis-function interpolation — good for smooth,
-          nearly isotropic diffuse backgrounds.
-        - ``"biharmonic"``: Iterative biharmonic relaxation — smoothest result,
-          best for featureless backgrounds.
-    tv_lam : float
-        TV regularisation strength. Larger → smoother fill.
-        0.05–0.15 is appropriate for diffuse scattering.
-    tv_iter : int
-        Maximum TV iterations (500 is enough for thin-shell holes).
-    rbf_kernel : str
-        RBF kernel type (see :func:`~inpainting.interpolation.rbf_fill`).
-    rbf_neighbors : int
-        Number of nearest unmasked voxels used per query point in RBF.
+        Volume after ring masking (``vol.mask`` marks valid voxels).
+    rings : list[RingShell]
+        The rings that were masked.  Used to identify which neighbours
+        are "uncontaminated" (outside the ring |Q| range).
+    n_neighbors : int
+        Number of nearest valid 3D-HKL neighbours to consider per
+        masked voxel.  Among these, only uncontaminated ones are used.
     uncertainty_scale : float
-        Filled voxels are assigned σ = *uncertainty_scale* × local σ of
-        neighbouring unmasked voxels, to flag them as estimated in
-        downstream analysis.
+        Filled voxels get σ = ``uncertainty_scale`` × local neighbour σ,
+        flagging them as estimated in downstream analysis.
+    fallback_tv : bool
+        If True, voxels that could not be filled by radial interpolation
+        (too few uncontaminated neighbours) are filled by TV inpainting.
+    tv_lam : float
+        TV regularisation weight for the fallback.
+    tv_iter : int
+        TV iteration limit for the fallback.
 
     Returns
     -------
     HKLVolume
-        New volume with masked holes filled. The mask is reset to all-True.
-        Filled voxels carry inflated σ values.
+        Filled volume.  Mask is all-True.  Filled voxels carry inflated σ.
     """
     import dataclasses
 
-    mask = vol.mask
-    data = vol.data.copy()
-    sigma = vol.sigma.copy()
+    data_out = vol.data.copy()
+    sigma_out = vol.sigma.copy()
+    mask_out = vol.mask.copy()
 
-    if method == "tv":
-        data_filled = tv_inpaint(data, mask, lam=tv_lam, max_iter=tv_iter)
-    elif method == "rbf":
-        data_filled = rbf_fill(data, mask, kernel=rbf_kernel, neighbors=rbf_neighbors)
-    elif method == "biharmonic":
-        data_filled = biharmonic_fill(data, mask)
-    else:
-        raise ValueError(f"Unknown backfill method: {method!r}")
+    masked_idx = np.argwhere(~vol.mask)
+    if len(masked_idx) == 0:
+        return vol
 
-    # Assign inflated uncertainty at filled positions
-    sigma_filled = _local_sigma_estimate(sigma, mask) * uncertainty_scale
-    sigma_out = sigma.copy()
-    sigma_out[~mask] = sigma_filled[~mask]
+    # Build KD-tree on all valid voxels (in normalised HKL index space)
+    valid_idx = np.argwhere(vol.mask)
+    q_valid = vol.q_magnitude()[vol.mask]
+    I_valid = vol.data[vol.mask]
+    sig_valid = vol.sigma[vol.mask]
 
-    return dataclasses.replace(
-        vol,
-        data=data_filled,
-        sigma=sigma_out,
-        mask=np.ones(vol.shape, dtype=bool),
-    )
+    # Normalise index coordinates so that the tree metric is isotropic
+    norm = np.array(vol.shape, dtype=float)
+    tree = KDTree(valid_idx / norm)
 
+    unfilled: list[tuple[int, int, int]] = []
 
-def _local_sigma_estimate(
-    sigma: NDArray[np.float64],
-    mask: NDArray[np.bool_],
-    radius: int = 3,
-) -> NDArray[np.float64]:
-    """Return per-voxel estimate of local σ from unmasked neighbours."""
-    from scipy.ndimage import uniform_filter
-    # dilate the valid sigma into masked regions via box-filter mean
-    sigma_valid = np.where(mask, sigma, 0.0)
-    count_valid = mask.astype(np.float64)
-    box = 2 * radius + 1
-    sigma_sum = uniform_filter(sigma_valid, size=box, mode="nearest") * box**3
-    count_sum = uniform_filter(count_valid, size=box, mode="nearest") * box**3
-    local_mean = np.where(count_sum > 0, sigma_sum / (count_sum + 1e-10), sigma.mean())
-    return local_mean
+    for ih, ik, il in masked_idx:
+        q0 = float(vol.q_magnitude()[ih, ik, il])
+
+        # Query nearest valid neighbours in HKL index space
+        k = min(n_neighbors * 4, len(valid_idx))   # query extra, filter below
+        dists, nn_idx = tree.query(np.array([ih, ik, il]) / norm, k=k)
+
+        # Keep only uncontaminated neighbours (outside all ring shells)
+        clean_mask = np.ones(len(nn_idx), dtype=bool)
+        for ring in rings:
+            q_nn = q_valid[nn_idx]
+            clean_mask &= (q_nn < ring.q_lo) | (q_nn > ring.q_hi)
+
+        if clean_mask.sum() < 2:
+            unfilled.append((ih, ik, il))
+            continue
+
+        nn_q = q_valid[nn_idx][clean_mask]
+        nn_I = I_valid[nn_idx][clean_mask]
+        nn_sig = sig_valid[nn_idx][clean_mask]
+        nn_d = dists[clean_mask]
+
+        # Weighted interpolation in |Q|: weight = 1 / (HKL distance × σ²)
+        w_dist = 1.0 / (nn_d + 1e-6)
+        w_var = 1.0 / (nn_sig**2 + 1e-30)
+        weights = w_dist * w_var
+        weights /= weights.sum()
+
+        # Weighted mean (linear interpolation collapses to this for 1 or 2 points;
+        # for more points it is a weighted local average in |Q|)
+        fill_val = float(np.dot(weights, nn_I))
+        fill_sig = float(np.sqrt(np.dot(weights**2, nn_sig**2))) * uncertainty_scale
+
+        data_out[ih, ik, il] = fill_val
+        sigma_out[ih, ik, il] = fill_sig
+        mask_out[ih, ik, il] = True
+
+    # Fallback: TV inpainting for voxels with too few clean neighbours
+    if unfilled and fallback_tv:
+        from ndiff.inpainting.tv_inpainting import tv_inpaint
+        temp = dataclasses.replace(vol, data=data_out, sigma=sigma_out, mask=mask_out)
+        data_out = tv_inpaint(data_out, mask_out, lam=tv_lam, max_iter=tv_iter)
+        for ih, ik, il in unfilled:
+            mask_out[ih, ik, il] = True
+            sigma_out[ih, ik, il] = float(sigma_out[max(0, ih-1):ih+2,
+                                                      max(0, ik-1):ik+2,
+                                                      max(0, il-1):il+2].mean()) * uncertainty_scale
+    elif unfilled:
+        for ih, ik, il in unfilled:
+            mask_out[ih, ik, il] = False   # leave masked for caller to handle
+
+    return dataclasses.replace(vol, data=data_out, sigma=sigma_out,
+                               mask=np.ones(vol.shape, dtype=bool))

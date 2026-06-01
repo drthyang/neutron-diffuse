@@ -1,31 +1,22 @@
-"""General powder-ring detection and removal from 3D HKL diffuse scattering data.
+"""Powder ring detection and masking in 1D |Q| space.
 
-Physical basis
---------------
-Powder rings arise from polycrystalline material in the beam path (sample
-environment, cryostat, capsule…). Their intensity is **isotropic in |Q|**:
+Design principles
+-----------------
+* Work entirely in |Q| (the ring is a feature of the radial intensity profile).
+* Make **no assumption** about the diffuse signal — only assume it varies
+  slowly in |Q| compared to a ring peak.
+* The baseline is estimated by a rolling median of the radial profile.
+  The median is robust to narrow peaks (ring contributions) as long as the
+  window is wider than the ring (~5–10× ring FWHM is typical).
+* Detection returns |Q| ranges; masking applies a soft (sigmoid-tapered)
+  boundary so that the transition into the masked shell is C¹.
+* Filling of the masked shell is handled separately in backfill.py.
 
-    I_measured(Q) = I_diffuse(Q) + I_ring(|Q|)
-
-where I_diffuse(Q) is direction-dependent (anisotropic) and I_ring depends
-only on the radial distance from the origin.
-
-This isotropic/anisotropic separation is the key to robust removal:
-
-    1. Detect ring positions from the radial intensity profile.
-    2. Fit the ring profile I_ring(|Q|) using a Gaussian model in |Q|.
-    3. Subtract the fitted I_ring from the entire volume.
-    4. Mask voxels where the powder ring dominates (poor post-subtraction SNR).
-    5. Fill masked voxels by smooth 3D interpolation of the diffuse signal.
-       Because the holes are thin shells in HKL space (not random),
-       interpolation across them is physically well-posed.
-
-Note on aluminum
-----------------
-Al (FCC Fm-3m, a ≈ 4.046 Å) is a common source of powder rings.
-Its peak positions can be pre-computed with :func:`al_ring_q_positions`.
-However, the detection algorithm is material-agnostic and works on any
-polycrystalline contaminant.
+Note on aluminium
+-----------------
+Al (FCC, Fm-3m, a ≈ 4.046 Å) is the most common source of powder rings.
+``al_ring_q_positions()`` returns its known peak |Q| values and can be used
+to cross-check or seed the detection, but the algorithm is material-agnostic.
 """
 
 from __future__ import annotations
@@ -35,54 +26,48 @@ from typing import Optional
 
 import numpy as np
 from numpy.typing import NDArray
+from scipy.ndimage import median_filter
 from scipy.signal import find_peaks
-from scipy.interpolate import UnivariateSpline
-from scipy.optimize import curve_fit
 
 from ndiff.core import HKLVolume
 
 
 # ---------------------------------------------------------------------------
-# Data classes
+# Data class
 # ---------------------------------------------------------------------------
 
 @dataclass
-class PowderRing:
-    """A single detected or user-specified powder ring.
+class RingShell:
+    """A detected or user-specified powder ring shell.
 
     Attributes
     ----------
     q_center : float
-        Ring position in Å^-1.
-    q_sigma : float
-        Gaussian σ of the ring profile in Å^-1 (relates to instrument resolution).
+        Ring peak position in Å^-1.
+    q_lo, q_hi : float
+        |Q| range to mask (where the ring excess is significant).
     amplitude : float
-        Fitted peak amplitude above the smooth background.
-    mask_halfwidth : float
-        Half-width used for masking (defaults to 3 × q_sigma after fitting).
-    label : str
-        Optional label (e.g. 'Al-111', 'unknown').
+        Peak excess above the rolling-median baseline (diagnostic).
     """
     q_center: float
-    q_sigma: float
+    q_lo: float
+    q_hi: float
     amplitude: float = 0.0
-    mask_halfwidth: float = field(init=False)
-    label: str = ""
 
-    def __post_init__(self) -> None:
-        self.mask_halfwidth = 3.0 * self.q_sigma
+    @property
+    def q_halfwidth(self) -> float:
+        return 0.5 * (self.q_hi - self.q_lo)
 
 
 # ---------------------------------------------------------------------------
-# Known material helpers (informational, not required by the algorithm)
+# Known material helper
 # ---------------------------------------------------------------------------
 
 def al_ring_q_positions(a: float = 4.0494, q_max: float = 10.0) -> list[float]:
     """Return |Q| positions (Å^-1) of Al powder rings up to *q_max*.
 
-    Al is FCC (Fm-3m): allowed when h,k,l are all-even or all-odd.
-    Useful for cross-checking automatically detected rings or for
-    providing initial guesses to the fitter.
+    Al is FCC (Fm-3m): allowed reflections have h, k, l all-even or all-odd.
+    Useful for cross-checking automatically detected rings.
     """
     seen: set[float] = set()
     q_vals: list[float] = []
@@ -105,298 +90,254 @@ def al_ring_q_positions(a: float = 4.0494, q_max: float = 10.0) -> list[float]:
 
 
 # ---------------------------------------------------------------------------
-# Detection
+# 1D radial profile
 # ---------------------------------------------------------------------------
 
-def detect_rings(
+def radial_profile(
     vol: HKLVolume,
-    n_bins: int = 400,
-    sigma_threshold: float = 5.0,
+    n_bins: int = 500,
     min_q: float = 0.3,
-    prominence: float = 0.1,
-) -> list[PowderRing]:
-    """Detect powder rings from the radial intensity profile of *vol*.
-
-    Algorithm
-    ---------
-    1. Bin all valid voxels by |Q| into *n_bins* shells.
-    2. Compute mean intensity per shell (sigma-clipped to suppress outliers).
-    3. Fit a smooth spline to the mean profile as a model of the diffuse
-       background (slow Q-variation).
-    4. Compute residuals = mean_per_shell − background_spline.
-    5. Detect peaks in residuals whose height exceeds *sigma_threshold* × rms.
-    6. Fit a Gaussian to each peak to determine centre, width, and amplitude.
+    stat: str = "mean",
+) -> tuple[NDArray, NDArray, NDArray]:
+    """Compute the 1D radial intensity profile.
 
     Parameters
     ----------
     vol : HKLVolume
-        Input volume (need not be pre-cleaned).
     n_bins : int
-        Number of radial shells for the radial profile.
-    sigma_threshold : float
-        Minimum peak height in units of residual rms to be flagged as a ring.
+        Number of |Q| bins.
     min_q : float
-        Ignore rings below this |Q| (Å^-1) — avoids the DC origin.
-    prominence : float
-        Minimum peak prominence (fraction of max residual) for scipy peak finder.
+        Ignore voxels below this |Q| (avoids origin artefacts).
+    stat : {"mean", "median"}
+        Per-bin statistic.  ``"mean"`` is faster; ``"median"`` is more
+        robust to remaining Bragg tails.
 
     Returns
     -------
-    list[PowderRing]
-        Detected rings, sorted by q_center.
+    q_centres : (n_bins,)
+    profile   : (n_bins,)  — NaN where a bin is empty
+    counts    : (n_bins,)  — number of valid voxels per bin
     """
     q_mag = vol.q_magnitude()
-    data = vol.data
+    valid = vol.mask & (q_mag >= min_q)
 
-    valid = vol.mask & (q_mag > min_q)
     q_flat = q_mag[valid]
-    I_flat = data[valid]
+    I_flat = vol.data[valid]
 
     q_edges = np.linspace(q_flat.min(), q_flat.max(), n_bins + 1)
     q_centres = 0.5 * (q_edges[:-1] + q_edges[1:])
-    bin_idx = np.digitize(q_flat, q_edges) - 1
-    bin_idx = np.clip(bin_idx, 0, n_bins - 1)
 
-    mean_per_bin = np.full(n_bins, np.nan)
+    bin_idx = np.clip(np.digitize(q_flat, q_edges) - 1, 0, n_bins - 1)
+
+    profile = np.full(n_bins, np.nan)
+    counts = np.zeros(n_bins, dtype=int)
+
     for b in range(n_bins):
-        vals = I_flat[bin_idx == b]
-        if len(vals) < 3:
+        mask_b = bin_idx == b
+        counts[b] = int(mask_b.sum())
+        if counts[b] < 3:
             continue
-        # sigma-clip: one pass
-        med, std = np.median(vals), np.std(vals)
-        clipped = vals[np.abs(vals - med) < 3 * std]
-        if len(clipped) > 0:
-            mean_per_bin[b] = clipped.mean()
+        vals = I_flat[mask_b]
+        if stat == "median":
+            profile[b] = float(np.median(vals))
+        else:
+            profile[b] = float(vals.mean())
 
-    good = np.isfinite(mean_per_bin)
-    if good.sum() < 10:
-        return []
-
-    # Fit smooth background spline to the mean radial profile
-    spl = UnivariateSpline(q_centres[good], mean_per_bin[good], k=5, s=good.sum() * 2)
-    background = spl(q_centres)
-    residuals = mean_per_bin - background
-    residuals[~good] = 0.0
-
-    rms = float(np.sqrt(np.mean(residuals[good] ** 2)))
-    if rms == 0:
-        return []
-
-    min_prominence = prominence * float(residuals[good].max()) if good.any() else 0.0
-    peaks_idx, props = find_peaks(
-        residuals,
-        height=sigma_threshold * rms,
-        prominence=min_prominence,
-    )
-
-    rings: list[PowderRing] = []
-    for idx in peaks_idx:
-        q0 = float(q_centres[idx])
-        if q0 < min_q:
-            continue
-        # Fit Gaussian to a window around the peak
-        win_mask = np.abs(q_centres - q0) < 5 * (q_centres[1] - q_centres[0])
-        if win_mask.sum() < 4:
-            continue
-        try:
-            popt, _ = curve_fit(
-                _gaussian, q_centres[win_mask], residuals[win_mask],
-                p0=[residuals[idx], q0, (q_centres[1] - q_centres[0])],
-                maxfev=2000,
-            )
-            amp, q_fit, sigma = float(popt[0]), float(popt[1]), abs(float(popt[2]))
-        except Exception:
-            amp, q_fit, sigma = float(residuals[idx]), q0, (q_centres[1] - q_centres[0])
-
-        rings.append(PowderRing(q_center=q_fit, q_sigma=sigma, amplitude=amp))
-
-    return sorted(rings, key=lambda r: r.q_center)
+    return q_centres, profile, counts
 
 
 # ---------------------------------------------------------------------------
-# Profile fitting & subtraction
+# Detection
 # ---------------------------------------------------------------------------
 
-def fit_ring_profiles(
+def detect_ring_shells(
     vol: HKLVolume,
-    rings: list[PowderRing],
-    n_bins: int = 600,
-) -> NDArray[np.float64]:
-    """Fit radial Gaussian profiles to rings and return I_ring(Q) per voxel.
+    n_bins: int = 500,
+    baseline_window: int = 50,
+    sigma_threshold: float = 5.0,
+    lower_threshold_fraction: float = 0.2,
+    min_q: float = 0.3,
+    min_peak_bins: int = 2,
+    merge_gap_bins: int = 3,
+    profile_stat: str = "mean",
+) -> tuple[list[RingShell], NDArray, NDArray, NDArray]:
+    """Detect powder ring shells from the 1D radial intensity profile.
 
-    For each ring, we refine the amplitude by fitting the radially averaged
-    signal in a window around the ring. The result is a 3D array with the
-    same shape as *vol*, containing the modelled ring contribution at each
-    voxel.
+    Algorithm
+    ---------
+    1. Compute the radial profile I(|Q|).
+    2. Estimate baseline B(|Q|) = rolling median with window ``baseline_window``.
+       The median is robust to ring peaks as long as the window is wider than
+       the ring.  No assumption is made about the diffuse signal shape.
+    3. Residual R = I − B.
+    4. Noise level σ = MAD of R over ring-free bins.
+    5. Detect bins where R > ``sigma_threshold`` × σ.
+    6. Cluster contiguous detected bins → ring shells.
+       The outer edge of each shell is where R falls below
+       ``lower_threshold_fraction`` × peak_residual.
+
+    Parameters
+    ----------
+    baseline_window : int
+        Rolling-median window size in bins.  Should be >> ring width in bins.
+        For Al rings (~0.05–0.15 Å^-1 wide) and n_bins = 500 over 10 Å^-1
+        range (bin size ≈ 0.02 Å^-1), a window of 30–60 bins is appropriate.
+    sigma_threshold : float
+        Detection threshold in units of residual noise.
+    lower_threshold_fraction : float
+        Ring edge is where residual drops below this fraction of the peak
+        residual.  Controls how wide the masked shell is.
+    merge_gap_bins : int
+        Detected clusters separated by fewer than this many bins are merged.
+
+    Returns
+    -------
+    rings : list[RingShell]
+    q_centres, profile, baseline : 1D arrays for diagnostics / plotting
+    """
+    q_centres, profile, counts = radial_profile(vol, n_bins=n_bins, min_q=min_q, stat=profile_stat)
+
+    good = np.isfinite(profile)
+    if good.sum() < baseline_window:
+        return [], q_centres, profile, np.full_like(profile, np.nan)
+
+    # Rolling-median baseline — handles gaps with a fill-forward pass first
+    profile_filled = _fill_nans(profile)
+    baseline = median_filter(profile_filled, size=baseline_window, mode="nearest")
+    baseline = np.where(good, baseline, np.nan)
+
+    residual = np.where(good, profile - baseline, 0.0)
+
+    # Noise: MAD of residual (ring-free bins dominate the MAD)
+    noise = float(np.median(np.abs(residual[good]))) + 1e-12
+
+    # Detect bins above threshold
+    above_high = residual > sigma_threshold * noise
+
+    # Cluster contiguous detections, with gap merging
+    labels = _cluster_with_merge(above_high, merge_gap_bins)
+
+    rings: list[RingShell] = []
+    for lbl in np.unique(labels):
+        if lbl == 0:
+            continue
+        cluster_bins = np.where(labels == lbl)[0]
+        if len(cluster_bins) < min_peak_bins:
+            continue
+
+        peak_bin = cluster_bins[np.argmax(residual[cluster_bins])]
+        peak_amp = float(residual[peak_bin])
+        lower = lower_threshold_fraction * peak_amp
+
+        # Expand shell boundary outward until residual drops below lower threshold
+        lo = int(cluster_bins[0])
+        while lo > 0 and residual[lo - 1] > lower:
+            lo -= 1
+
+        hi = int(cluster_bins[-1])
+        while hi < n_bins - 1 and residual[hi + 1] > lower:
+            hi += 1
+
+        rings.append(RingShell(
+            q_center=float(q_centres[peak_bin]),
+            q_lo=float(q_centres[lo]),
+            q_hi=float(q_centres[hi]),
+            amplitude=peak_amp,
+        ))
+
+    return rings, q_centres, profile, baseline
+
+
+# ---------------------------------------------------------------------------
+# Masking
+# ---------------------------------------------------------------------------
+
+def mask_ring_shells(
+    vol: HKLVolume,
+    rings: list[RingShell],
+    taper_width: float = 0.005,
+) -> NDArray[np.bool_]:
+    """Build a keep-mask (True = valid) for all detected ring shells.
+
+    A sigmoid taper is applied at each shell boundary so that the mask
+    transitions smoothly (C¹) rather than as a hard step.  This ensures
+    the boundary between masked and unmasked voxels does not introduce a
+    discontinuity that would appear as ringing in the 3D-ΔPDF.
 
     Parameters
     ----------
     vol : HKLVolume
-        Source volume.
-    rings : list[PowderRing]
-        Rings to model (from :func:`detect_rings` or user-provided).
-    n_bins : int
-        Resolution of radial binning for amplitude refinement.
+    rings : list[RingShell]
+    taper_width : float
+        Controls the steepness of the mask edge in Å^-1.
+        Smaller → sharper edge.  ~0.005–0.02 Å^-1 is typical.
 
     Returns
     -------
-    I_ring : NDArray, shape vol.shape
-        Per-voxel modelled powder-ring contribution.
+    keep : bool array, shape = vol.shape
     """
     q_mag = vol.q_magnitude()
-    I_ring = np.zeros(vol.shape, dtype=np.float64)
+    keep = vol.mask.copy()
 
     for ring in rings:
-        # Refine amplitude from data in the peak window
-        win = np.abs(q_mag - ring.q_center) < ring.mask_halfwidth
-        if win.any() and vol.mask[win].any():
-            I_at_peak = vol.data[win & vol.mask]
-            q_at_peak = q_mag[win & vol.mask]
-            try:
-                popt, _ = curve_fit(
-                    _gaussian, q_at_peak, I_at_peak,
-                    p0=[ring.amplitude, ring.q_center, ring.q_sigma],
-                    maxfev=3000,
-                )
-                amp, q0, sig = float(popt[0]), float(popt[1]), abs(float(popt[2]))
-            except Exception:
-                amp, q0, sig = ring.amplitude, ring.q_center, ring.q_sigma
-        else:
-            amp, q0, sig = ring.amplitude, ring.q_center, ring.q_sigma
+        q_lo, q_hi = ring.q_lo, ring.q_hi
+        q_mid = 0.5 * (q_lo + q_hi)
 
-        I_ring += _gaussian(q_mag, amp, q0, sig)
+        # Signed distance from the shell boundary (positive = outside shell)
+        # Use the nearer edge for each voxel
+        dist_lo = q_mag - q_lo        # positive outside (q < q_lo side)
+        dist_hi = q_hi - q_mag        # positive outside (q > q_hi side)
+        # Inside the shell: both dist_lo < 0 or dist_hi < 0
+        # Outside the shell: the relevant dist is positive
+        signed_dist = np.where(q_mag < q_mid, -dist_lo, -dist_hi)
+        # signed_dist < 0 → inside shell (to be masked)
 
-    return I_ring
+        weight = _sigmoid(signed_dist, taper_width)
+        keep &= weight > 0.5
 
-
-def subtract_rings(
-    vol: HKLVolume,
-    rings: list[PowderRing],
-    snr_mask_threshold: float = 3.0,
-    taper_width: float = 0.01,
-) -> tuple[HKLVolume, NDArray[np.float64]]:
-    """Subtract fitted ring profiles from *vol* and mask low-SNR residuals.
-
-    Steps
-    -----
-    1. Fit per-ring Gaussian profiles → I_ring(Q) array.
-    2. Subtract: I_diffuse_est = I_total − I_ring.
-    3. Compute post-subtraction uncertainty:
-       σ_post = sqrt(σ_data² + σ_ring²)
-    4. Mask voxels where I_ring / σ_data > *snr_mask_threshold* (ring dominates).
-    5. Apply soft sigmoid taper at mask boundary.
-
-    The masked voxels should be filled by :func:`backfill` using the
-    surrounding *subtracted* signal — not by the raw I_total values.
-
-    Parameters
-    ----------
-    vol : HKLVolume
-        Raw input volume.
-    rings : list[PowderRing]
-        Rings to remove.
-    snr_mask_threshold : float
-        Voxels where I_ring / σ_data exceeds this are masked.
-    taper_width : float
-        Sigmoid taper half-width in Å^-1 at mask boundaries.
-
-    Returns
-    -------
-    vol_subtracted : HKLVolume
-        New volume with ring profiles subtracted; mask marks high-SNR voxels.
-    I_ring : NDArray
-        The modelled ring contribution that was subtracted.
-    """
-    import dataclasses
-
-    I_ring = fit_ring_profiles(vol, rings)
-    data_sub = vol.data - I_ring
-
-    # Propagate uncertainty: σ_ring estimated as 10% of fitted amplitude (model error)
-    sigma_ring = 0.1 * np.abs(I_ring)
-    sigma_post = np.sqrt(vol.sigma**2 + sigma_ring**2)
-
-    # Mask where ring dominates: I_ring / σ_data > threshold
-    # Use soft sigmoid so mask edges don't create sharp discontinuities
-    q_mag = vol.q_magnitude()
-    keep = np.ones(vol.shape, dtype=bool)
-    for ring in rings:
-        dq = np.abs(q_mag - ring.q_center)
-        if taper_width > 0:
-            # soft mask: weight = sigmoid centred at mask_halfwidth
-            weight = 1.0 / (1.0 + np.exp(-(dq - ring.mask_halfwidth) / taper_width))
-            keep &= weight > 0.5
-        else:
-            keep &= dq > ring.mask_halfwidth
-
-    new_mask = vol.mask & keep
-    vol_sub = dataclasses.replace(vol, data=data_sub, sigma=sigma_post, mask=new_mask)
-    return vol_sub, I_ring
-
-
-# ---------------------------------------------------------------------------
-# Convenience entry point
-# ---------------------------------------------------------------------------
-
-class PowderRingRemover:
-    """High-level interface: detect → subtract → mask in one call.
-
-    Parameters
-    ----------
-    rings : list[PowderRing] or None
-        User-specified rings. If None, :func:`detect_rings` is called.
-    detect_kwargs : dict
-        Keyword arguments forwarded to :func:`detect_rings`.
-    snr_mask_threshold : float
-        Passed to :func:`subtract_rings`.
-    taper_width : float
-        Passed to :func:`subtract_rings`.
-    """
-
-    def __init__(
-        self,
-        rings: Optional[list[PowderRing]] = None,
-        detect_kwargs: Optional[dict] = None,
-        snr_mask_threshold: float = 3.0,
-        taper_width: float = 0.01,
-    ) -> None:
-        self.rings = rings
-        self.detect_kwargs = detect_kwargs or {}
-        self.snr_mask_threshold = snr_mask_threshold
-        self.taper_width = taper_width
-        self._detected_rings: list[PowderRing] = []
-
-    def remove(self, vol: HKLVolume) -> tuple[HKLVolume, list[PowderRing], NDArray]:
-        """Detect (if needed), subtract, and mask powder rings.
-
-        Returns
-        -------
-        vol_sub : HKLVolume
-            Subtracted volume with mask indicating usable voxels.
-        rings : list[PowderRing]
-            Rings that were detected and removed.
-        I_ring : NDArray
-            Modelled ring contribution (for diagnostics).
-        """
-        rings = self.rings if self.rings is not None else detect_rings(vol, **self.detect_kwargs)
-        self._detected_rings = rings
-        if not rings:
-            return vol, rings, np.zeros(vol.shape)
-        vol_sub, I_ring = subtract_rings(
-            vol, rings,
-            snr_mask_threshold=self.snr_mask_threshold,
-            taper_width=self.taper_width,
-        )
-        return vol_sub, rings, I_ring
-
-    @property
-    def detected_rings(self) -> list[PowderRing]:
-        return self._detected_rings
+    return keep
 
 
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
 
-def _gaussian(x: NDArray, amp: float, x0: float, sigma: float) -> NDArray:
-    return amp * np.exp(-0.5 * ((x - x0) / (sigma + 1e-12)) ** 2)
+def _sigmoid(x: NDArray, width: float) -> NDArray:
+    """Smooth step: 0 at x << 0, 1 at x >> 0, transition width ≈ width."""
+    return 1.0 / (1.0 + np.exp(-x / (width + 1e-12)))
+
+
+def _fill_nans(arr: NDArray) -> NDArray:
+    """Forward/backward fill of NaN values."""
+    out = arr.copy()
+    idx = np.arange(len(out))
+    good = np.isfinite(out)
+    if not good.any():
+        return out
+    out[~good] = np.interp(idx[~good], idx[good], out[good])
+    return out
+
+
+def _cluster_with_merge(mask: NDArray[np.bool_], gap: int) -> NDArray[np.int32]:
+    """Label contiguous True-runs in *mask*, merging runs separated by <= gap."""
+    labels = np.zeros(len(mask), dtype=np.int32)
+    lbl = 0
+    i = 0
+    while i < len(mask):
+        if mask[i]:
+            lbl += 1
+            j = i
+            while j < len(mask):
+                if mask[j]:
+                    labels[j] = lbl
+                    j += 1
+                elif j + gap < len(mask) and mask[j + gap:j + gap + 1].any():
+                    # gap region — merge
+                    labels[j] = lbl
+                    j += 1
+                else:
+                    break
+            i = j
+        else:
+            i += 1
+    return labels
