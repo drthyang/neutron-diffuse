@@ -1,13 +1,35 @@
 # Hand-off Notes — neutron-diffuse
 
-**Date:** 2026-06-01  
+**Date:** 2026-06-02  
 **Repo:** `neutron-diffuse`  
-**Status:** Reader and visualization complete; real data loads and plots correctly.
-Next: writers.
+**Status:** Reader and visualization complete; real data loads and plots correctly
+with consistent physics-convention |Q|. Next: writers.
 
 ---
 
 ## Progress log
+
+### 2026-06-02 — UB convention fixes (real-data |Q| correctness)
+Two latent correctness bugs surfaced while presenting the real files; both fixed
+in `io/mantid_nxs.py`:
+- **2π convention.** Mantid's stored `orientation_matrix` is *crystallographic*
+  (|b*| = 1/d, no 2π), but ndiff uses the *physics* convention everywhere
+  (`ub_from_lattice` returns 2π·B; `al_ring_q_positions` uses Q = 2π√…/a).
+  `_read_ub_matrix` now multiplies the stored matrix by 2π. Verified on real
+  data: background ring peaks now align exactly with the Al FCC peak positions
+  (low-Q peak at 2.69 Å⁻¹ = Al(111)); data |Q|max went 1.76 → 11.08 Å⁻¹.
+- **Missing background UB.** The `_bkg.nxs` file has no `experiment0` group, so
+  the reader fell back to an identity UB (bogus |Q|max 32.3). `load_mantid_nxs`
+  now takes an optional `ub_matrix=` override; pass the paired data volume's UB
+  so empty-can scans share a consistent |Q| scale. New `_resolve_ub()` helper
+  picks: explicit override > file value > identity fallback.
+  Data and background share identical masks (same geometry), confirming this
+  is the right UB to inherit.
+
+Result: data and background radial profiles now ride on one |Q| axis; background
+ring peaks are ~4× the data. The provided `_sub_bkg.nxs` (experiment's own
+data−bkg) is over-subtracted (negative ring troughs) — expected without scaling;
+ndiff's `EmptySubtractor` estimates the scale `s` automatically.
 
 ### 2026-06-01 — Mantid NeXus reader
 Real data files confirmed: Mantid MDHistoWorkspace NeXus format (`.nxs`),
@@ -106,6 +128,10 @@ src/ndiff/
 │                                  Reads MDHistoWorkspace: signal, σ, mask,
 │                                  bin-edge axes, UB matrix.  Permutes file
 │                                  (D2,D1,D0) order to canonical (H,K,L).
+│                                  UB scaled ×2π (file is crystallographic,
+│                                  ndiff is physics convention). Optional
+│                                  ub_matrix= override for files lacking one
+│                                  (e.g. background/empty-can scans).
 │
 ├── preprocessing/
 │   ├── empty_subtraction.py       EmptySubtractor
