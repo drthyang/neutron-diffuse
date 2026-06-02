@@ -164,10 +164,36 @@ class PatchedRingModel:
         φ = atan2(k_Q, h_Q);  ``'h0l'`` uses φ = atan2(l_Q, h_Q);
         ``'0kl'`` uses φ = atan2(l_Q, k_Q).
     n_radial_bins : int
-        Number of |Q| bins in each patch for the Gaussian fitting.
+        Number of |Q| bins used by the auto ring-detection pass (when no
+        ``ring_hints`` are given).
     snr_mask_threshold : float
         After subtraction, mask voxels where I_ring / σ_data exceeds
         this value.
+    ring_shell_halfwidth : float
+        Half-width (Å⁻¹) of the |Q| shell collected around each ring centre
+        for the per-patch intensity estimate.
+    ring_percentile_range : tuple[float, float]
+        Intensity percentile window kept within each ring's shell when
+        estimating its intensity and texture (default the 20th–80th
+        percentile).  Trimming the **low** tail rejects detector
+        gaps/shadows; trimming the **high** tail rejects Bragg peaks; the
+        surviving central band is averaged to give a clean ring intensity
+        per azimuthal patch — no Bragg punching required first.
+    ring_flank_halfwidth : float
+        Outer half-width (Å⁻¹) of the flanking |Q| annulus used to estimate
+        the local diffuse **baseline** under each ring.  Voxels with
+        ``ring_shell_halfwidth < |q − qᵢ| ≤ ring_flank_halfwidth`` (just
+        inside and outside the shell) are trimmed the same way and averaged;
+        the ring amplitude is the shell level **minus** this baseline, so the
+        diffuse is lowered to the baseline rather than removed entirely.
+    flatness_cv : float or None
+        Flatness gate.  A ring is only subtracted in patches where its
+        trimmed-shell coefficient of variation ``std / level`` is at or below
+        this value — i.e. the shell is a *clean, flat* ring sitting on the
+        baseline (your "small std" criterion).  Where the shell is rough
+        (Bragg-overlapping → large std), no ring is subtracted and the voxels
+        are left for the Bragg punch.  ``None`` disables the gate (always
+        subtract the baseline-referenced excess).
     """
 
     def __init__(
@@ -178,6 +204,10 @@ class PatchedRingModel:
         plane: str = "hk0",
         n_radial_bins: int = 200,
         snr_mask_threshold: float = 3.0,
+        ring_shell_halfwidth: float = 0.12,
+        ring_percentile_range: tuple[float, float] = (20.0, 80.0),
+        ring_flank_halfwidth: float = 0.24,
+        flatness_cv: Optional[float] = None,
     ) -> None:
         self.n_patches = n_patches
         self.overlap_frac = overlap_frac
@@ -185,6 +215,10 @@ class PatchedRingModel:
         self.plane = plane
         self.n_radial_bins = n_radial_bins
         self.snr_mask_threshold = snr_mask_threshold
+        self.ring_shell_halfwidth = ring_shell_halfwidth
+        self.ring_percentile_range = ring_percentile_range
+        self.ring_flank_halfwidth = ring_flank_halfwidth
+        self.flatness_cv = flatness_cv
         self._model: Optional[FittedRingModel] = None
 
     # ------------------------------------------------------------------
@@ -358,13 +392,9 @@ class PatchedRingModel:
 
             q_p = q_mag[in_patch]
             I_p = vol.data[in_patch]
-            dphi_p = dphi[in_patch]
 
-            # Hann weight within patch
-            w_p = np.cos(0.5 * np.pi * dphi_p / half_w) ** 2
-
-            # Bin into radial profile (weighted)
-            amps = self._fit_gaussians_in_patch(q_p, I_p, w_p, ring_params, q_range)
+            # Per-ring intensity from the interquantile-trimmed shell voxels.
+            amps = self._fit_shell_amplitudes(q_p, I_p, ring_params)
             if amps is not None:
                 A_list.append(amps)
                 centers_list.append(float(phi_c))
@@ -387,10 +417,10 @@ class PatchedRingModel:
         from ndiff.preprocessing.powder_rings import detect_ring_shells, RingShell
 
         if ring_hints is not None:
-            # Use provided positions; estimate σ from bin spacing
-            q_all = q_mag[vol.mask]
-            q_span = q_all.max() - q_all.min()
-            default_sigma = q_span / (self.n_radial_bins * 4)
+            # Use provided positions; the radial profile shape used for
+            # subtraction is a Gaussian whose σ spans the collection shell
+            # (σ ≈ half-width / 2, so the shell is ~±2σ).
+            default_sigma = self.ring_shell_halfwidth / 2.0
             return [RingParams(q_center=q0, q_sigma=default_sigma) for q0 in ring_hints]
 
         # Auto-detect
@@ -403,52 +433,63 @@ class PatchedRingModel:
         return [RingParams(q_center=r.q_center, q_sigma=r.q_halfwidth / 3.0)
                 for r in rings_auto]
 
-    def _fit_gaussians_in_patch(
+    def _trimmed_mean(self, vals: NDArray) -> tuple[float, float]:
+        """Mean and std of the central ``ring_percentile_range`` band of *vals*."""
+        lo_p, hi_p = self.ring_percentile_range
+        p_lo, p_hi = np.percentile(vals, (lo_p, hi_p))
+        keep = vals[(vals >= p_lo) & (vals <= p_hi)]
+        if keep.size == 0:
+            return float(np.median(vals)), float(vals.std())
+        return float(keep.mean()), float(keep.std())
+
+    def _fit_shell_amplitudes(
         self,
         q: NDArray,
         I: NDArray,
-        weights: NDArray,
         ring_params: list[RingParams],
-        q_range: tuple[float, float],
     ) -> Optional[NDArray]:
-        """Fit Gaussian amplitudes in a single angular patch.
+        """Per-ring amplitude in one azimuthal patch, referenced to a baseline.
 
-        Ring positions (qᵢ) and widths (σᵢ) are fixed from the global fit;
-        only amplitudes Aᵢ are free.  Returns amplitude array or None on
-        failure.
+        For each ring:
+
+        1. **Shell** voxels (``|q − qᵢ| ≤ ring_shell_halfwidth``) give the ring
+           *level* — the trimmed (``ring_percentile_range``) mean, which drops
+           the low tail (detector gaps/shadows) and the high tail (Bragg peaks).
+        2. **Flank** voxels (``ring_shell_halfwidth < |q − qᵢ| ≤
+           ring_flank_halfwidth``) give the local diffuse *baseline*, trimmed
+           the same way.
+        3. The amplitude is ``max(0, level − baseline)`` — the ring is lowered
+           *to* the baseline, so the underlying diffuse is preserved.
+
+        Flatness gate (``flatness_cv``): where the trimmed shell is rough
+        (``std / level`` above the gate → Bragg-overlapping, not a clean ring),
+        the amplitude is set to 0 and those voxels are left for the Bragg punch.
+
+        Returns an ``(n_rings,)`` amplitude array, or ``None`` if no ring is
+        usable in this patch.
         """
-        # Weighted binning
-        n_bins = max(30, self.n_radial_bins // 4)
-        q_edges = np.linspace(q_range[0], q_range[1], n_bins + 1)
-        q_c = 0.5 * (q_edges[:-1] + q_edges[1:])
-        bin_idx = np.clip(np.digitize(q, q_edges) - 1, 0, n_bins - 1)
+        amps = np.full(len(ring_params), np.nan, dtype=float)
 
-        profile = np.zeros(n_bins)
-        w_sum = np.zeros(n_bins)
-        for b in range(n_bins):
-            m = bin_idx == b
-            if m.sum() > 0:
-                profile[b] = np.average(I[m], weights=weights[m])
-                w_sum[b] = weights[m].sum()
+        for i, r in enumerate(ring_params):
+            dq = np.abs(q - r.q_center)
+            shell = I[dq <= self.ring_shell_halfwidth]
+            if shell.size < 5:
+                continue
 
-        valid = w_sum > 0
-        if valid.sum() < len(ring_params) * 3:
+            level, std = self._trimmed_mean(shell)
+
+            # flatness gate: only subtract clean (flat) ring shells
+            if self.flatness_cv is not None and level > 0 and (std / level) > self.flatness_cv:
+                amps[i] = 0.0
+                continue
+
+            flank = I[(dq > self.ring_shell_halfwidth) & (dq <= self.ring_flank_halfwidth)]
+            baseline = self._trimmed_mean(flank)[0] if flank.size >= 5 else level
+            amps[i] = max(0.0, level - baseline)
+
+        if np.all(np.isnan(amps)):
             return None
-
-        # Linear least-squares: profile ≈ Σᵢ Aᵢ × G(q_c - qᵢ, σᵢ)
-        # Build design matrix
-        G = np.column_stack([
-            _gaussian(q_c[valid], 1.0, r.q_center, r.q_sigma)
-            for r in ring_params
-        ])
-        # Non-negative least squares
-        try:
-            from scipy.optimize import nnls
-            amps, _ = nnls(G, profile[valid])
-        except Exception:
-            return None
-
-        return amps
+        return np.nan_to_num(amps, nan=0.0)
 
 
 # ---------------------------------------------------------------------------
