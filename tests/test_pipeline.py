@@ -16,7 +16,7 @@ from ndiff.preprocessing import (
     backfill_ring_shells,
     RingShell,
 )
-from ndiff.preprocessing.powder_rings import _gaussian
+from ndiff.preprocessing.ring_model import _gaussian
 from ndiff.analysis import bragg_mask, backfill_bragg, compute_delta_pdf
 
 
