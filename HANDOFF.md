@@ -2,8 +2,8 @@
 
 **Date:** 2026-06-01  
 **Repo:** `neutron-diffuse`  
-**Status:** Mantid NeXus reader complete; real data loaded successfully.
-Next: data presentation / visualisation, then writers.
+**Status:** Reader and visualization complete; real data loads and plots correctly.
+Next: writers.
 
 ---
 
@@ -27,7 +27,21 @@ reader falls back to identity matrix. Background counts peak at ~11,740
 vs data ~283 — scale factor `s` in `EmptySubtractor` will be well below 1
 (estimated automatically from ring-dominated |Q| shells).
 
-Next: data presentation / visualisation, then writers.
+### 2026-06-01 — Visualization module
+New package `src/ndiff/visualization/` — four modules, each single-purpose:
+- `slices.py`: `extract_slice()` (returns `SliceData` NamedTuple),
+  `plot_slice()` — 2D HKL plane views with percentile colour clipping,
+  optional log scale, half-bin extent, grey masked regions.
+  Accepts plane as `'kl'`/`'hl'`/`'hk'` or Mantid aliases `'0kl'`/`'h0l'`/`'hk0'`.
+- `profiles.py`: `plot_radial_profile()` (wraps existing `radial_profile()`
+  from `powder_rings.py`), `plot_azimuthal_map()` — φ vs I at a |Q| shell
+  (useful for inspecting ring azimuthal texture before/after PatchedRingModel).
+- `overview.py`: `plot_overview()` — 2×2 diagnostic figure: K-L, H-L, H-K
+  slices + radial profile. Confirmed on real data: ring clearly visible in
+  the K-L plane; multiple ring peaks visible in the radial profile.
+- `__init__.py`: re-exports all six public names.
+
+Next: writers.
 
 ### 2026-06-01 — Docs/packaging cleanup
 - Corrected the algorithm docs that wrongly described the powder ring as
@@ -44,9 +58,9 @@ Next: data presentation / visualisation, then writers.
 
 ### Next phase (planned)
 1. ~~**Readers/loaders**~~ ✓ done (Mantid MDHistoWorkspace `.nxs`)
-2. **Data presentation / visualisation** — slice views, radial profiles,
-   azimuthal maps to inspect ring structure and validate the pipeline.
-3. **Writers** — save processed volumes back to `.nxs` or ndiff HDF5.
+2. ~~**Data presentation / visualisation**~~ ✓ done (`ndiff.visualization`)
+3. **Writers** — save processed volumes back to Mantid-compatible `.nxs`
+   or ndiff HDF5.
 Design guidance: keep components separated, in small focused pieces, so each
 stage is independently swappable.
 
@@ -135,6 +149,16 @@ src/ndiff/
 │   ├── tv_inpainting.py           tv_inpaint()  Chambolle-Pock primal-dual
 │   ├── interpolation.py           rbf_fill(), biharmonic_fill()
 │   └── pipeline.py                fill()  — orchestrates symmetry→TV→RBF
+│
+├── visualization/
+│   ├── slices.py                  extract_slice() → SliceData NamedTuple
+│   │                              plot_slice() — 2D HKL plane view
+│   │                              Planes: 'kl','hl','hk' (or '0kl','h0l','hk0')
+│   │                              Percentile colour clip, log scale, grey mask.
+│   ├── profiles.py                plot_radial_profile() — |Q| vs I
+│   │                              plot_azimuthal_map()  — φ vs I at a |Q| shell
+│   └── overview.py                plot_overview() — 2×2 diagnostic figure
+│                                  (K-L, H-L, H-K slices + radial profile)
 │
 └── utils/reciprocal_space.py      ub_from_lattice(), d_spacing(), q_to_hkl()
 ```

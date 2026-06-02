@@ -19,7 +19,7 @@ from ndiff._version import __version__
 from ndiff.core import HKLVolume
 from ndiff.io.hkl_reader import load, save
 from ndiff.io.mantid_nxs import is_mantid_nxs, load_mantid_nxs
-from ndiff import preprocessing, analysis, inpainting, utils
+from ndiff import preprocessing, analysis, inpainting, utils, visualization
 
 __all__ = [
     "__version__",
@@ -32,4 +32,5 @@ __all__ = [
     "analysis",
     "inpainting",
     "utils",
+    "visualization",
 ]

@@ -32,6 +32,8 @@ htmlcov/
 *.nxspe
 data/raw/
 data/processed/
+data/*.png
+data/*.pdf
 !data/.gitkeep
 
 # macOS
