@@ -91,9 +91,14 @@ def backfill_ring_shells(
     if len(masked_idx) == 0:
         return vol
 
+    # |Q| is needed both per masked voxel and per neighbour; compute it ONCE
+    # (q_magnitude rebuilds a full meshgrid + matmul + norm, so calling it per
+    # voxel inside the loop dominates the runtime on real-size volumes).
+    q_all = vol.q_magnitude()
+
     # Build KD-tree on all valid voxels (in normalised HKL index space)
     valid_idx = np.argwhere(vol.mask)
-    q_valid = vol.q_magnitude()[vol.mask]
+    q_valid = q_all[vol.mask]
     I_valid = vol.data[vol.mask]
     sig_valid = vol.sigma[vol.mask]
 
@@ -101,57 +106,66 @@ def backfill_ring_shells(
     norm = np.array(vol.shape, dtype=float)
     tree = KDTree(valid_idx / norm)
 
-    unfilled: list[tuple[int, int, int]] = []
+    k = min(n_neighbors * 4, len(valid_idx))   # query extra, filter below
+    ring_lo = np.array([r.q_lo for r in rings], dtype=float)
+    ring_hi = np.array([r.q_hi for r in rings], dtype=float)
 
-    for ih, ik, il in masked_idx:
-        q0 = float(vol.q_magnitude()[ih, ik, il])
+    # Vectorised, chunked nearest-neighbour fill.  Querying/weighting one voxel
+    # at a time in Python is the second bottleneck; batching the query (and
+    # letting SciPy use all cores) and doing the weighting with array ops is
+    # orders of magnitude faster.  Chunking bounds peak memory of the (chunk, k)
+    # neighbour arrays.
+    chunk = 200_000
+    fill_ok = np.zeros(len(masked_idx), dtype=bool)
 
-        # Query nearest valid neighbours in HKL index space
-        k = min(n_neighbors * 4, len(valid_idx))   # query extra, filter below
-        dists, nn_idx = tree.query(np.array([ih, ik, il]) / norm, k=k)
+    for start in range(0, len(masked_idx), chunk):
+        block = masked_idx[start:start + chunk]
+        dists, nn = tree.query(block / norm, k=k, workers=-1)   # (c, k)
+        if k == 1:                                              # SciPy drops the k axis
+            dists = dists[:, None]
+            nn = nn[:, None]
 
-        # Keep only uncontaminated neighbours (outside all ring shells)
-        clean_mask = np.ones(len(nn_idx), dtype=bool)
-        for ring in rings:
-            q_nn = q_valid[nn_idx]
-            clean_mask &= (q_nn < ring.q_lo) | (q_nn > ring.q_hi)
+        q_nn = q_valid[nn]            # (c, k)
+        I_nn = I_valid[nn]
+        sig_nn = sig_valid[nn]
 
-        if clean_mask.sum() < 2:
-            unfilled.append((ih, ik, il))
-            continue
+        # Neighbours inside any ring shell are contaminated; keep the rest.
+        contaminated = np.zeros_like(q_nn, dtype=bool)
+        for lo, hi in zip(ring_lo, ring_hi):
+            contaminated |= (q_nn >= lo) & (q_nn <= hi)
+        clean = ~contaminated
+        enough = clean.sum(axis=1) >= 2     # (c,)
 
-        nn_q = q_valid[nn_idx][clean_mask]
-        nn_I = I_valid[nn_idx][clean_mask]
-        nn_sig = sig_valid[nn_idx][clean_mask]
-        nn_d = dists[clean_mask]
+        # Weighted interpolation in |Q|: weight = 1 / (HKL distance × σ²),
+        # restricted to clean neighbours.
+        weights = np.where(clean, 1.0 / (dists + 1e-6) / (sig_nn**2 + 1e-30), 0.0)
+        wsum = weights.sum(axis=1, keepdims=True)
+        wnorm = weights / np.where(wsum > 0, wsum, 1.0)
 
-        # Weighted interpolation in |Q|: weight = 1 / (HKL distance × σ²)
-        w_dist = 1.0 / (nn_d + 1e-6)
-        w_var = 1.0 / (nn_sig**2 + 1e-30)
-        weights = w_dist * w_var
-        weights /= weights.sum()
+        vals = (wnorm * I_nn).sum(axis=1)
+        sigs = np.sqrt((wnorm**2 * sig_nn**2).sum(axis=1)) * uncertainty_scale
 
-        # Weighted mean (linear interpolation collapses to this for 1 or 2 points;
-        # for more points it is a weighted local average in |Q|)
-        fill_val = float(np.dot(weights, nn_I))
-        fill_sig = float(np.sqrt(np.dot(weights**2, nn_sig**2))) * uncertainty_scale
+        rows = block[enough]
+        data_out[rows[:, 0], rows[:, 1], rows[:, 2]] = vals[enough]
+        sigma_out[rows[:, 0], rows[:, 1], rows[:, 2]] = sigs[enough]
+        mask_out[rows[:, 0], rows[:, 1], rows[:, 2]] = True
+        fill_ok[start:start + len(block)] = enough
 
-        data_out[ih, ik, il] = fill_val
-        sigma_out[ih, ik, il] = fill_sig
-        mask_out[ih, ik, il] = True
+    unfilled = masked_idx[~fill_ok]   # (U, 3); too few clean neighbours
 
     # Fallback: TV inpainting for voxels with too few clean neighbours
-    if unfilled and fallback_tv:
+    if len(unfilled) and fallback_tv:
         from ndiff.inpainting.tv_inpainting import tv_inpaint
         data_out = tv_inpaint(data_out, mask_out, lam=tv_lam, max_iter=tv_iter)
-        for ih, ik, il in unfilled:
-            mask_out[ih, ik, il] = True
-            sigma_out[ih, ik, il] = float(sigma_out[max(0, ih-1):ih+2,
-                                                      max(0, ik-1):ik+2,
-                                                      max(0, il-1):il+2].mean()) * uncertainty_scale
-    elif unfilled:
-        for ih, ik, il in unfilled:
-            mask_out[ih, ik, il] = False   # leave masked for caller to handle
+        ih, ik, il = unfilled[:, 0], unfilled[:, 1], unfilled[:, 2]
+        mask_out[ih, ik, il] = True
+        for h, kk, ll in unfilled:
+            sigma_out[h, kk, ll] = float(sigma_out[max(0, h-1):h+2,
+                                                   max(0, kk-1):kk+2,
+                                                   max(0, ll-1):ll+2].mean()) * uncertainty_scale
+    elif len(unfilled):
+        # leave masked for caller to handle
+        mask_out[unfilled[:, 0], unfilled[:, 1], unfilled[:, 2]] = False
 
     return dataclasses.replace(vol, data=data_out, sigma=sigma_out,
                                mask=np.ones(vol.shape, dtype=bool))

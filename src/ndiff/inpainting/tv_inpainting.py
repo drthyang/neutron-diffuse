@@ -101,19 +101,27 @@ def _gradient(u: NDArray[np.float64]) -> NDArray[np.float64]:
 
 
 def _divergence(p: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Backward finite-difference divergence (adjoint of gradient), zero BC."""
+    """Discrete adjoint ∇* of :func:`_gradient` (zero Neumann BC).
+
+    Must be the *exact* adjoint of the forward-difference gradient so that
+    ⟨∇u, p⟩ = ⟨u, ∇*p⟩; the Chambolle-Pock iteration only converges when this
+    holds.  For the forward difference ``grad[:-1] = u[1:] - u[:-1]`` the
+    adjoint is ``(∇*p)[j] = p[j-1] - p[j]`` (with the boundary terms following
+    from the zero-padded last gradient component), assembled below by shifting
+    ``p[:-1]`` rather than ``p[1:]``.
+    """
     div = np.zeros(p.shape[1:], dtype=p.dtype)
 
     # h component
-    div[1:, :, :] -= p[0, 1:, :, :]
-    div[:-1, :, :] += p[0, :-1, :, :]
+    div[:-1, :, :] -= p[0, :-1, :, :]
+    div[1:, :, :] += p[0, :-1, :, :]
 
     # k component
-    div[:, 1:, :] -= p[1, :, 1:, :]
-    div[:, :-1, :] += p[1, :, :-1, :]
+    div[:, :-1, :] -= p[1, :, :-1, :]
+    div[:, 1:, :] += p[1, :, :-1, :]
 
     # l component
-    div[:, :, 1:] -= p[2, :, :, 1:]
-    div[:, :, :-1] += p[2, :, :, :-1]
+    div[:, :, :-1] -= p[2, :, :, :-1]
+    div[:, :, 1:] += p[2, :, :, :-1]
 
     return div

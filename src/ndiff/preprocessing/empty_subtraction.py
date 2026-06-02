@@ -48,18 +48,27 @@ class EmptySubtractor:
         empty: HKLVolume,
         scale: Optional[float] = None,
         scale_q_range: tuple[float, float] = (2.0, 3.5),
+        clip_percentile: float = 99.0,
     ) -> None:
         self.empty = empty
         self._scale = scale
         self.scale_q_range = scale_q_range
+        self.clip_percentile = clip_percentile
 
     def estimate_scale(self, sample: HKLVolume) -> float:
-        """Least-squares scale in *scale_q_range* where the ring dominates.
+        """Robust least-squares scale in *scale_q_range* where the ring dominates.
 
-        Minimises  ||I_sample(Q) - s * I_empty(Q)||  over valid voxels
-        in the specified |Q| window, solving analytically:
+        Minimises  ||I_sample(Q) - s * I_empty(Q)||  over valid voxels in the
+        specified |Q| window, solving analytically:
 
             s = sum(I_sample * I_empty) / sum(I_empty^2)
+
+        Empty scans can contain a few extreme-intensity voxels (sample-
+        environment Bragg peaks, ring hot-spots) whose I_empty² would dominate
+        the denominator and collapse the scale toward zero.  Voxels whose
+        I_empty exceeds the ``clip_percentile`` percentile within the window
+        are therefore excluded from the fit (set ``clip_percentile=100`` to
+        disable clipping and recover the plain least-squares estimate).
         """
         q_s = sample.q_magnitude()
         q_e = self.empty.q_magnitude()
@@ -73,6 +82,13 @@ class EmptySubtractor:
 
         I_s = sample.data[in_range]
         I_e = self.empty.data[in_range]
+
+        if self.clip_percentile < 100.0:
+            cut = float(np.percentile(I_e, self.clip_percentile))
+            keep = I_e <= cut
+            if keep.sum() >= 10:
+                I_s, I_e = I_s[keep], I_e[keep]
+
         denom = float((I_e ** 2).sum())
         if denom < 1e-12:
             return 1.0
