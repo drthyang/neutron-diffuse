@@ -16,6 +16,9 @@ After it loads you have these in scope:
 Try:
     plot_overview(data, log_scale=True)            # 2x2 diagnostic
     plot_slice(bkg, "kl", value=0.0, log_scale=True)
+    plot_slice(data, "hk", value=0.3333, interp=True)   # exact L=1/3 plane
+    plot_slice(data, "hk", value=0.3333, interp=True,
+               vmin=0.0, vmax=0.4)                 # manual colour limits
     plot_radial_profile(data, mark_q=[2.69])       # Al(111)
     plot_azimuthal_map(data, q_center=2.69)        # ring texture T(phi)
     plt.show()                                     # if not auto-shown

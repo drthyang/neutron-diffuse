@@ -16,6 +16,8 @@ def plot_overview(
     log_scale: bool = False,
     cmap: str = "hot",
     percentile: float = 99.5,
+    vmin: Optional[float] = None,
+    vmax: Optional[float] = None,
     mark_q: Optional[list[float]] = None,
 ) -> "Figure":
     """Four-panel diagnostic figure: three principal slices + radial profile.
@@ -39,6 +41,9 @@ def plot_overview(
         Matplotlib colormap for the slices.
     percentile : float
         Upper percentile for colour-scale clipping (default 99.5).
+    vmin, vmax : float, optional
+        Shared colour limits applied to all three slice panels, overriding the
+        per-panel percentile clip (on the log₁₀ scale when ``log_scale``).
     mark_q : list of float, optional
         Mark these |Q| positions with dashed lines on the radial profile.
 
@@ -61,6 +66,7 @@ def plot_overview(
         plot_slice(
             vol, plane=plane, value=val, ax=ax,
             cmap=cmap, percentile=percentile, log_scale=log_scale,
+            vmin=vmin, vmax=vmax,
         )
 
     plot_radial_profile(vol, ax=axes[1, 1], mark_q=mark_q)

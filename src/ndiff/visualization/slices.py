@@ -17,17 +17,27 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
     from matplotlib.image import AxesImage
 
-# plane key → (fixed_axis_attr, array_dim, y_axis_attr, x_axis_attr, y_label, x_label)
-# After np.take(data, idx, axis=array_dim) the result has shape (n_y, n_x).
-_PLANE: dict[str, tuple[str, int, str, str, str, str]] = {
-    "kl": ("h_axis", 0, "k_axis", "l_axis", "K (r.l.u.)", "L (r.l.u.)"),
-    "hl": ("k_axis", 1, "h_axis", "l_axis", "H (r.l.u.)", "L (r.l.u.)"),
-    "hk": ("l_axis", 2, "h_axis", "k_axis", "H (r.l.u.)", "K (r.l.u.)"),
+# plane key → (fixed_axis_attr, array_dim, y_axis_attr, x_axis_attr,
+#              y_label, x_label, transpose)
+# The two-letter key reads as (horizontal, vertical): e.g. "kl" puts K on the
+# x-axis and L on the y-axis, while "lk" is its transpose (L horizontal, K
+# vertical).  `transpose` is True when the (row=y, col=x) order needed for
+# display is the reverse of np.take's natural axis order, so the slice array
+# must be transposed.
+_PLANE: dict[str, tuple[str, int, str, str, str, str, bool]] = {
+    # fixed H (array axis 0); natural remaining order is (K, L)
+    "kl": ("h_axis", 0, "l_axis", "k_axis", "L (r.l.u.)", "K (r.l.u.)", True),
+    "lk": ("h_axis", 0, "k_axis", "l_axis", "K (r.l.u.)", "L (r.l.u.)", False),
+    # fixed K (array axis 1); natural remaining order is (H, L)
+    "hl": ("k_axis", 1, "l_axis", "h_axis", "L (r.l.u.)", "H (r.l.u.)", True),
+    "lh": ("k_axis", 1, "h_axis", "l_axis", "H (r.l.u.)", "L (r.l.u.)", False),
+    # fixed L (array axis 2); natural remaining order is (H, K)
+    "hk": ("l_axis", 2, "k_axis", "h_axis", "K (r.l.u.)", "H (r.l.u.)", True),
+    "kh": ("l_axis", 2, "h_axis", "k_axis", "H (r.l.u.)", "K (r.l.u.)", False),
 }
-# Accept Mantid-style names and reversed orderings as aliases.
+# Mantid-style names for the three principal (non-transposed) planes.
 _ALIASES: dict[str, str] = {
     "0kl": "kl", "h0l": "hl", "hk0": "hk",
-    "lk": "kl", "lh": "hl", "kh": "hk",
 }
 
 
@@ -46,30 +56,51 @@ def extract_slice(
     vol: HKLVolume,
     plane: str = "kl",
     value: float = 0.0,
+    interp: bool = False,
 ) -> SliceData:
-    """Extract a 2D slice at the grid point nearest to *value*.
+    """Extract a 2D slice along the fixed axis at *value*.
 
     Parameters
     ----------
     vol : HKLVolume
     plane : str
-        Which two axes to show: ``'kl'``, ``'hl'``, or ``'hk'``.
-        Mantid-style aliases (``'0kl'``, ``'h0l'``, ``'hk0'``) are also accepted.
+        Which two axes to show, read as ``(horizontal, vertical)``:
+        ``'kl'``, ``'lk'``, ``'hl'``, ``'lh'``, ``'hk'``, ``'kh'``.  The two
+        orderings of a pair are transposes of each other (``'kl'`` puts K on
+        the x-axis and L on the y-axis; ``'lk'`` swaps them).  Mantid-style
+        aliases ``'0kl'``, ``'h0l'``, ``'hk0'`` map to the principal planes.
+        The remaining (fixed) axis is the one cut at *value* — e.g. any of
+        ``'hk'``/``'kh'`` fixes L, so ``value=0.3333`` is the L = 0.3333 plane.
     value : float
-        Desired coordinate of the cut along the fixed axis (r.l.u.).
-        The nearest grid point is used.
+        Coordinate of the cut along the fixed axis (r.l.u.).
+    interp : bool
+        If False (default), snap to the nearest grid plane. If True, linearly
+        interpolate between the two bracketing planes so an off-grid cut such
+        as L = 0.3333 is honoured exactly (NaN-aware: where one bracketing
+        plane is masked, the other is used). Out-of-range values clamp to the
+        first/last plane.
     """
     key = _ALIASES.get(plane.lower(), plane.lower())
     if key not in _PLANE:
         valid = list(_PLANE) + list(_ALIASES)
         raise ValueError(f"plane must be one of {valid}; got {plane!r}")
 
-    fixed_attr, array_dim, y_attr, x_attr, y_label, x_label = _PLANE[key]
+    fixed_attr, array_dim, y_attr, x_attr, y_label, x_label, transpose = _PLANE[key]
     fixed_axis: NDArray[np.float64] = getattr(vol, fixed_attr)
-    idx = int(np.argmin(np.abs(fixed_axis - value)))
-    actual = float(fixed_axis[idx])
+    masked: NDArray[np.float64] = vol.masked_data()
 
-    data_2d: NDArray[np.float64] = np.take(vol.masked_data(), idx, axis=array_dim)
+    if interp:
+        data_2d, actual = _interp_plane(masked, fixed_axis, float(value), array_dim)
+    else:
+        idx = int(np.argmin(np.abs(fixed_axis - value)))
+        actual = float(fixed_axis[idx])
+        data_2d = np.take(masked, idx, axis=array_dim)
+
+    # np.take leaves the two non-fixed axes in natural order; for a transposed
+    # plane (e.g. "lk") swap them so rows/cols match the requested (y, x).
+    if transpose:
+        data_2d = data_2d.T
+
     y_axis: NDArray[np.float64] = getattr(vol, y_attr)
     x_axis: NDArray[np.float64] = getattr(vol, x_attr)
     fixed_name = fixed_attr[0].upper()  # 'H', 'K', or 'L'
@@ -80,7 +111,7 @@ def extract_slice(
         x_axis=x_axis,
         y_label=y_label,
         x_label=x_label,
-        cut_label=f"{fixed_name} = {actual:.3f} r.l.u.",
+        cut_label=f"{fixed_name} = {actual:.4g} r.l.u.",
     )
 
 
@@ -94,6 +125,7 @@ def plot_slice(
     vmin: Optional[float] = None,
     vmax: Optional[float] = None,
     log_scale: bool = False,
+    interp: bool = False,
     title: Optional[str] = None,
 ) -> "Axes":
     """Plot a 2D intensity slice.
@@ -104,7 +136,8 @@ def plot_slice(
     plane : str
         See :func:`extract_slice`.
     value : float
-        Coordinate of the cut (r.l.u.).
+        Coordinate of the cut along the fixed axis (r.l.u.).  E.g.
+        ``plot_slice(vol, "hk", 0.3333)`` is the L = 0.3333 plane.
     ax : Axes, optional
         Existing axes to draw into; a new figure is created if *None*.
     cmap : str
@@ -113,12 +146,17 @@ def plot_slice(
         Upper percentile used to clip the colour scale (default 99.5).
         The lower clip is the symmetric percentile (``100 - percentile``).
     vmin, vmax : float, optional
-        Override the percentile-derived colour limits.
+        Override the percentile-derived colour limits.  When ``log_scale`` is
+        True these are interpreted on the log₁₀ scale.  Either may be given
+        alone (the other stays auto).
     log_scale : bool
         If True, plot ``log10(max(I, floor))`` where floor is 1 % of the
         maximum valid intensity.
+    interp : bool
+        Linearly interpolate to an off-grid cut instead of snapping to the
+        nearest grid plane.  See :func:`extract_slice`.
     title : str, optional
-        Axes title; defaults to the cut label (e.g. "H = 0.000 r.l.u.").
+        Axes title; defaults to the cut label (e.g. "H = 0 r.l.u.").
 
     Returns
     -------
@@ -126,7 +164,7 @@ def plot_slice(
     """
     import matplotlib.pyplot as plt
 
-    sl = extract_slice(vol, plane=plane, value=value)
+    sl = extract_slice(vol, plane=plane, value=value, interp=interp)
     display = sl.data.copy()
 
     if log_scale:
@@ -166,6 +204,40 @@ def plot_slice(
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
+
+def _interp_plane(
+    data: NDArray[np.float64],
+    axis_coords: NDArray[np.float64],
+    value: float,
+    array_dim: int,
+) -> tuple[NDArray[np.float64], float]:
+    """Linearly interpolate the 3D *data* to a plane at *value* along *array_dim*.
+
+    Assumes ascending *axis_coords* (bin centres).  Out-of-range values clamp
+    to the first/last plane.  NaN-aware: where exactly one bracketing plane is
+    finite, that value is used (no NaN bleed across the masked boundary).
+    """
+    n = len(axis_coords)
+    if value <= axis_coords[0]:
+        return np.take(data, 0, axis=array_dim), float(axis_coords[0])
+    if value >= axis_coords[-1]:
+        return np.take(data, n - 1, axis=array_dim), float(axis_coords[-1])
+
+    i1 = int(np.searchsorted(axis_coords, value))  # first coord >= value
+    i0 = i1 - 1
+    c0, c1 = float(axis_coords[i0]), float(axis_coords[i1])
+    w = (value - c0) / (c1 - c0) if c1 != c0 else 0.0
+
+    p0 = np.take(data, i0, axis=array_dim).astype(np.float64)
+    p1 = np.take(data, i1, axis=array_dim).astype(np.float64)
+    out = (1.0 - w) * p0 + w * p1
+
+    only0 = np.isfinite(p0) & ~np.isfinite(p1)
+    only1 = ~np.isfinite(p0) & np.isfinite(p1)
+    out[only0] = p0[only0]
+    out[only1] = p1[only1]
+    return out, float(value)
 
 
 def _percentile_clim(

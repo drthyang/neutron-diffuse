@@ -65,18 +65,42 @@ from ndiff.visualization import (
 
 ### `plot_slice(vol, plane="kl", value=0.0, ...) -> Axes`
 
-2D intensity slice through the volume. `plane` selects the two displayed axes
-(`'kl'`, `'hl'`, `'hk'`; Mantid aliases `'0kl'`, `'h0l'`, `'hk0'` accepted) and
-`value` is the cut coordinate on the third axis (nearest grid point used).
+2D intensity slice through the volume. `plane` is read as
+**`(horizontal, vertical)`** and selects the two displayed axes; the two
+orderings of a pair are **transposes** of each other. The **remaining (fixed)
+axis** is cut at `value` — so any `'hk'`/`'kh'` fixes L, and `value=0.3333` is
+the L = 0.3333 plane:
+
+| plane | x-axis (horizontal) | y-axis (vertical) | fixed (cut by `value`) |
+|-------|---------------------|-------------------|------------------------|
+| `'kl'` / `'0kl'` | K | L | H |
+| `'lk'` | L | K | H |
+| `'hl'` / `'h0l'` | H | L | K |
+| `'lh'` | L | H | K |
+| `'hk'` / `'hk0'` | H | K | L |
+| `'kh'` | K | H | L |
+
+(Mantid-style aliases `'0kl'`, `'h0l'`, `'hk0'` map to the principal planes.)
 
 Key options: `log_scale` (log₁₀ with a 1%-of-max floor), `percentile` (colour
 clip, default 99.5; lower clip is the symmetric `100 - percentile`), `vmin`/`vmax`
-(override the clip), `cmap` (default `"hot"`), `ax`, `title`. Masked/empty voxels
-are drawn in grey.
+(manual colour limits — either may be given alone; interpreted on the log scale
+when `log_scale=True`), `interp` (see below), `cmap` (default `"hot"`), `ax`,
+`title`. Masked/empty voxels are drawn in grey.
 
 ```python
-plot_slice(bkg, "kl", value=0.0, log_scale=True)   # background powder rings
+plot_slice(bkg, "kl", value=0.0, log_scale=True)          # background rings
+plot_slice(data, "hk", value=0.3333, interp=True)         # exact L = 1/3 plane
+plot_slice(data, "hk", value=0.3333, interp=True,
+           vmin=0.0, vmax=0.4)                            # manual colour limits
 ```
+
+**Off-grid cuts (`interp`).** By default `value` snaps to the nearest grid
+plane (e.g. with an L step of 0.12, asking for 0.3333 silently gives 0.36).
+Pass `interp=True` to linearly interpolate between the two bracketing planes
+so the exact value is honoured. The interpolation is NaN-aware: where only one
+bracketing plane is valid, that value is used, so the cut does not erode the
+masked boundary. Out-of-range values clamp to the first/last plane.
 
 ### `extract_slice(vol, plane="kl", value=0.0) -> SliceData`
 
@@ -112,7 +136,8 @@ plot_azimuthal_map(data, q_center=2.69)            # texture of the Al(111) ring
 
 2×2 diagnostic: K-L (H=0), H-L (K=0), H-K (L=0) slices + radial profile. Good
 first look at any volume. Options mirror the per-panel functions (`log_scale`,
-`cmap`, `percentile`, `mark_q`, `title`; default title is `vol.instrument`).
+`cmap`, `percentile`, `vmin`/`vmax` — shared across all three slice panels —
+`mark_q`, `title`; default title is `vol.instrument`).
 
 ```python
 fig = plot_overview(data, log_scale=True)
