@@ -34,6 +34,30 @@
 > code, then wire an **automatic** centre fit into `PatchedRadialRingModel.fit`
 > (and decide global vs per-ring) before continuing thickness/texture work.
 
+> ## ⛳ HIGHEST PRIORITY — mask/backfill must preserve diffuse structure
+>
+> The experimental mask-based cleanup is promising because it identifies ring
+> regions better than a perfect circular `|Q|` shell, but the current output is
+> **not physically trustworthy yet**.  User inspection on 2026-06-03 found:
+>
+> 1. **Artifacts remain and the diffuse-signal structure looks wrong.**  The
+>    ring mask can make the image cleaner, but the backfilled/cleaned result can
+>    distort or remove the real diffuse signal.  Next work must improve the ring
+>    removal **and** the backfill together; do not optimize the mask by visual
+>    cleanliness alone.
+> 2. **A mask segment that is not close to an Al ring may be crystal signal, not
+>    powder-ring contamination.**  The mask criterion must include a stronger
+>    prior that candidate pixels lie on/near a coherent Al ring trajectory
+>    (allowing ellipse/distortion/off-centering), rather than accepting any local
+>    excess at a given `|Q|`.  Otherwise crystal diffuse features can be marked
+>    and removed.
+>
+> Immediate direction: use the mask as a *candidate* ring-region detector, but
+> validate it against a distorted-ring model/trajectory and backfill from local
+> sidebands in a way that preserves diffuse continuity.  Track false positives:
+> masked regions disconnected from any fitted Al ring should be rejected or sent
+> to a separate diagnostic panel.
+
 **Status:** Ring-removal development remains the active focus; do **not** move
 to Bragg punch / backfill / ΔPDF yet.  The reference is now the class DEFAULTS:
 `PatchedRadialRingModel(q_step=0.02, texture_model="fourier", n_fourier=8,

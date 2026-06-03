@@ -28,6 +28,7 @@ from ndiff.preprocessing import (
     azimuthal_sampling_mask,
     fit_ring_profiles,
     line_profile,
+    replace_masked_ring_regions,
 )
 from ndiff.visualization import interactive_slices
 
@@ -124,21 +125,55 @@ if templates:
         print(f"  q={r.q_center:6.3f} Å^-1  sigma={r.sigma:6.4f}  "
               f"FWHM={r.fwhm:6.4f}  amp={r.amplitude:6.3f}")
 
+center_offset = (
+    float(os.environ.get("CENTER_OFFSET_X", "0.0")),
+    float(os.environ.get("CENTER_OFFSET_Y", "0.0")),
+)
+center_offset_h_slope = (
+    float(os.environ.get("CENTER_H_SLOPE_X", "0.0")),
+    float(os.environ.get("CENTER_H_SLOPE_Y", "0.0")),
+)
+
 prm = PatchedRadialRingModel(
     n_patches=36, plane="0kl", q_step=0.02, ring_width=0.24,
     baseline_method="snip", baseline_smooth=0.06,
     profile_percentiles=(10.0, 80.0), texture_model="fourier",
     texture_symmetric=False, ring_templates=templates,
+    center_offset=center_offset, center_offset_h_slope=center_offset_h_slope,
 )
 prof = prm.fit(src, q_range=(1.5, 10.5))
 print(f"ring model: texture={prm.texture_model} n_fourier={prm.n_fourier} "
       f"symmetric={prm.texture_symmetric}")
+print(f"center offset={center_offset}  H slope={center_offset_h_slope} Å^-1/H")
 res, I_ring = prm.subtract(src, prof)
 removed = dataclasses.replace(src, data=I_ring)               # the fitted rings
 residual = dataclasses.replace(src, data=src.data - I_ring)   # data - rings
 
+cleanup_mode = os.environ.get("RING_CLEANUP_MODE", "subtract")
+if cleanup_mode == "mask_replace":
+    repl = replace_masked_ring_regions(
+        src,
+        prm,
+        prof,
+        model_threshold_frac=float(os.environ.get("RING_MASK_MODEL_FRAC", "0.18")),
+        excess_sigma=float(os.environ.get("RING_MASK_EXCESS_SIGMA", "2.5")),
+        dilation_iter=int(os.environ.get("RING_MASK_DILATE", "1")),
+        closing_iter=int(os.environ.get("RING_MASK_CLOSE", "1")),
+        fill_method=os.environ.get("RING_FILL_METHOD", "sideband"),
+        n_phi_bins=int(os.environ.get("RING_FILL_PHI_BINS", "180")),
+    )
+    mask_panel = dataclasses.replace(src, data=repl.mask.astype(float))
+    background = dataclasses.replace(src, data=repl.background)
+    residual = repl.clean
+    removed = mask_panel
+    print(f"mask-replace cleanup: fill={os.environ.get('RING_FILL_METHOD', 'sideband')} "
+          f"masked {int(repl.mask.sum())} voxels "
+          f"({100.0 * repl.mask.mean():.3f}% of slice volume)")
+elif cleanup_mode != "subtract":
+    raise ValueError(f"Unknown RING_CLEANUP_MODE={cleanup_mode!r}")
+
 print(f"0kl slice H={float(d.h_axis[0]):.3g}  background={'on' if USE_BACKGROUND else 'OFF'}  "
-      f"non-parametric radial-background model")
+      f"non-parametric radial-background model  cleanup={cleanup_mode}")
 print("Drag the vmin/vmax sliders; toggle linear/log₁₀ (bottom-left). "
       "Close the window to exit.")
 
@@ -148,7 +183,8 @@ print("Drag the vmin/vmax sliders; toggle linear/log₁₀ (bottom-left). "
 slider_min = float(os.environ.get("SLIDER_MIN", "0.0"))
 slider_max = float(os.environ.get("SLIDER_MAX", "1.0"))
 interactive_slices(
-    [("0kl data", src), ("removed rings (I_ring)", removed), ("residual = data - rings", residual)],
-    plane="0kl", value=0.0, cmap="inferno", vmin=0.0, vmax=0.3,
+    [("0kl data", src), ("ring mask" if cleanup_mode == "mask_replace" else "removed rings (I_ring)", removed),
+     ("cleaned" if cleanup_mode == "mask_replace" else "residual = data - rings", residual)],
+    plane="0kl", value=0.0, cmap="viridis", vmin=0.0, vmax=0.3,
     slider_min=slider_min, slider_max=slider_max,
 )

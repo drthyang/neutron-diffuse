@@ -1,4 +1,4 @@
-"""Compare centered vs experimentally offset powder-ring coordinates."""
+"""Compare centered vs H-dependent powder-ring coordinates."""
 import dataclasses
 import os
 from pathlib import Path
@@ -29,15 +29,15 @@ keep = azimuthal_sampling_mask(d, plane="0kl", min_count_frac=0.25,
 src = dataclasses.replace(d, mask=keep)
 
 variants = [
-    ("centered q.02 f3", (0.0, 0.0), dict(q_step=0.02, n_fourier=3, texture_ridge=0.3)),
-    ("offset all-fit q.02 f3", (0.00284, -0.00788), dict(q_step=0.02, n_fourier=3, texture_ridge=0.3)),
-    ("offset highq q.02 f3", (0.0133, -0.0389), dict(q_step=0.02, n_fourier=3, texture_ridge=0.3)),
-    ("centered q.015 f6", (0.0, 0.0), dict(q_step=0.015, n_fourier=6, texture_ridge=0.1)),
-    ("offset all-fit q.015 f6", (0.00284, -0.00788), dict(q_step=0.015, n_fourier=6, texture_ridge=0.1)),
-    ("offset highq q.015 f6", (0.0133, -0.0389), dict(q_step=0.015, n_fourier=6, texture_ridge=0.1)),
+    ("centered", (0.0, 0.0), (0.0, 0.0)),
+    ("h-slope weighted", (0.0, 0.0), (0.004, 0.001)),
+    ("h-slope lowmid", (0.0, 0.0), (0.010, 0.006)),
+    ("h-slope xonly", (0.0, 0.0), (0.010, 0.0)),
+    ("fixed lowmid@H", (0.0034, 0.0020), (0.0, 0.0)),
 ]
 
-ring_q = [2.694, 3.114, 4.405, 5.170, 6.228, 6.798, 6.962]
+ring_q = [1.914, 2.687, 3.115, 4.401, 5.164, 5.847,
+          6.195, 6.790, 6.963, 7.218, 7.631]
 q = src.q_magnitude()
 valid = keep & np.isfinite(d.data)
 edges = np.arange(1.5, 8.0, 0.02)
@@ -55,8 +55,8 @@ def medprof(arr):
     return out
 
 
-print("variant                  abs_resid  neg_trough  offring_p95")
-for label, offset, params in variants:
+print("variant              abs_resid  neg_trough  offring_p95")
+for label, offset, h_slope in variants:
     model = PatchedRadialRingModel(
         n_patches=36,
         plane="0kl",
@@ -66,7 +66,7 @@ for label, offset, params in variants:
         texture_model="fourier",
         texture_symmetric=False,
         center_offset=offset,
-        **params,
+        center_offset_h_slope=h_slope,
     )
     profiles = model.fit(src, q_range=(1.5, 10.5))
     _, I_ring = model.subtract(src, profiles)
@@ -82,5 +82,5 @@ for label, offset, params in variants:
     off_ring = valid & (q >= 1.5) & (q <= 8.0)
     for q0 in ring_q:
         off_ring &= np.abs(q - q0) > 0.18
-    print(f"{label:24s} {abs_sum:9.4f}  {neg_sum:10.4f}  "
+    print(f"{label:20s} {abs_sum:9.4f}  {neg_sum:10.4f}  "
           f"{np.percentile(I_ring[off_ring], 95):10.5f}")

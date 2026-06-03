@@ -9,6 +9,9 @@ from ndiff.preprocessing.radial_background import (
     _snip_baseline,
     _estimate_baseline,
     _adaptive_ring_width_profile,
+    _azimuthal_angle,
+    _offset_q_magnitude,
+    _plane_components,
 )
 from ndiff.preprocessing.ring_model import _gaussian
 
@@ -297,3 +300,42 @@ def test_sampling_mask_keeps_uniform_low_q_shells():
     q = vol.q_magnitude()
     low_q = vol.mask & (q > 0.6) & (q < 1.5)
     assert keep[low_q].mean() > 0.9          # low-|Q| shells preserved
+
+
+def test_h_dependent_center_offset_changes_q_and_phi_by_slice():
+    h = np.array([0.0, 0.5, 1.0])
+    k = np.linspace(-1.0, 1.0, 5)
+    l = np.linspace(-1.0, 1.0, 5)
+    ub = np.eye(3)
+    vol = HKLVolume.from_arrays(
+        np.ones((h.size, k.size, l.size)),
+        (h[0], h[-1]), (k[0], k[-1]), (l[0], l[-1]),
+        ub_matrix=ub,
+    )
+
+    center_offset = (0.02, -0.03)
+    h_slope = (0.10, 0.20)
+    Q, x, y = _plane_components(vol, "0kl")
+    H, _, _ = vol.hkl_grid()
+    cx = center_offset[0] + h_slope[0] * H
+    cy = center_offset[1] + h_slope[1] * H
+
+    q_expected = np.sqrt(
+        np.maximum(
+            np.einsum("...i,...i->...", Q, Q)
+            - x * x - y * y
+            + (x - cx) ** 2
+            + (y - cy) ** 2,
+            0.0,
+        )
+    )
+    phi_expected = np.arctan2(y - cy, x - cx)
+
+    assert np.allclose(
+        _offset_q_magnitude(vol, "0kl", center_offset, h_slope),
+        q_expected,
+    )
+    assert np.allclose(
+        _azimuthal_angle(vol, "0kl", center_offset, h_slope),
+        phi_expected,
+    )

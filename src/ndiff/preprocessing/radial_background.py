@@ -362,6 +362,11 @@ class PatchedRadialRingModel:
         Experimental in-plane ring-center offset in Å⁻¹, in the same
         orthonormal plane frame used for φ. ``(0, 0)`` means rings are centered
         on Q=0.
+    center_offset_h_slope : (float, float)
+        Experimental H-dependent in-plane center drift in Å⁻¹ per H r.l.u.
+        The effective center is ``center_offset + H * center_offset_h_slope``.
+        This is intended for diagnosing whether nonzero-H 0kl slices have an
+        apparent ring center that drifts with H.
     snr_mask_threshold : float or None
         After subtraction, mask voxels where ``I_ring / σ_data`` exceeds this,
         flagging them for the downstream backfill.  ``None`` leaves the mask
@@ -394,6 +399,7 @@ class PatchedRadialRingModel:
         texture_smoothness: float = 10.0,
         ring_templates: Optional[object] = None,
         center_offset: tuple[float, float] = (0.0, 0.0),
+        center_offset_h_slope: tuple[float, float] = (0.0, 0.0),
         snr_mask_threshold: Optional[float] = None,
     ) -> None:
         self.n_patches = n_patches
@@ -420,6 +426,7 @@ class PatchedRadialRingModel:
         self.texture_smoothness = texture_smoothness
         self.ring_templates = ring_templates
         self.center_offset = center_offset
+        self.center_offset_h_slope = center_offset_h_slope
         self.snr_mask_threshold = snr_mask_threshold
         self._profiles: Optional[RadialRingProfiles] = None
 
@@ -446,8 +453,12 @@ class PatchedRadialRingModel:
         q_range: Optional[tuple[float, float]] = None,
     ) -> RadialRingProfiles:
         """Estimate per-patch ring profiles from *vol*."""
-        q_mag = _offset_q_magnitude(vol, self.plane, self.center_offset)
-        phi = _azimuthal_angle(vol, self.plane, self.center_offset)
+        q_mag = _offset_q_magnitude(
+            vol, self.plane, self.center_offset, self.center_offset_h_slope
+        )
+        phi = _azimuthal_angle(
+            vol, self.plane, self.center_offset, self.center_offset_h_slope
+        )
         valid = vol.mask & np.isfinite(vol.data)
 
         if q_range is None:
@@ -570,8 +581,12 @@ class PatchedRadialRingModel:
         if prof is None:
             raise RuntimeError("Call fit() before subtract().")
 
-        q_mag = _offset_q_magnitude(vol, self.plane, self.center_offset)
-        phi = _azimuthal_angle(vol, self.plane, self.center_offset)
+        q_mag = _offset_q_magnitude(
+            vol, self.plane, self.center_offset, self.center_offset_h_slope
+        )
+        phi = _azimuthal_angle(
+            vol, self.plane, self.center_offset, self.center_offset_h_slope
+        )
         I_ring = prof.evaluate(q_mag, phi)
 
         data_sub = vol.data - I_ring
@@ -622,11 +637,16 @@ def _offset_q_magnitude(
     vol: HKLVolume,
     plane: str,
     center_offset: tuple[float, float] = (0.0, 0.0),
+    center_offset_h_slope: tuple[float, float] = (0.0, 0.0),
 ) -> NDArray[np.float64]:
     Q, x, y = _plane_components(vol, plane)
-    cx, cy = center_offset
-    if cx == 0.0 and cy == 0.0:
+    cx0, cy0 = center_offset
+    sx, sy = center_offset_h_slope
+    if cx0 == 0.0 and cy0 == 0.0 and sx == 0.0 and sy == 0.0:
         return np.linalg.norm(Q, axis=-1)
+    H, _, _ = vol.hkl_grid()
+    cx = cx0 + sx * H
+    cy = cy0 + sy * H
     q2 = np.einsum("...i,...i->...", Q, Q)
     q2 = q2 - x * x - y * y + (x - cx) ** 2 + (y - cy) ** 2
     return np.sqrt(np.maximum(q2, 0.0))
@@ -636,6 +656,7 @@ def _azimuthal_angle(
     vol: HKLVolume,
     plane: str,
     center_offset: tuple[float, float] = (0.0, 0.0),
+    center_offset_h_slope: tuple[float, float] = (0.0, 0.0),
 ) -> NDArray[np.float64]:
     """Azimuthal angle φ (radians) for every voxel, within the given plane.
 
@@ -649,7 +670,14 @@ def _azimuthal_angle(
     orientation (and any lattice).
     """
     _, x, y = _plane_components(vol, plane)
-    cx, cy = center_offset
+    cx0, cy0 = center_offset
+    sx, sy = center_offset_h_slope
+    if sx == 0.0 and sy == 0.0:
+        cx, cy = cx0, cy0
+    else:
+        H, _, _ = vol.hkl_grid()
+        cx = cx0 + sx * H
+        cy = cy0 + sy * H
     return np.arctan2(y - cy, x - cx)
 
 
