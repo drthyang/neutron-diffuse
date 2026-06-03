@@ -12,6 +12,27 @@ the full 3D volume and continue to Bragg punch / ΔPDF / writers.
 
 ## Progress log
 
+### 2026-06-02 (cont.) — Low-order azimuthal texture T(φ)
+
+`PatchedRadialRingModel` now models the ring's azimuthal anisotropy with a
+**low-order per-|Q| Fourier texture** Tᵩ(φ) (default `texture_model="fourier"`,
+`n_fourier=1` → cos2φ), replacing the discrete Hann patch blend (still available
+as `texture_model="patch"`). Low order = captures only long-wavelength texture,
+cannot absorb sharp Bragg. Even-cosine basis {1,cos2φ,cos4φ,…} for the
+symmetrised *mmm* volume (`texture_symmetric=True`) so the two symmetry-
+equivalent ring arcs constrain one texture (well-posed under one-sided
+coverage). Count-weighted with a per-|Q| min-count fraction (sits on the
+well-sampled arcs; excludes under-sampled patches that bias the amplitude low)
+and an order-weighted ridge (stabilises extrapolation).
+
+**Key diagnostic finding:** on the 0kl slice the rings are only densely sampled
+over ~±15° arcs near the L-axis, and *there they are nearly isotropic*
+(texture CV 0.05–0.11). The dramatic apparent anisotropy in the raw image is the
+sparse-sampling spokes (masked), not real ring texture. So on this slice the
+Fourier texture performs on par with the patch blend — it's the right, smoother,
+Bragg-immune, symmetry-extrapolated foundation for **better-covered planes / 3D**,
+where the anisotropy will actually be measurable. Tests 36/36.
+
 ### 2026-06-02 (cont.) — Ring removal rebuilt: non-parametric + sparse-azimuth mask
 
 The committed `PatchedRingModel` removed almost nothing on the real 28K 0kl
