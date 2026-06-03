@@ -19,6 +19,10 @@ Step 3 — Backfill  (``backfill_ring_shells``)
 
 from ndiff.preprocessing.empty_subtraction import EmptySubtractor
 from ndiff.preprocessing.ring_model import PatchedRingModel, RingParams, FittedRingModel
+from ndiff.preprocessing.radial_background import (
+    PatchedRadialRingModel,
+    RadialRingProfiles,
+)
 from ndiff.preprocessing.backfill import backfill_ring_shells
 from ndiff.preprocessing.powder_rings import (
     RingShell,
@@ -34,6 +38,8 @@ __all__ = [
     "PatchedRingModel",
     "RingParams",
     "FittedRingModel",
+    "PatchedRadialRingModel",
+    "RadialRingProfiles",
     "backfill_ring_shells",
     # Utilities / diagnostics
     "RingShell",

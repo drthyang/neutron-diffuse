@@ -1,9 +1,10 @@
 """Interactive ring-removal viewer on a single 0kl slice (H=0).
 
-Fast 2D development harness: extracts the H=0 plane, runs Step 1 (empty
-subtraction) + Step 2 (PatchedRingModel, plane='0kl'), and opens an
-interactive window with live colour-scale (vmin/vmax) sliders and a
-linear/log toggle so you can drag the scale to reveal weak rings/diffuse.
+Fast 2D development harness: extracts the H=0 plane and runs Step 2
+(``PatchedRadialRingModel``, plane='0kl') — non-parametric per-patch radial
+background subtraction — then opens an interactive window with live
+colour-scale (vmin/vmax) sliders and a linear/log toggle so you can drag the
+scale to reveal weak rings/diffuse.
 
 Run with an interactive backend, e.g.::
 
@@ -20,8 +21,7 @@ from pathlib import Path
 import numpy as np
 
 import ndiff
-from ndiff.preprocessing import EmptySubtractor, PatchedRingModel
-from ndiff.preprocessing.powder_rings import al_ring_q_positions
+from ndiff.preprocessing import EmptySubtractor, PatchedRadialRingModel
 from ndiff.visualization import interactive_slices
 
 raw = Path("data/raw")
@@ -53,16 +53,22 @@ if USE_BACKGROUND:
 else:
     src = d   # ring model fits the total ring signal directly
 
-FLATNESS_CV = 0.5     # None = baseline subtraction only; 0.5 = gate rough/Bragg shells
-prm = PatchedRingModel(n_patches=36, n_fourier=6, plane="0kl", flatness_cv=FLATNESS_CV)
-model = prm.fit(src, ring_hints=list(al_ring_q_positions(q_max=10.5)),
-                q_range=(1.5, 10.5))
-res, I_ring = prm.subtract(src, model)
+# Non-parametric per-patch radial background subtraction.
+#   ring_width        : max ring full-width in |Q| removed as a peak (Å^-1)
+#   q_step            : radial bin width (finer than the ring to resolve peaks)
+#   baseline_smooth   : σ of the post-opening baseline smoothing (Å^-1)
+#   profile_percentiles: trim band per |Q| bin (low=gaps, high=Bragg)
+prm = PatchedRadialRingModel(
+    n_patches=36, plane="0kl", q_step=0.02, ring_width=0.18,
+    baseline_smooth=0.06, profile_percentiles=(10.0, 80.0),
+)
+prof = prm.fit(src, q_range=(1.5, 10.5))
+res, I_ring = prm.subtract(src, prof)
 removed = dataclasses.replace(d, data=I_ring)                 # the fitted rings
 residual = dataclasses.replace(d, data=src.data - I_ring)     # data - rings
 
 print(f"0kl slice H={float(d.h_axis[0]):.3g}  background={'on' if USE_BACKGROUND else 'OFF'}  "
-      f"ring-model rank1_var={model.rank1_variance:.3f}")
+      f"non-parametric radial-background model")
 print("Drag the vmin/vmax sliders; toggle linear/log₁₀ (bottom-left). "
       "Close the window to exit.")
 

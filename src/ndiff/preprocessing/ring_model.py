@@ -92,10 +92,27 @@ class FittedRingModel:
     A_matrix: NDArray[np.float64]
     texture_values: NDArray[np.float64]
     singular_values: NDArray[np.float64] = field(default_factory=lambda: np.array([]))
+    ring_texture_coeffs: NDArray[np.float64] = field(default_factory=lambda: np.array([]))
+    """Per-ring azimuthal amplitude profiles Aᵢ(φ) as Fourier coefficients,
+    shape (n_rings, 2K+1).  Each row fits that ring's own row of ``A_matrix``
+    (its measured per-patch excess), so rings with different azimuthal texture
+    are modelled independently rather than forced onto a single shared T(φ).
+    This is what :meth:`evaluate` uses for subtraction; the shared
+    ``texture_coeffs`` / rank-1 SVD is retained only for diagnostics."""
 
     def texture(self, phi: NDArray) -> NDArray[np.float64]:
-        """Evaluate T(φ) at arbitrary angles (radians)."""
+        """Evaluate the shared (rank-1) T(φ) at arbitrary angles (radians).
+
+        Diagnostic only — :meth:`evaluate` uses the per-ring Aᵢ(φ) instead.
+        """
         return _eval_fourier(self.texture_coeffs, phi)
+
+    def ring_texture(self, i: int, phi: NDArray) -> NDArray[np.float64]:
+        """Evaluate ring *i*'s non-negative azimuthal amplitude Aᵢ(φ)."""
+        if self.ring_texture_coeffs.size == 0:
+            # Fallback to the shared-texture model.
+            return self.rings[i].amplitude * self.texture(phi)
+        return np.maximum(0.0, _eval_fourier(self.ring_texture_coeffs[i], phi))
 
     @property
     def rank1_variance(self) -> float:
@@ -131,12 +148,16 @@ class FittedRingModel:
         return np.array(residuals)
 
     def evaluate(self, q_mag: NDArray, phi: NDArray) -> NDArray[np.float64]:
-        """Ring contribution at voxels with given |Q| and φ arrays."""
-        T = self.texture(phi)
+        """Ring contribution at voxels with given |Q| and φ arrays.
+
+        I_ring(q, φ) = Σᵢ Aᵢ(φ) · G(|q| − qᵢ, σᵢ), where Aᵢ(φ) is ring *i*'s
+        own non-negative azimuthal amplitude profile.
+        """
         I_ring = np.zeros_like(q_mag, dtype=np.float64)
-        for ring in self.rings:
-            I_ring += ring.amplitude * _gaussian(q_mag, 1.0, ring.q_center, ring.q_sigma)
-        return T * I_ring
+        for i, ring in enumerate(self.rings):
+            A_i = self.ring_texture(i, phi)
+            I_ring += A_i * _gaussian(q_mag, 1.0, ring.q_center, ring.q_sigma)
+        return I_ring
 
 
 # ---------------------------------------------------------------------------
@@ -261,13 +282,21 @@ class PatchedRingModel:
         if A_matrix.shape[1] < 2:
             raise RuntimeError("Too few usable patches for texture fitting.")
 
-        # Step 4: rank-1 SVD → T[P] and Aᵢ
-        texture_values, ring_amplitudes, singular_values = _rank1_factorize(A_matrix)
+        # Step 4 (subtraction model): per-ring azimuthal amplitude Aᵢ(φ).
+        # Fit each ring's own row of the amplitude matrix with a smooth Fourier
+        # series so rings with different azimuthal texture stay independent.
+        ring_texture_coeffs = np.array([
+            _fit_fourier(patch_centers, A_matrix[i], self.n_fourier)
+            for i in range(A_matrix.shape[0])
+        ])
 
+        # Step 4 (diagnostics only): rank-1 SVD → shared T[P] and Aᵢ.  Not used
+        # for subtraction; rank1_variance tells you how well a single shared
+        # texture would have fit (a strong second singular value, as here, is
+        # exactly why we subtract per-ring instead).
+        texture_values, ring_amplitudes, singular_values = _rank1_factorize(A_matrix)
         for ring, amp in zip(ring_params, ring_amplitudes):
             ring.amplitude = float(amp)
-
-        # Step 5: Fourier fit to T[P]
         coeffs = _fit_fourier(patch_centers, texture_values, self.n_fourier)
 
         self._model = FittedRingModel(
@@ -278,6 +307,7 @@ class PatchedRingModel:
             A_matrix=A_matrix,
             texture_values=texture_values,
             singular_values=singular_values,
+            ring_texture_coeffs=ring_texture_coeffs,
         )
         return self._model
 
