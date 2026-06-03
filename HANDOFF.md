@@ -12,6 +12,27 @@ the full 3D volume and continue to Bragg punch / ΔPDF / writers.
 
 ## Progress log
 
+### 2026-06-02 (cont.) — Azimuth-frame bug fix (oriented crystal)
+
+Found and fixed a real bug in `_azimuthal_angle`: it took φ from fixed lab-frame
+Q components (0kl → `atan2(Q_z, Q_y)`), valid only if the crystal axes align
+with the lab frame. The 28K UB carries an orientation (U≠I): a* ∥ lab −y, while
+b*,c* lie in the lab x–z plane, so for H=0 every voxel has Q_y≈0 and the whole
+slice collapsed to φ≈±90°. Fix: project Q onto an orthonormal in-plane basis
+built (Gram–Schmidt) from the two in-plane reciprocal axes — correct for any
+orientation/lattice. `PatchedRingModel` delegates to the same helper. |Q| was
+always right (rotation-invariant), so radial suppression is unchanged.
+
+This **invalidated two earlier conclusions**:
+- The "empty band near y=−x" the viewer showed was NOT missing data (the H=0
+  slice is 100% measured, 0 NaN). It was `azimuthal_sampling_mask` firing on the
+  degenerate φ. With correct φ the same mask drops ~1.9% (was ~6.9%) — just a
+  small low-|Q| central region.
+- "Rings only sampled near ±90°, nearly isotropic" was the bug. With correct
+  full-circle φ the rings show a gentle but real anisotropy (texture
+  CV≈0.05–0.14, mild 2-fold), now fit by the low-order Fourier T(φ) over all φ
+  (no longer extrapolated from two arcs).
+
 ### 2026-06-02 (cont.) — Low-order azimuthal texture T(φ)
 
 `PatchedRadialRingModel` now models the ring's azimuthal anisotropy with a
