@@ -5,7 +5,7 @@ import pytest
 
 from ndiff.core import HKLVolume
 from ndiff.preprocessing.powder_rings import (
-    detect_ring_shells, mask_ring_shells, radial_profile,
+    detect_ring_shells, mask_ring_shells, radial_profile, line_profile,
     al_ring_q_positions, RingShell,
 )
 from ndiff.preprocessing.backfill import backfill_ring_shells
@@ -163,3 +163,29 @@ def test_al_known_peaks():
     # FCC forbidden: 100
     q_100 = 2 * np.pi / 4.0494
     assert not any(abs(q - q_100) < 1e-3 for q in qs)
+
+
+# --- line_profile ---
+
+def test_line_profile_q_and_intensity():
+    # data == |Q| everywhere, so the interpolated linecut intensity must equal
+    # the line's |Q| (within interpolation error), and |Q| must be monotonic
+    # along (0, 1, l).
+    shape = (1, 41, 81)
+    h = np.linspace(0, 0, shape[0])
+    k = np.linspace(-5, 5, shape[1])
+    l = np.linspace(-10, 10, shape[2])
+    ub = 2 * np.pi * np.eye(3) / 4.0
+    vol = HKLVolume.from_arrays(
+        np.ones(shape), (h[0], h[-1]), (k[0], k[-1]), (l[0], l[-1]), ub_matrix=ub
+    )
+    import dataclasses
+    vol = dataclasses.replace(vol, data=vol.q_magnitude())
+
+    q, I, hkl = line_profile(vol, (0, 1, 0), (0, 1, 10), n_points=200)
+    assert q.shape == I.shape == (200,)
+    assert hkl.shape == (200, 3)
+    assert np.all(np.diff(q) >= -1e-9)                 # monotonic in |Q|
+    good = np.isfinite(I)
+    assert good.mean() > 0.95
+    assert np.allclose(I[good], q[good], atol=0.05)    # data==|Q| recovered

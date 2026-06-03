@@ -146,6 +146,49 @@ def radial_profile(
     return q_centres, profile, counts
 
 
+def line_profile(
+    vol: HKLVolume,
+    start: tuple[float, float, float],
+    end: tuple[float, float, float],
+    n_points: int = 600,
+) -> tuple[NDArray, NDArray, NDArray]:
+    """Interpolate intensity along a straight line in (h, k, l) space.
+
+    A linecut that threads *between* the crystal Bragg peaks (e.g. along
+    ``(0, ±1, l)`` when the ``0kl`` reflections with odd k are systematically
+    absent) gives a clean radial profile of the powder rings alone, with no
+    Bragg contamination — ideal for reading off ring |Q| positions.
+
+    Parameters
+    ----------
+    vol : HKLVolume
+    start, end : (h, k, l)
+        Endpoints of the line in reciprocal-lattice units.
+    n_points : int
+        Number of samples along the line.
+
+    Returns
+    -------
+    q_mag : (n_points,)
+        |Q| (Å⁻¹) at each sample.
+    intensity : (n_points,)
+        Trilinearly interpolated intensity; NaN where the line leaves the
+        measured (masked) region.
+    hkl : (n_points, 3)
+        The sampled (h, k, l) coordinates.
+    """
+    from scipy.interpolate import RegularGridInterpolator
+
+    hkl = np.linspace(np.asarray(start, float), np.asarray(end, float), n_points)
+    interp = RegularGridInterpolator(
+        (vol.h_axis, vol.k_axis, vol.l_axis), vol.masked_data(),
+        bounds_error=False, fill_value=np.nan,
+    )
+    intensity = interp(hkl)
+    q_mag = np.linalg.norm(hkl @ vol.ub_matrix.T, axis=1)
+    return q_mag, intensity, hkl
+
+
 # ---------------------------------------------------------------------------
 # Detection
 # ---------------------------------------------------------------------------

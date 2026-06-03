@@ -30,6 +30,7 @@ from ndiff.preprocessing.powder_rings import (
     detect_ring_shells,
     mask_ring_shells,
     radial_profile,
+    line_profile,
     al_ring_q_positions,
 )
 
@@ -48,5 +49,6 @@ __all__ = [
     "detect_ring_shells",
     "mask_ring_shells",
     "radial_profile",
+    "line_profile",
     "al_ring_q_positions",
 ]
