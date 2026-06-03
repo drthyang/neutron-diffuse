@@ -12,6 +12,20 @@ the full 3D volume and continue to Bragg punch / ΔPDF / writers.
 
 ## Progress log
 
+### 2026-06-02 (cont.) — Bragg-free linecut for ring |Q| identification
+
+The crystal's `0kl` reflections with odd k are systematically absent, so a line
+along **`(0, ±1, l)`** threads between every Bragg peak → a clean radial cut of
+the powder rings alone (verified: `(0,0,l)` cut max = 249 from Bragg vs
+`(0,±1,l)` max ≈ 1.7, no Bragg). New `preprocessing/powder_rings.py::line_profile`
+(trilinear-interpolated I + |Q| along any (h,k,l) line, exported) and
+`examples/ring_linecut.py` (averages the ±1 cuts, find_peaks). Detected rings:
+**2.68, 3.12, 4.41, 5.17, 6.22, 6.80, 6.95 Å⁻¹** — match Al with a systematic
+~+0.4% shift (thermal contraction at 28K; `al_ring_q_positions` is room-temp), so
+these are the true in-data positions. Note Al 222 (~5.375) is absent/weak here.
+38/38 tests. (Not yet wired into the model — the non-parametric remover doesn't
+need positions; useful for validation / optional ring-position seeding.)
+
 ### 2026-06-02 (cont.) — Empty-ring fix + general (non-mmm) texture
 
 Two fixes (commit ad4b791):
