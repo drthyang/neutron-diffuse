@@ -399,16 +399,34 @@ class PatchedRadialRingModel:
 # ---------------------------------------------------------------------------
 
 def _azimuthal_angle(vol: HKLVolume, plane: str) -> NDArray[np.float64]:
-    """Azimuthal angle φ (radians) for every voxel, in the given plane."""
+    """Azimuthal angle φ (radians) for every voxel, within the given plane.
+
+    The angle is measured in the plane spanned by the two in-plane reciprocal
+    axes (e.g. b*, c* for ``'0kl'``), NOT from fixed lab-frame Q components.
+    This matters because the UB matrix carries the crystal orientation: when the
+    crystal is rotated, a reciprocal-lattice plane does not lie in a lab
+    coordinate plane, so ``atan2`` of raw lab components collapses every voxel
+    to ≈±90° and destroys the azimuth.  Projecting Q onto an orthonormal basis
+    built from the in-plane reciprocal axes gives the correct angle for any
+    orientation (and any lattice).
+    """
+    axes = {"hk0": (0, 1), "h0l": (0, 2), "0kl": (1, 2)}
+    if plane not in axes:
+        raise ValueError(f"Unknown plane: {plane!r}")
+    i, j = axes[plane]
+
     H, K, L = vol.hkl_grid()
     Q = np.stack([H, K, L], axis=-1) @ vol.ub_matrix.T  # (..., 3) Å⁻¹
-    if plane == "hk0":
-        return np.arctan2(Q[..., 1], Q[..., 0])
-    if plane == "h0l":
-        return np.arctan2(Q[..., 2], Q[..., 0])
-    if plane == "0kl":
-        return np.arctan2(Q[..., 2], Q[..., 1])
-    raise ValueError(f"Unknown plane: {plane!r}")
+
+    # Orthonormal in-plane basis from the two reciprocal axis vectors
+    # (Gram–Schmidt, so it is correct even if the axes are not orthogonal).
+    a1 = vol.ub_matrix[:, i].astype(np.float64)
+    a2 = vol.ub_matrix[:, j].astype(np.float64)
+    e1 = a1 / (np.linalg.norm(a1) + 1e-12)
+    a2_perp = a2 - (a2 @ e1) * e1
+    e2 = a2_perp / (np.linalg.norm(a2_perp) + 1e-12)
+
+    return np.arctan2(Q @ e2, Q @ e1)
 
 
 def _angular_distance(phi: NDArray, phi_c: float) -> NDArray:

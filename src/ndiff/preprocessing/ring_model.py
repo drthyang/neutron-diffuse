@@ -362,20 +362,13 @@ class PatchedRingModel:
     # ------------------------------------------------------------------
 
     def _azimuthal_angle(self, vol: HKLVolume) -> NDArray[np.float64]:
-        """Return azimuthal angle φ (radians) for every voxel."""
-        H, K, L = vol.hkl_grid()
-        # Convert to Cartesian Q via UB matrix
-        hkl = np.stack([H, K, L], axis=-1)          # (..., 3)
-        Q = hkl @ vol.ub_matrix.T                    # (..., 3) in Å^-1
+        """Return azimuthal angle φ (radians) for every voxel.
 
-        if self.plane == "hk0":
-            return np.arctan2(Q[..., 1], Q[..., 0])  # atan2(k_Q, h_Q)
-        elif self.plane == "h0l":
-            return np.arctan2(Q[..., 2], Q[..., 0])  # atan2(l_Q, h_Q)
-        elif self.plane == "0kl":
-            return np.arctan2(Q[..., 2], Q[..., 1])  # atan2(l_Q, k_Q)
-        else:
-            raise ValueError(f"Unknown plane: {self.plane!r}")
+        Measured in the plane spanned by the two in-plane reciprocal axes, so it
+        is correct for an oriented crystal (UB not aligned with the lab frame).
+        """
+        from ndiff.preprocessing.radial_background import _azimuthal_angle
+        return _azimuthal_angle(vol, self.plane)
 
     # ------------------------------------------------------------------
     # Patch fitting
