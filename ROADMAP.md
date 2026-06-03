@@ -119,15 +119,31 @@ slice-validated path to the full 3D volume efficiently.
 
 **2026-06-03 ring-removal continuation:** validation moved to the improved
 `TbTi3Bi4_22K_mmm...401x401x301_mmm.nxs` dataset, especially the `H=0.3333`
-slice where diffuse signal is visible.  The conservative reference remains
-`q_step=0.02`, `texture_model="fourier"`, `n_fourier=3`, `texture_ridge=0.3`;
-smaller radial bins and higher-order texture often lower ring residual metrics
-but can over-subtract diffuse signal or create circular troughs/disc-like
-background changes.  New diagnostics score signed residuals, negative troughs,
-radial roughness, and off-ring removal instead of positive ring leftover alone.
-A new experimental `texture_model="smooth"` fits nonnegative per-patch azimuthal
-texture with an L-BFGS-B minimizer plus cyclic curvature penalty.  It provides a
-smooth non-Fourier texture option, but it is not yet a promoted default.
+slice where diffuse signal is visible.  Two over-subtraction fixes then landed
+and became the new defaults:
+- **SNIP baseline** (`baseline_method="snip"`): slope-aware peak-clipping
+  replaces morphological opening, which was biased low on sloping backgrounds.
+- **|Q|-pooled high-order azimuthal texture** (`n_fourier=8`,
+  `texture_ridge=0.05`, `texture_q_smooth=0.06`): real rings have multi-lobed
+  texture that low order can't follow; raising the order alone rang into sparse
+  azimuths, so the texture *shape* is now pooled across each ring's |Q| width
+  (amplitude-weighted, radial peak kept sharp).  Over-subtraction `neg_trough`
+  fell ~51% on the H=0.3333 slice.
+- **Per-ring adaptive baseline thickness** (`adaptive_ring_width=True`,
+  `ring_width_scale=3.0`, `ring_width_cap_frac=0.9`): ring FWHM varies 2.6× in
+  the data, so a single global window either under-captures broad rings or eats
+  diffuse and bridges close ring pairs.  Each ring now gets a window of
+  scale×FWHM (detected Bragg-robustly via the cross-patch median), capped to the
+  neighbour spacing.  Close-pair valley over-subtraction fell ~31%.
+The reference is now `q_step=0.02, texture_model="fourier", n_fourier=8,
+texture_ridge=0.05, texture_q_smooth=0.06, baseline_method="snip",
+adaptive_ring_width=True`.  Diagnostics
+score signed residuals, negative troughs, radial roughness, and off-ring removal
+(not positive ring leftover alone); `examples/_azimuthal_texture_cmp.py` scores
+the azimuthal texture fit directly.  The experimental `texture_model="smooth"`
+(L-BFGS-B per-patch with cyclic curvature penalty) remains available but is not
+the default.  Remaining: a uniform positive ring leftover (radial-amplitude
+under-fill), to attack next.
 
 ### 2-3. Backfill  ✓
 
@@ -171,6 +187,18 @@ Masked voxels (ring-dominated) filled by:
 ---
 
 ## Phase 5 — Validation & Release  (in progress)
+
+> **⛳ HIGHEST PRIORITY — ring off-centering (unresolved).** The radial model
+> assumes rings are concentric about Q=0; the user flagged (2026-06-03) that
+> they are off-centre.  Must be resolved before further ring-removal tuning.
+> `center_offset=(cx,cy)` exists but is manual/global and not auto-fit; an
+> earlier "negligible offset" finding is now contested.  See the HIGHEST-
+> PRIORITY box in HANDOFF.md for the full investigation plan.
+
+**Standard preview tool:** always investigate ring-removal results with the
+interactive viewer `examples/explore_slice.py` (live 3-panel data | removed
+rings | residual slice with vmin/vmax sliders, default slider travel 0.0–1.0).
+Run via the `rmc-discord` env; defaults to the 22K mmm file, H=0.3333.
 
 | Task | Status |
 |------|--------|

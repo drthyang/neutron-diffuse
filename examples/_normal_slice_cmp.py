@@ -41,12 +41,22 @@ keep = azimuthal_sampling_mask(d, plane="0kl", min_count_frac=0.25,
 src = dataclasses.replace(d, mask=keep)
 
 variants = [
+    # label, extra_params, scale, center_offset
     ("data", None, 0.0, (0.0, 0.0)),
-    ("q.02 f3", dict(q_step=0.02, n_fourier=3, texture_ridge=0.3), 1.0, (0.0, 0.0)),
-    ("q.02 f6 r.1", dict(q_step=0.02, n_fourier=6, texture_ridge=0.1), 1.0, (0.0, 0.0)),
-    ("q.02 smooth10", dict(q_step=0.02, texture_model="smooth", texture_smoothness=10.0), 1.0, (0.0, 0.0)),
-    ("q.02 smooth30", dict(q_step=0.02, texture_model="smooth", texture_smoothness=30.0), 1.0, (0.0, 0.0)),
-    ("q.015 smooth30", dict(q_step=0.015, texture_model="smooth", texture_smoothness=30.0), 1.0, (0.0, 0.0)),
+    # SNIP baseline (new default) — should eliminate opening's downward bias on slopes
+    ("q.02 f3 snip", dict(q_step=0.02, n_fourier=3, texture_ridge=0.3,
+                          baseline_method="snip"), 1.0, (0.0, 0.0)),
+    # Opening baseline (old default) — comparison target to verify improvement
+    ("q.02 f3 open", dict(q_step=0.02, n_fourier=3, texture_ridge=0.3,
+                          baseline_method="opening"), 1.0, (0.0, 0.0)),
+    ("q.02 f6 r.1 snip", dict(q_step=0.02, n_fourier=6, texture_ridge=0.1,
+                               baseline_method="snip"), 1.0, (0.0, 0.0)),
+    ("q.02 smooth10 snip", dict(q_step=0.02, texture_model="smooth",
+                                texture_smoothness=10.0,
+                                baseline_method="snip"), 1.0, (0.0, 0.0)),
+    ("q.02 smooth30 snip", dict(q_step=0.02, texture_model="smooth",
+                                texture_smoothness=30.0,
+                                baseline_method="snip"), 1.0, (0.0, 0.0)),
 ]
 
 residuals = []
@@ -56,10 +66,12 @@ for label, params, scale, offset in variants:
         continue
     params = params.copy()
     texture_model = params.pop("texture_model", "fourier")
+    baseline_method = params.pop("baseline_method", "snip")
     model = PatchedRadialRingModel(
         n_patches=36,
         plane="0kl",
         ring_width=0.24,
+        baseline_method=baseline_method,
         baseline_smooth=0.06,
         profile_percentiles=(10.0, 80.0),
         profile_method="trimmed_mean",

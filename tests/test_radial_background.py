@@ -4,7 +4,12 @@ import numpy as np
 
 from ndiff.core import HKLVolume
 from ndiff.preprocessing import PatchedRadialRingModel, azimuthal_sampling_mask
-from ndiff.preprocessing.radial_background import _project_templates
+from ndiff.preprocessing.radial_background import (
+    _project_templates,
+    _snip_baseline,
+    _estimate_baseline,
+    _adaptive_ring_width_profile,
+)
 from ndiff.preprocessing.ring_model import _gaussian
 
 
@@ -102,11 +107,15 @@ def test_template_projection_fits_overlapping_rings_jointly():
 def test_fourier_texture_recovers_anisotropy_with_correct_phase():
     # Injected texture is 1 + 0.4 cos(2φ): max at φ=0/π, min at ±π/2.
     # General (non-symmetric) basis must recover it given n_fourier>=2.
+    # texture_q_smooth=0 isolates the per-|Q|-bin phase/amplitude recovery
+    # (the synthetic ring is only a few bins wide, so |Q|-pooling would average
+    # over its noisy edges — exercised separately below).
     vol, *_ = _ring_vol()
     model = PatchedRadialRingModel(n_patches=24, plane="hk0", q_step=0.04,
                                    ring_width=0.3, baseline_smooth=0.08,
                                    texture_model="fourier", n_fourier=2,
-                                   texture_symmetric=False, texture_ridge=0.3)
+                                   texture_symmetric=False, texture_ridge=0.3,
+                                   texture_q_smooth=0.0)
     prof = model.fit(vol, q_range=(1.0, 4.0))
     assert prof.texture_coeffs.size                    # Fourier model populated
     qpk = float(prof.q_grid[np.argmax(prof.ring_profile.max(axis=0))])
@@ -114,6 +123,28 @@ def test_fourier_texture_recovers_anisotropy_with_correct_phase():
     t90 = float(prof.texture(qpk, np.array([np.pi / 2]))[0])   # cos2φ = -1
     assert t0 > t90                                    # correct phase
     assert t0 / t90 > 1.4                              # substantial anisotropy captured
+
+
+def test_texture_q_pooling_keeps_radial_peak_sharp_and_preserves_phase():
+    # |Q|-pooling the azimuthal texture shape must (a) preserve the cos2φ phase
+    # and a substantial fraction of the anisotropy, and (b) NOT broaden the
+    # radial ring amplitude (the constant term must be untouched by the shape
+    # smoothing).  Compare pooled vs unpooled on the same volume.
+    vol, *_ = _ring_vol()
+    base = dict(n_patches=24, plane="hk0", q_step=0.04, ring_width=0.3,
+                baseline_smooth=0.08, texture_model="fourier", n_fourier=4,
+                texture_symmetric=False, texture_ridge=0.1)
+    unpooled = PatchedRadialRingModel(texture_q_smooth=0.0, **base).fit(vol, q_range=(1.0, 4.0))
+    pooled = PatchedRadialRingModel(texture_q_smooth=0.12, **base).fit(vol, q_range=(1.0, 4.0))
+
+    qpk = float(pooled.q_grid[np.argmax(pooled.ring_profile.max(axis=0))])
+    t0 = float(pooled.texture(qpk, np.array([0.0]))[0])
+    t90 = float(pooled.texture(qpk, np.array([np.pi / 2]))[0])
+    assert t0 > t90 and t0 / t90 > 1.3                 # phase + anisotropy kept
+
+    # Radial amplitude (constant Fourier term, column 0) is identical: pooling
+    # smooths only the shape, never the amplitude that sets the radial peak.
+    assert np.allclose(pooled.texture_coeffs[:, 0], unpooled.texture_coeffs[:, 0])
 
 
 def test_smooth_texture_model_runs_and_suppresses_ring():
@@ -168,6 +199,88 @@ def test_azimuthal_sampling_mask_drops_undersampled_sector():
     outer = (phi < -0.2) & vol.mask & in_q
     assert keep[inner].mean() < 0.3
     assert keep[outer].mean() > 0.9
+
+
+def test_snip_no_oversubtraction_on_slope():
+    # On a pure linear slope (no ring), SNIP must return the slope exactly —
+    # never dip below it.  Morphological opening (erosion → dilation) is biased
+    # low on sloping backgrounds because the erosion step takes the minimum over
+    # the window, which is on the lower-|Q| flank.  SNIP uses the midpoint of
+    # symmetric neighbors, so it is exact for any linear background.
+    q = np.linspace(0, 1, 200)
+    slope = 1.0 - 0.8 * q
+    base_snip = _snip_baseline(slope, n_iter=20)
+    assert np.max(np.abs(base_snip - slope)) < 1e-12   # machine-precision exact
+
+
+def test_snip_removes_narrow_ring_on_slope():
+    # Ring on a sloping background: SNIP must detect the ring (non-zero excess)
+    # and must NOT dip below the true slope anywhere (no over-subtraction).
+    q = np.linspace(0, 1, 300)
+    slope = 1.0 - 0.6 * q
+    ring = 0.3 * np.exp(-0.5 * ((q - 0.5) / 0.025) ** 2)
+    prof = slope + ring
+    n_iter = 10
+    base = _snip_baseline(prof, n_iter)
+    excess = prof - base
+    assert excess.max() > 0.2 * ring.max()      # ring is detected
+    assert np.all(base >= slope - 1e-12)         # never dips below true slope
+
+
+def test_baseline_method_snip_vs_opening_on_slope():
+    # SNIP never creates a negative baseline dip; opening does.
+    q_step = 0.02
+    q = np.arange(0, 4, q_step)
+    slope = 0.5 * np.exp(-0.3 * q)
+    ring = 0.4 * np.exp(-0.5 * ((q - 2.0) / 0.04) ** 2)
+    prof = slope + ring
+
+    base_snip = _estimate_baseline(prof, q_step, ring_width=0.24, smooth=0.0, method="snip")
+    base_open = _estimate_baseline(prof, q_step, ring_width=0.24, smooth=0.0, method="opening")
+
+    # SNIP never dips below the true slope (no over-subtraction at any |Q|)
+    assert np.max(slope - base_snip) < 1e-10
+    # Opening dips below the slope by a measurable amount
+    assert np.max(slope - base_open) > 0.005
+
+
+def test_adaptive_ring_width_matches_each_ring_thickness():
+    # Three rings of different widths: the adaptive window must scale with each
+    # ring's own FWHM (narrow ring → narrow window, broad ring → broad window).
+    q_step = 0.01
+    q = np.arange(1.0, 6.0, q_step)
+    prof = (
+        1.0
+        + 0.6 * np.exp(-0.5 * ((q - 2.0) / 0.03) ** 2)   # narrow ring
+        + 0.6 * np.exp(-0.5 * ((q - 4.0) / 0.09) ** 2)   # broad ring
+    )
+    win = _adaptive_ring_width_profile(q, prof, q_step, base_width=0.24,
+                                       scale=3.0, cap_frac=0.9)
+    b_narrow = int(np.argmin(np.abs(q - 2.0)))
+    b_broad = int(np.argmin(np.abs(q - 4.0)))
+    assert win[b_broad] > win[b_narrow]            # broad ring gets a wider window
+    # Each window is roughly scale·FWHM of its own ring (FWHM = 2.355σ).
+    assert 0.10 < win[b_narrow] < 0.35
+    assert 0.45 < win[b_broad] < 0.80
+
+
+def test_adaptive_ring_width_caps_close_pair():
+    # A ring in a close pair must get a NARROWER window than the same-width ring
+    # in isolation, so the baseline clip is held back from bridging the pair and
+    # over-subtracting the diffuse valley between them.
+    q_step = 0.01
+    q = np.arange(1.0, 6.0, q_step)
+    sig = 0.05
+    pair = (1.0 + 0.6 * np.exp(-0.5 * ((q - 3.0) / sig) ** 2)
+                + 0.6 * np.exp(-0.5 * ((q - 3.18) / sig) ** 2))
+    solo = 1.0 + 0.6 * np.exp(-0.5 * ((q - 3.0) / sig) ** 2)   # isolated ring
+
+    b = int(np.argmin(np.abs(q - 3.0)))
+    w_pair = _adaptive_ring_width_profile(q, pair, q_step, 0.30, 3.0, 0.9)[b]
+    w_solo = _adaptive_ring_width_profile(q, solo, q_step, 0.30, 3.0, 0.9)[b]
+    assert w_pair < w_solo                        # neighbour cap kicked in
+    # And the clip half-width stays under the pair spacing, so it cannot bridge.
+    assert 0.5 * w_pair < 0.18
 
 
 def test_sampling_mask_keeps_uniform_low_q_shells():

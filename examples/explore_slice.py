@@ -16,6 +16,7 @@ import matplotlib
 matplotlib.use("macosx")          # interactive backend (use "qt" on Linux/Win)
 
 import dataclasses
+import os
 from pathlib import Path
 
 import numpy as np
@@ -31,8 +32,18 @@ from ndiff.preprocessing import (
 from ndiff.visualization import interactive_slices
 
 raw = Path("data/raw")
-data = ndiff.load([p for p in sorted(raw.glob("*.nxs"))
-                   if not p.stem.endswith(("_bkg", "_sub_bkg"))][0])
+# Default to the preferred 22K mmm validation file; the alphabetically-first
+# .nxs is the older 28K file, so select the 22K one explicitly unless DATA_FILE
+# overrides.  H_VALUE picks the slice (default 0.3333, where the diffuse signal
+# is clearest).
+data_file = os.environ.get("DATA_FILE")
+if data_file:
+    data = ndiff.load(Path(data_file))
+else:
+    cands = [p for p in sorted(raw.glob("*.nxs"))
+             if not p.stem.endswith(("_bkg", "_sub_bkg"))]
+    data = ndiff.load(next((p for p in cands if "22K_mmm" in p.stem), cands[0]))
+H_VALUE = float(os.environ.get("H_VALUE", "0.3333"))
 bkg = ndiff.load_mantid_nxs(
     [p for p in sorted(raw.glob("*.nxs")) if p.stem.endswith("_bkg")][0],
     ub_matrix=data.ub_matrix,
@@ -43,7 +54,7 @@ bkg = ndiff.load_mantid_nxs(
 # rings straight from the data:  residual = data - rings.
 USE_BACKGROUND = False
 
-ih0 = int(np.argmin(np.abs(data.h_axis)))
+ih0 = int(np.argmin(np.abs(data.h_axis - H_VALUE)))
 def _hslice(v):
     return dataclasses.replace(
         v, data=v.data[ih0:ih0 + 1], sigma=v.sigma[ih0:ih0 + 1],
@@ -70,16 +81,17 @@ if MASK_SPARSE:
     src = dataclasses.replace(src, mask=keep)
     print(f"sparse-azimuth mask: dropped {int((d.mask & ~keep).sum())} voxels")
 
-# Non-parametric per-patch radial background subtraction with a low-order,
-# count-weighted azimuthal-texture model.
+# Non-parametric per-patch radial background subtraction with a |Q|-pooled
+# azimuthal-texture model (the current reference config — all knobs at their
+# class defaults: SNIP baseline, n_fourier=8, texture_q_smooth=0.06).
 #   ring_width        : max ring full-width in |Q| removed as a peak (Å^-1)
 #   q_step            : radial bin width (finer than the ring to resolve peaks)
-#   baseline_smooth   : σ of the post-opening baseline smoothing (Å^-1)
+#   baseline_method   : 'snip' = slope-aware peak-clipping baseline
 #   profile_percentiles: trim band per |Q| bin (low=gaps, high=Bragg)
-#   texture_model     : 'fourier' = low-order T(φ) (anisotropy, Bragg-immune);
-#                       'patch' = discrete Hann blend
-#   n_fourier         : azimuthal harmonics (general Fourier; long-wavelength)
-#   texture_symmetric : False = general T(φ) (no mmm assumption)
+#   texture_model     : 'fourier' = T(φ) (anisotropy, Bragg-immune)
+#   n_fourier         : azimuthal harmonics (8 — resolves multi-lobed texture)
+#   texture_q_smooth  : pool the texture shape across the ring's |Q| width so
+#                       high harmonics don't ring on sparse azimuths
 #   ring_templates    : fixed Gaussian radial shapes from clean linecuts.  The
 #                       clean cuts here run along (0, ±1, l) from l=0 to ±30,
 #                       which avoids Bragg peaks and resolves close rings.
@@ -114,9 +126,9 @@ if templates:
 
 prm = PatchedRadialRingModel(
     n_patches=36, plane="0kl", q_step=0.02, ring_width=0.24,
-    baseline_smooth=0.06, profile_percentiles=(10.0, 80.0),
-    texture_model="fourier", n_fourier=3, texture_symmetric=False,
-    ring_templates=templates,
+    baseline_method="snip", baseline_smooth=0.06,
+    profile_percentiles=(10.0, 80.0), texture_model="fourier",
+    texture_symmetric=False, ring_templates=templates,
 )
 prof = prm.fit(src, q_range=(1.5, 10.5))
 print(f"ring model: texture={prm.texture_model} n_fourier={prm.n_fourier} "
@@ -130,7 +142,13 @@ print(f"0kl slice H={float(d.h_axis[0]):.3g}  background={'on' if USE_BACKGROUND
 print("Drag the vmin/vmax sliders; toggle linear/log₁₀ (bottom-left). "
       "Close the window to exit.")
 
+# Tight slider travel so the pullbar gives fine control near the diffuse level
+# (~0–0.3) instead of spanning the full bright-ring data range.  Override with
+# SLIDER_MIN / SLIDER_MAX env vars.
+slider_min = float(os.environ.get("SLIDER_MIN", "0.0"))
+slider_max = float(os.environ.get("SLIDER_MAX", "1.0"))
 interactive_slices(
     [("0kl data", src), ("removed rings (I_ring)", removed), ("residual = data - rings", residual)],
-    plane="0kl", value=0.0, cmap="inferno", vmax=0.3,
+    plane="0kl", value=0.0, cmap="inferno", vmin=0.0, vmax=0.3,
+    slider_min=slider_min, slider_max=slider_max,
 )

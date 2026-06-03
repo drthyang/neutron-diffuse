@@ -52,32 +52,32 @@ for k0 in (-1.0, 1.0):
 ring_centers = [r.q_center for r in fit_ring_profiles(q_ref, np.nanmean(np.vstack(cuts), 0))]
 
 variants = [
-    ("q.02 f3", dict(q_step=0.02, texture_model="fourier", n_fourier=3,
-                     texture_ridge=0.3, ring_smooth=0.0)),
-    ("q.01 f6 r.1", dict(q_step=0.01, texture_model="fourier", n_fourier=6,
-                         texture_ridge=0.1, ring_smooth=0.0)),
-    ("q.02 smooth10", dict(q_step=0.02, texture_model="smooth",
-                           texture_smoothness=10.0, ring_smooth=0.0)),
-    ("q.02 smooth30", dict(q_step=0.02, texture_model="smooth",
-                           texture_smoothness=30.0, ring_smooth=0.0)),
-    ("q.015 smooth30", dict(q_step=0.015, texture_model="smooth",
-                            texture_smoothness=30.0, ring_smooth=0.0)),
-    ("q.02 f10 r.1", dict(q_step=0.02, texture_model="fourier", n_fourier=10,
-                          texture_ridge=0.1, ring_smooth=0.0)),
-    ("q.02 f10 r.02", dict(q_step=0.02, texture_model="fourier", n_fourier=10,
-                           texture_ridge=0.02, ring_smooth=0.0)),
-    ("q.015 f10 r.1", dict(q_step=0.015, texture_model="fourier", n_fourier=10,
-                           texture_ridge=0.1, ring_smooth=0.0)),
-    ("q.015 f10 r.02", dict(q_step=0.015, texture_model="fourier", n_fourier=10,
-                            texture_ridge=0.02, ring_smooth=0.0)),
-    ("q.005 f6 r.1", dict(q_step=0.005, texture_model="fourier", n_fourier=6,
-                          texture_ridge=0.1, ring_smooth=0.0)),
-    ("q.0025 f3", dict(q_step=0.0025, texture_model="fourier", n_fourier=3,
-                       texture_ridge=0.3, ring_smooth=0.0)),
-    ("q.0025 f6 r.1", dict(q_step=0.0025, texture_model="fourier", n_fourier=6,
-                           texture_ridge=0.1, ring_smooth=0.0)),
-    ("q.0025 patch", dict(q_step=0.0025, texture_model="patch", n_fourier=3,
-                          texture_ridge=0.3, ring_smooth=0.0)),
+    # SNIP (new default) vs opening (old) side-by-side for the reference config
+    ("q.02 f3 snip", dict(q_step=0.02, texture_model="fourier", n_fourier=3,
+                          texture_ridge=0.3, baseline_method="snip", ring_smooth=0.0)),
+    ("q.02 f3 open", dict(q_step=0.02, texture_model="fourier", n_fourier=3,
+                          texture_ridge=0.3, baseline_method="opening", ring_smooth=0.0)),
+    # SNIP variants
+    ("q.01 f6 snip", dict(q_step=0.01, texture_model="fourier", n_fourier=6,
+                          texture_ridge=0.1, baseline_method="snip", ring_smooth=0.0)),
+    ("q.02 smooth10 snip", dict(q_step=0.02, texture_model="smooth",
+                                texture_smoothness=10.0, baseline_method="snip",
+                                ring_smooth=0.0)),
+    ("q.02 smooth30 snip", dict(q_step=0.02, texture_model="smooth",
+                                texture_smoothness=30.0, baseline_method="snip",
+                                ring_smooth=0.0)),
+    ("q.02 f10 r.1 snip", dict(q_step=0.02, texture_model="fourier", n_fourier=10,
+                                texture_ridge=0.1, baseline_method="snip",
+                                ring_smooth=0.0)),
+    ("q.02 f10 r.02 snip", dict(q_step=0.02, texture_model="fourier", n_fourier=10,
+                                 texture_ridge=0.02, baseline_method="snip",
+                                 ring_smooth=0.0)),
+    ("q.0025 f3 snip", dict(q_step=0.0025, texture_model="fourier", n_fourier=3,
+                             texture_ridge=0.3, baseline_method="snip",
+                             ring_smooth=0.0)),
+    ("q.0025 f6 snip", dict(q_step=0.0025, texture_model="fourier", n_fourier=6,
+                             texture_ridge=0.1, baseline_method="snip",
+                             ring_smooth=0.0)),
 ]
 
 q = src.q_magnitude()
@@ -113,10 +113,13 @@ def local_line_baseline(profile, b, half=24, gap=7):
 
 fits = []
 for label, params in variants:
+    params = params.copy()
+    baseline_method = params.pop("baseline_method", "snip")
     model = PatchedRadialRingModel(
         n_patches=36,
         plane="0kl",
         ring_width=0.24,
+        baseline_method=baseline_method,
         baseline_smooth=0.06,
         profile_percentiles=(10.0, 80.0),
         profile_method="trimmed_mean",

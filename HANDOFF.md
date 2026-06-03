@@ -2,22 +2,213 @@
 
 **Date:** 2026-06-03
 **Repo:** `neutron-diffuse`
+
+> ## ⛳ HIGHEST PRIORITY — ring off-centering (unresolved)
+>
+> **The powder rings are NOT centered on Q=0; this off-centering must be
+> resolved before any further ring-removal tuning.**  The whole radial model
+> assumes rings are concentric circles in |Q| about the origin — if the true
+> centre is offset, every per-|Q| profile smears the ring across a range of |Q|,
+> which under-subtracts on one side and over-subtracts on the other and cannot
+> be fixed by texture/thickness work.  **User flagged this as the top issue
+> (2026-06-03).**
+>
+> What exists already:
+> - `PatchedRadialRingModel(center_offset=(cx, cy))` — a **manual, single,
+>   global** in-plane offset (Å⁻¹, in the φ-plane frame).  `_offset_q_magnitude`
+>   / `_azimuthal_angle` apply it.  It is **not auto-fit** and is one offset for
+>   all rings.
+> - `examples/_ring_center_fit.py` — fits apparent ring centres in the in-plane
+>   Q frame.
+>
+> ⚠️ A **stale, now-contested** earlier note (in the 2026-06-03 diagnostics
+> entry below) claimed off-centering was negligible — circle fits on the
+> H=0.3333 slice gave weighted-mean centre |c|≈0.0014 Å⁻¹.  The user disagrees;
+> treat that conclusion as WRONG / not trustworthy and re-investigate from
+> scratch.  Things to check: (a) is the offset H-dependent (the validation slice
+> is H=0.3333, not H=0 — a non-zero H projected into the in-plane frame can shift
+> the apparent centre)?  (b) do different rings have different apparent centres
+> (so a single global `center_offset` is insufficient — may need a per-|Q| or
+> per-ring centre)?  (c) is the centre fit being biased by the sparse-azimuth
+> arcs or by Bragg?  Resume by re-running `_ring_center_fit.py` with the current
+> code, then wire an **automatic** centre fit into `PatchedRadialRingModel.fit`
+> (and decide global vs per-ring) before continuing thickness/texture work.
+
 **Status:** Ring-removal development remains the active focus; do **not** move
-to Bragg punch / backfill / ΔPDF yet.  The conservative reference setting is
-still `PatchedRadialRingModel(q_step=0.02, texture_model="fourier",
-n_fourier=3, texture_ridge=0.3, profile_percentiles=(10,80))`.  A new
-experimental `texture_model="smooth"` path fits a nonnegative smooth azimuthal
-texture with an L-BFGS-B minimizer and cyclic curvature penalty.  The preferred
-validation input is now
+to Bragg punch / backfill / ΔPDF yet.  The reference is now the class DEFAULTS:
+`PatchedRadialRingModel(q_step=0.02, texture_model="fourier", n_fourier=8,
+texture_ridge=0.05, texture_q_smooth=0.06, baseline_method="snip",
+adaptive_ring_width=True, ring_width_scale=3.0, ring_width_cap_frac=0.9,
+profile_percentiles=(10,80))`.  Three improvements landed this session (all
+below, newest first): per-ring **adaptive baseline thickness**; |Q|-pooled
+high-order **azimuthal texture** (inhomogeneous ring texture); and the
+slope-aware **SNIP baseline**.  Full suite 46/46.  Remaining ring-removal item:
+a uniform positive ring leftover (radial-amplitude under-fill).
+The preferred validation input is
 `data/raw/TbTi3Bi4_22K_mmm_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm.nxs`;
 its `H=0.3333` slice exposes diffuse signal more clearly than the earlier 28K
-file.  Syntax compilation and focused radial-background tests passed in the
-`rmc-discord` environment; official `pytest` / `ruff` / `mypy` still need a
-proper dev install if desired.
+file.  `pytest -o addopts=` passes **43/43** in the `rmc-discord` environment.
 
 ---
 
 ## Progress log
+
+### 2026-06-03 — Per-ring thickness: adaptive baseline window
+
+**Problem:** the baseline peak-removal window was one global `ring_width=0.24`
+for every ring.  But the rings' measured FWHM (from the Bragg-free `(0,±1,l)`
+linecut) span **2.6×**: 0.063–0.164 Å⁻¹.  A single width cannot fit them — the
+`ring_width` sweep on the 22K H=0.3333 slice showed a hard trade-off:
+
+| ring_width | ring leftover | off-ring diffuse eaten | close-pair valley eaten |
+|-----------:|--------------:|-----------------------:|------------------------:|
+| 0.12       | 0.557         | 0.008                  | 0.034 |
+| 0.24       | 0.241         | 0.012                  | 0.059 |
+| 0.40       | 0.199         | 0.016                  | 0.085 |
+
+Narrow under-captures the broad rings (residual); wide eats diffuse and
+**bridges close ring pairs** (over-subtracts the valley between e.g. the
+6.79/6.96 doublet, 0.174 Å⁻¹ apart).
+
+**Fix — `adaptive_ring_width` (new param, default True).**  The rings are
+detected once and each gets a baseline window of `ring_width_scale × FWHM`
+(default scale 3.0), **capped** to `ring_width_cap_frac ×` the distance to its
+nearest neighbour ring (default 0.9) so the clip can't bridge a close pair, and
+floored at `max(1.5·FWHM, 0.5·ring_width)` so a ring is always captured.
+`_snip_baseline` now accepts a per-|Q|-bin window array; the window varies 0.08–
+0.36 Å⁻¹ across the slice (narrow for the close 6.79/6.96/7.22 group, wide for
+the broad weak rings at 5.85/6.20).
+
+Detection is **two-pass and Bragg-robust**: pass 1 builds the per-patch robust
+profiles; the rings are detected on their **cross-patch median** (a ring is in
+every patch and survives; a Bragg peak is in one or two patches and is rejected
+— a single pooled trim can leak a Bragg through a sparse low-|Q| bin); pass 2
+computes the baselines with the adaptive window.  Only narrow peaks (FWHM ≤
+`ring_width`) and well-sampled bins count as rings.
+
+**Measured (22K mmm H=0.3333, vs global 0.24):** ring leftover 0.241 → **0.225**,
+**close-pair valley 0.059 → 0.041 (−31%)**, off-ring 0.0495 → 0.052 and
+neg_trough 0.013 → 0.016 (both marginally up).  Net: each ring is captured to
+its own width and close pairs are no longer bridged.
+
+New params: `adaptive_ring_width=True`, `ring_width_scale=3.0`,
+`ring_width_cap_frac=0.9`.  Visuals: `_slice_view.py VARIANT=globalw` (fixed
+width) vs `default` (adaptive).  Tests: +2 (46/46).
+
+### 2026-06-03 — Inhomogeneous ring texture: |Q|-pooled high-order Fourier
+
+**Problem:** the azimuthal texture T(φ) along each ring was under-fit.  The
+diagnostic `examples/_azimuthal_texture_cmp.py` (per-patch measured ring
+amplitude vs φ, point size ∝ voxel count, model curves overlaid) shows the real
+texture is **multi-lobed**, but the old low-order fit (`n_fourier=3`) only
+captured the gentle 2-fold term.  Simply raising the order was worse, not
+better: the texture was fit **independently per |Q| bin**, so each thin radial
+slice was noisy and high harmonics **rang** into the sparsely-sampled azimuths.
+
+**Root insight:** a ring's azimuthal texture comes from detector geometry /
+absorption and is **coherent across the ring's narrow radial width** (~12 bins
+at q_step=0.02).  Fitting each bin independently throws that pooling away.
+
+**Fix — `texture_q_smooth` (new param, default 0.06 Å⁻¹).**  Each |Q| bin's
+Fourier coefficients are split into a radial amplitude `A(q)` (the constant
+term — kept sharp, so the radial peak is *not* broadened) and a normalized
+texture shape `t(q,·)=coeff/A`; the **shape** is smoothed along |Q| with an
+amplitude-weighted Gaussian (pools within a ring, tapers to nothing off-ring)
+and recombined as `A(q)·t_smoothed`.  This raises the texture SNR by ≈√(ring
+bins), so a higher `n_fourier` resolves the real lobed structure *without*
+per-bin ringing.  Implemented in `_smooth_texture_shape_along_q`.
+
+**New defaults** (the improvement is now the default config):
+`n_fourier=8`, `texture_ridge=0.05`, `texture_q_smooth=0.06`
+(was 3 / 0.3 / 0).  `texture_ridge` could drop from 0.3→0.05 because ringing is
+now controlled by |Q|-pooling instead of by flattening the harmonics.
+
+**Measured on the 22K mmm H=0.3333 slice:**
+- Texture fit to the |Q|-pooled measured texture: RMS 0.0574 → **0.0523** (−9%),
+  and extrapolation swing (ringing into unmeasured azimuths) 0.026 → **0.017**
+  (−36%).  Note `f8 no-pool` was *worse than f3* on both (0.058 / 0.047),
+  confirming order alone is harmful — pooling is the enabling ingredient.
+- **Over-subtraction `neg_trough`: 0.0217 → 0.0107 (−51%).**  The improved
+  per-azimuth subtraction trades the old uneven over-subtraction (negative
+  troughs that corrupt the diffuse) for benign even under-subtraction.  The
+  remaining ~0.24 positive leftover is a *separate* radial-amplitude
+  under-fill present in f3 too — the next thing to attack.
+
+Visuals: `_slice_view.py` now has `VARIANT=default` (new) vs `VARIANT=f3old`.
+The removed-rings panel shows the rings now carry visible azimuthal lobes.
+
+**Next:** the residual is now honest under-subtraction (no troughs); attack the
+remaining uniform positive leftover at its source (trimmed-profile / amplitude
+slightly under-filling the ring peak on a curved background).
+
+### 2026-06-03 — Standard preview tool: explore_slice.py
+
+**Convention: always investigate ring-removal results with the interactive
+viewer `examples/explore_slice.py`.**  It is the canonical preview — a live
+3-panel slider window (data | removed rings | residual) on a single 0kl slice,
+running the current reference `PatchedRadialRingModel`.  Do not build ad-hoc
+preview scripts; use this one.
+
+Run:
+```
+PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
+  /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/explore_slice.py
+```
+(`rmc-discord` is the only env with numpy/scipy/matplotlib; the `macosx` backend
+blocks on `plt.show()` until you close the window.)
+
+Defaults now point at the workflow slice:
+- File: the **22K mmm** file (selected explicitly; the alphabetically-first
+  `.nxs` is the older 28K file).  Override with `DATA_FILE`.
+- Slice: **H=0.3333** (clearest diffuse).  Override with `H_VALUE`.
+- Baseline: SNIP (the new default, see below).
+- vmin/vmax **slider travel is 0.0 → 1.0** (override `SLIDER_MIN`/`SLIDER_MAX`):
+  deliberately tight so the pullbar gives fine control near the diffuse level
+  instead of spanning the full bright-ring data range.  Added `slider_min`/
+  `slider_max` params to `interactive_slices` for this.
+
+### 2026-06-03 — Over-subtraction fix: SNIP baseline estimator
+
+**Root cause diagnosed and fixed.**  The previous `_estimate_baseline` used
+`scipy.ndimage.grey_opening` (morphological erosion → dilation).  Morphological
+opening is a *lower-envelope* operator: the erosion step takes the **minimum**
+over a flat window, which on any sloping background returns the value at the
+lowest-intensity flank — not the interpolated background at the ring center.
+For the TbTi3Bi4 diffuse scattering (intensity decreasing with |Q|), this
+caused the opening to dip **below** the true diffuse baseline at every ring
+position, making `ring_estimate = prof − baseline` too large →
+**systematic over-subtraction / circular negative troughs**.
+
+Numerical verification (exponentially-decaying background + Al ring):
+| method   | max baseline dip below true diffuse | ring excess at centre |
+|----------|-------------------------------------|-----------------------|
+| opening  | −0.018 (over-subtracts flanks)       | 0.387 / 0.400 true    |
+| **snip** | **0.000** (never goes below slope)   | 0.395 / 0.400 true    |
+
+**Fix**: replaced `grey_opening` with the **SNIP** (Statistics-sensitive
+Non-linear Iterative Peak-clipping) algorithm.  SNIP iterates
+`base[b] = min(base[b], (base[b−i] + base[b+i]) / 2)` for i=1…n_iter, using
+the **midpoint** (not minimum) of symmetric neighbors.  For a linear slope the
+midpoint equals the current bin exactly → zero clipping → exact slope recovery.
+For a ring on a slope, the ring is correctly removed without the slope-induced
+baseline depression.
+
+New parameter `baseline_method` on `PatchedRadialRingModel`:
+- `'snip'` (default): SNIP, slope-aware, no over-subtraction
+- `'opening'`: old behaviour, kept for comparison
+
+New tests (43/43 pass):
+- `test_snip_no_oversubtraction_on_slope`: SNIP on a pure linear slope → error < 1e-12
+- `test_snip_removes_narrow_ring_on_slope`: ring detected, baseline never below slope
+- `test_baseline_method_snip_vs_opening_on_slope`: opening dips ≥ 0.005, SNIP dips < 1e-10
+
+Updated diagnostic scripts:
+- `_normal_slice_cmp.py`: now compares SNIP vs opening side-by-side for the reference config
+- `_radial_continuity_cmp.py`: all variants updated to `baseline_method="snip"` plus a `q.02 f3 open` reference for comparison
+
+**Recommended next step**: re-run `_normal_slice_cmp.py` and `_radial_continuity_cmp.py` on the 22K mmm `H=0.3333` slice to confirm the negative troughs are gone and ring suppression is at least as good as before.  The reference to report is now `q.02 f3 snip`.
+
+---
 
 ### 2026-06-03 — Ring-removal diagnostics on improved 22K mmm data
 
@@ -43,8 +234,11 @@ Key conclusions from the ring-removal sweeps:
 - Clean-linecut Gaussian templates from `(0, ±1, ±30)` give real ring widths,
   but forcing those narrow templates into the 2D subtraction made the residual
   worse on the earlier 28K slice; keep them as diagnostics only.
-- Off-centering is not the main issue on the improved data.  Circle fits on
-  the `H=0.3333` slice gave weighted mean center `|c|≈0.0014 Å⁻¹`.
+- ⚠️ **CONTESTED / now treated as WRONG** (see the HIGHEST-PRIORITY box at the
+  top): this entry originally claimed off-centering is not the main issue —
+  circle fits on the `H=0.3333` slice gave weighted mean center
+  `|c|≈0.0014 Å⁻¹`.  The user flagged ring off-centering as the top issue on
+  2026-06-03; do not rely on this `|c|≈0.0014` conclusion — re-investigate.
 - Added experimental `texture_model="smooth"`: for each `|Q|` bin, fit one
   nonnegative amplitude per azimuth patch with an L-BFGS-B minimizer and cyclic
   second-difference smoothness penalty.  On the improved data, `q.02 smooth10`

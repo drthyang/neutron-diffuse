@@ -33,6 +33,8 @@ def interactive_slices(
     interp: bool = False,
     vmin: Optional[float] = None,
     vmax: Optional[float] = None,
+    slider_min: Optional[float] = None,
+    slider_max: Optional[float] = None,
     show: bool = True,
 ):
     """Open an interactive window comparing slices with live colour controls.
@@ -53,6 +55,14 @@ def interactive_slices(
     vmin, vmax : float, optional
         Initial colour limits (in display units — log₁₀ when ``log_scale``).
         Default: ``vmin`` at the data floor, ``vmax`` at the 99th percentile.
+    slider_min, slider_max : float, optional
+        Travel range (end stops) of the vmin/vmax sliders in **linear** mode.
+        Default spans the full data range ``dmin..dmax``, but when the rings or
+        Bragg peaks are much brighter than the diffuse signal of interest that
+        leaves the useful range a tiny sliver of the pullbar.  Set a tight pair
+        (e.g. ``slider_min=-0.05, slider_max=0.5``) for fine control near the
+        diffuse level.  Ignored in log₁₀ mode (bounds are computed from the
+        data there).
     show : bool
         Call ``plt.show()`` before returning (set False for headless tests).
 
@@ -89,7 +99,9 @@ def interactive_slices(
     def scale_bounds() -> tuple[float, float]:
         if state["log"]:
             return float(np.log10(floor)), float(np.log10(max(dmax, floor * 10)))
-        return dmin, dmax
+        lo = dmin if slider_min is None else slider_min
+        hi = dmax if slider_max is None else slider_max
+        return lo, hi
 
     def default_clim() -> tuple[float, float]:
         d = to_display(finite)
