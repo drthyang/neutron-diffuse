@@ -67,16 +67,24 @@ if MASK_SPARSE:
     src = dataclasses.replace(src, mask=keep)
     print(f"sparse-azimuth mask: dropped {int((d.mask & ~keep).sum())} voxels")
 
-# Non-parametric per-patch radial background subtraction.
+# Non-parametric per-patch radial background subtraction with a low-order,
+# count-weighted azimuthal-texture model.
 #   ring_width        : max ring full-width in |Q| removed as a peak (Å^-1)
 #   q_step            : radial bin width (finer than the ring to resolve peaks)
 #   baseline_smooth   : σ of the post-opening baseline smoothing (Å^-1)
 #   profile_percentiles: trim band per |Q| bin (low=gaps, high=Bragg)
+#   texture_model     : 'fourier' = low-order symmetric T(φ) (anisotropy, Bragg-
+#                       immune, extrapolates across sparse azimuths); 'patch' =
+#                       discrete Hann blend (no extrapolation)
+#   n_fourier         : azimuthal harmonics (1 = cos2φ only; long-wavelength)
 prm = PatchedRadialRingModel(
     n_patches=36, plane="0kl", q_step=0.02, ring_width=0.24,
     baseline_smooth=0.06, profile_percentiles=(10.0, 80.0),
+    texture_model="fourier", n_fourier=1, texture_symmetric=True,
 )
 prof = prm.fit(src, q_range=(1.5, 10.5))
+print(f"ring model: texture={prm.texture_model} n_fourier={prm.n_fourier} "
+      f"symmetric={prm.texture_symmetric}")
 res, I_ring = prm.subtract(src, prof)
 removed = dataclasses.replace(src, data=I_ring)               # the fitted rings
 residual = dataclasses.replace(src, data=src.data - I_ring)   # data - rings

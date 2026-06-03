@@ -42,7 +42,7 @@ pipeline; the two are independently swappable.
 from __future__ import annotations
 
 import dataclasses
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 import numpy as np
@@ -71,12 +71,25 @@ class RadialRingProfiles:
     q_grid : (Q,)
         Radial |Q| grid (bin centres, Å⁻¹).
     ring_profile : (P, Q)
-        Smooth ring component ``max(0, prof − base)`` per patch — the quantity
-        subtracted from the data.
+        Smooth ring component ``max(0, prof − base)`` per patch — the per-patch
+        ring amplitude the azimuthal texture model is fit to.
     raw_profile : (P, Q)
         Robust (trimmed) radial profile per patch, before baseline removal.
     baseline : (P, Q)
         Estimated diffuse baseline per patch (diagnostic).
+    counts : (P, Q)
+        Number of valid voxels behind each (patch, |Q|) cell — the weights used
+        for the azimuthal Fourier fit (sparse patches count for little).
+    texture_coeffs : (Q, M)
+        Per-|Q| azimuthal-texture Fourier coefficients Tᵩ(φ).  ``M`` is
+        ``1 + n_fourier`` (symmetric, even-cosine basis) or ``1 + 2·n_fourier``
+        (full).  Empty when the texture model is the discrete patch blend.
+    n_fourier : int
+        Number of azimuthal harmonics in ``texture_coeffs``.
+    symmetric : bool
+        If True the texture basis is the even-cosine series {1, cos2φ, cos4φ, …}
+        (orthorhombic *mmm* in the kl/hl/hk plane); otherwise a full Fourier
+        series {1, cosφ, sinφ, …}.
     """
     plane: str
     patch_centers: NDArray[np.float64]
@@ -85,13 +98,46 @@ class RadialRingProfiles:
     ring_profile: NDArray[np.float64]
     raw_profile: NDArray[np.float64]
     baseline: NDArray[np.float64]
+    counts: NDArray[np.float64] = field(default_factory=lambda: np.array([]))
+    texture_coeffs: NDArray[np.float64] = field(default_factory=lambda: np.array([]))
+    n_fourier: int = 0
+    symmetric: bool = True
 
     def evaluate(
         self,
         q_mag: NDArray[np.float64],
         phi: NDArray[np.float64],
     ) -> NDArray[np.float64]:
-        """Ring intensity at voxels with given |Q| and φ (Hann-blended over patches)."""
+        """Ring intensity at voxels with given |Q| and φ.
+
+        Uses the per-|Q| low-order azimuthal Fourier texture when available
+        (smooth, Bragg-immune, defined over all φ including the unmeasured
+        azimuths); otherwise falls back to the discrete Hann patch blend.
+        """
+        if self.texture_coeffs.size:
+            return self._evaluate_fourier(q_mag, phi)
+        return self._evaluate_patches(q_mag, phi)
+
+    def _evaluate_fourier(
+        self, q_mag: NDArray, phi: NDArray
+    ) -> NDArray[np.float64]:
+        flat_q = q_mag.ravel()
+        flat_phi = phi.ravel()
+        # Interpolate each Fourier coefficient across |Q|, then evaluate the
+        # azimuthal basis at each voxel's φ.
+        basis = _azimuthal_basis(flat_phi, self.n_fourier, self.symmetric)  # (N, M)
+        coeff_at = np.empty((flat_q.size, self.texture_coeffs.shape[1]))
+        for m in range(self.texture_coeffs.shape[1]):
+            coeff_at[:, m] = np.interp(
+                flat_q, self.q_grid, self.texture_coeffs[:, m], left=0.0, right=0.0
+            )
+        I = np.einsum("nm,nm->n", basis, coeff_at)
+        np.maximum(I, 0.0, out=I)
+        return I.reshape(q_mag.shape)
+
+    def _evaluate_patches(
+        self, q_mag: NDArray, phi: NDArray
+    ) -> NDArray[np.float64]:
         flat_q = q_mag.ravel()
         flat_phi = phi.ravel()
         I = np.zeros(flat_q.shape, dtype=np.float64)
@@ -114,6 +160,15 @@ class RadialRingProfiles:
         good = wsum > 0
         I[good] /= wsum[good]
         return I.reshape(q_mag.shape)
+
+    def texture(self, q0: float, phi: NDArray) -> NDArray[np.float64]:
+        """Evaluate the azimuthal ring texture Tᵩ(φ) at a single |Q|=q0 (diagnostic)."""
+        basis = _azimuthal_basis(np.asarray(phi, float), self.n_fourier, self.symmetric)
+        coeffs = np.array([
+            np.interp(q0, self.q_grid, self.texture_coeffs[:, m], left=0.0, right=0.0)
+            for m in range(self.texture_coeffs.shape[1])
+        ])
+        return np.maximum(0.0, basis @ coeffs)
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +211,34 @@ class PatchedRadialRingModel:
     min_voxels_per_bin : int
         |Q| bins with fewer voxels fall back to the bin median (or NaN, then
         interpolated) rather than a trimmed mean.
+    texture_model : {'fourier', 'patch'}
+        ``'fourier'`` (default): model the ring's azimuthal amplitude Tᵩ(φ) as a
+        low-order Fourier series fit per |Q| to the robust per-patch amplitudes,
+        weighted by voxel count.  Smooth, immune to Bragg (low order + trimmed),
+        and defined over all φ — so it interpolates/extrapolates the texture
+        across azimuths that are sparsely sampled or unmeasured.  ``'patch'``
+        keeps the discrete Hann patch blend (no extrapolation).
+    n_fourier : int
+        Number of azimuthal harmonics for the Fourier texture (default 1 — the
+        single lowest *mmm* harmonic cos2φ; only long-wavelength texture, well
+        below the angular scale of Bragg peaks).  With the ring measured over
+        only narrow arcs, higher orders are poorly constrained — raise with care.
+    texture_symmetric : bool
+        Use the even-cosine basis {1, cos2φ, cos4φ, …} appropriate for a
+        symmetrised orthorhombic (*mmm*) volume in the kl/hl/hk plane (default
+        True).  The two symmetry-equivalent ring arcs then constrain one
+        texture, which is what makes the extrapolation well-posed.
+    texture_ridge : float
+        Dimensionless smoothness prior on the harmonic coefficients (∝ order²),
+        scaled to the weighted normal-matrix magnitude, to stabilise the fit
+        where the measured arcs are narrow (default 0.3 — keeps the texture
+        gentle without flattening it to a constant).
+    texture_min_count_frac : float
+        Per-|Q|, only patches sampled to at least this fraction of the
+        best-sampled patch's count enter the texture fit (default 0.15).
+        Under-sampled patches bias the ring amplitude low (too few voxels miss
+        the radial peak); excluding them keeps the texture on the well-measured
+        arcs so the ring is fully subtracted there.
     snr_mask_threshold : float or None
         After subtraction, mask voxels where ``I_ring / σ_data`` exceeds this,
         flagging them for the downstream backfill.  ``None`` leaves the mask
@@ -173,6 +256,11 @@ class PatchedRadialRingModel:
         profile_percentiles: tuple[float, float] = (10.0, 80.0),
         min_voxels_per_patch: int = 200,
         min_voxels_per_bin: int = 4,
+        texture_model: str = "fourier",
+        n_fourier: int = 1,
+        texture_symmetric: bool = True,
+        texture_ridge: float = 0.3,
+        texture_min_count_frac: float = 0.15,
         snr_mask_threshold: Optional[float] = None,
     ) -> None:
         self.n_patches = n_patches
@@ -184,6 +272,11 @@ class PatchedRadialRingModel:
         self.profile_percentiles = profile_percentiles
         self.min_voxels_per_patch = min_voxels_per_patch
         self.min_voxels_per_bin = min_voxels_per_bin
+        self.texture_model = texture_model
+        self.n_fourier = n_fourier
+        self.texture_symmetric = texture_symmetric
+        self.texture_ridge = texture_ridge
+        self.texture_min_count_frac = texture_min_count_frac
         self.snr_mask_threshold = snr_mask_threshold
         self._profiles: Optional[RadialRingProfiles] = None
 
@@ -220,6 +313,7 @@ class PatchedRadialRingModel:
         raw = np.zeros((self.n_patches, n_q))
         base = np.zeros((self.n_patches, n_q))
         ring = np.zeros((self.n_patches, n_q))
+        counts = np.zeros((self.n_patches, n_q))
 
         for p, pc in enumerate(patch_centers):
             d = _angular_distance(phiv_all, float(pc))
@@ -227,7 +321,7 @@ class PatchedRadialRingModel:
             if int(in_p.sum()) < self.min_voxels_per_patch:
                 continue
 
-            prof = _robust_radial_profile(
+            prof, cnt = _robust_radial_profile(
                 qv_all[in_p], Iv_all[in_p], edges,
                 self.profile_percentiles, self.min_voxels_per_bin,
             )
@@ -238,6 +332,16 @@ class PatchedRadialRingModel:
             raw[p] = prof
             base[p] = b
             ring[p] = np.maximum(0.0, prof - b)
+            counts[p] = cnt
+
+        # Per-|Q| low-order azimuthal Fourier texture, weighted by voxel count.
+        texture_coeffs = np.array([])
+        if self.texture_model == "fourier":
+            texture_coeffs = _fit_azimuthal_texture(
+                patch_centers, ring, counts, self.n_fourier,
+                self.texture_symmetric, self.texture_ridge,
+                self.texture_min_count_frac,
+            )
 
         self._profiles = RadialRingProfiles(
             plane=self.plane,
@@ -247,6 +351,10 @@ class PatchedRadialRingModel:
             ring_profile=ring,
             raw_profile=raw,
             baseline=base,
+            counts=counts,
+            texture_coeffs=texture_coeffs,
+            n_fourier=self.n_fourier,
+            symmetric=self.texture_symmetric,
         )
         return self._profiles
 
@@ -315,21 +423,100 @@ def _robust_radial_profile(
     edges: NDArray,
     percentiles: tuple[float, float],
     min_per_bin: int,
-) -> NDArray[np.float64]:
-    """Per-|Q|-bin trimmed mean (rejects Bragg high tail and gap low tail)."""
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Per-|Q|-bin trimmed mean (rejects Bragg high tail and gap low tail).
+
+    Returns ``(profile, counts)`` where ``counts`` is the number of voxels in
+    each |Q| bin (used as the azimuthal-fit weight).
+    """
     n_bins = len(edges) - 1
     out = np.full(n_bins, np.nan)
+    counts = np.zeros(n_bins)
     lo_p, hi_p = percentiles
     bin_idx = np.digitize(q, edges) - 1
     for b in range(n_bins):
         sel = I[bin_idx == b]
+        counts[b] = sel.size
         if sel.size >= min_per_bin:
             lo, hi = np.percentile(sel, (lo_p, hi_p))
             keep = sel[(sel >= lo) & (sel <= hi)]
             out[b] = keep.mean() if keep.size else float(np.median(sel))
         elif sel.size > 0:
             out[b] = float(np.median(sel))
-    return out
+    return out, counts
+
+
+def _azimuthal_basis(phi: NDArray, n_fourier: int, symmetric: bool) -> NDArray[np.float64]:
+    """Design matrix (N, M) of the azimuthal texture basis evaluated at *phi*.
+
+    symmetric : {1, cos2φ, cos4φ, …}  (orthorhombic *mmm* in the plane)
+    full      : {1, cosφ, sinφ, cos2φ, sin2φ, …}
+    """
+    cols = [np.ones_like(phi)]
+    if symmetric:
+        for j in range(1, n_fourier + 1):
+            cols.append(np.cos(2 * j * phi))
+    else:
+        for k in range(1, n_fourier + 1):
+            cols.append(np.cos(k * phi))
+            cols.append(np.sin(k * phi))
+    return np.column_stack(cols)
+
+
+def _fit_azimuthal_texture(
+    patch_centers: NDArray,
+    ring: NDArray,          # (P, Q) per-patch ring amplitude
+    counts: NDArray,        # (P, Q) per-patch voxel counts (weights)
+    n_fourier: int,
+    symmetric: bool,
+    ridge: float,
+    min_count_frac: float,
+) -> NDArray[np.float64]:
+    """Fit a low-order azimuthal Fourier series per |Q| bin (weighted ridge LS).
+
+    Returns coefficients of shape (Q, M).  Bins with no measured ring amplitude
+    yield all-zero coefficients (no ring → nothing to subtract).
+
+    Only patches with at least ``min_count_frac`` of the best-sampled patch's
+    count at that |Q| enter the fit: under-sampled patches bias the ring
+    amplitude *low* (too few voxels miss the radial peak), so including them
+    would drag the texture below the well-measured arcs and leave a residual
+    ring.
+    """
+    B = _azimuthal_basis(patch_centers, n_fourier, symmetric)   # (P, M)
+    P, M = B.shape
+    n_q = ring.shape[1]
+    coeffs = np.zeros((n_q, M))
+
+    # Smoothness prior: damp the non-constant harmonics, more strongly at higher
+    # order (∝ harmonic *index*², so the first/primary harmonic is only lightly
+    # penalised), leaving c₀ (the mean amplitude) free.  Scaled to the weighted
+    # normal matrix below so `ridge` is dimensionless.
+    if symmetric:
+        order = np.array([0] + [j ** 2 for j in range(1, n_fourier + 1)], float)
+    else:
+        order = np.array([0] + [k ** 2 for k in range(1, n_fourier + 1)
+                                for _ in (0, 1)], float)
+    reg = np.diag(order)
+
+    for b in range(n_q):
+        w = counts[:, b].copy()
+        y = ring[:, b]
+        if w.max() <= 0 or not np.any(y > 0):
+            continue
+        w[w < min_count_frac * w.max()] = 0.0   # trust only well-sampled patches
+        if w.sum() <= 0:
+            continue
+        wn = w / w[w > 0].mean()                 # normalise weight scale
+        AtA = B.T @ (B * wn[:, None])
+        # Scale the prior to the data term so `ridge` is relative, not absolute.
+        scale = np.trace(AtA) / M
+        Aty = B.T @ (wn * y)
+        try:
+            coeffs[b] = np.linalg.solve(AtA + ridge * scale * reg, Aty)
+        except np.linalg.LinAlgError:
+            coeffs[b], *_ = np.linalg.lstsq(AtA + ridge * scale * reg, Aty, rcond=None)
+    return coeffs
 
 
 def _fill_nan_1d(prof: NDArray) -> NDArray[np.float64]:
