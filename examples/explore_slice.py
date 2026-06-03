@@ -57,13 +57,14 @@ if USE_BACKGROUND:
 else:
     src = d   # ring model fits the total ring signal directly
 
-# Mask under-sampled azimuthal sectors (the bright y=-x sparse-sampling streak):
-# those (|Q|, φ) cells hold only a few unreliable measurements and would survive
-# ring removal as bright artefacts.  Drop them for the downstream backfill.
-#   min_count : cells with fewer valid voxels are dropped (~7% of the slice at 15)
+# Mask azimuthally under-sampled (|Q|, φ) cells (anomalously sparse sectors whose
+# few measurements are unreliable).  The threshold is relative to each |Q|-shell
+# so uniformly low-density shells (e.g. small |Q|) are NOT carved out.
+#   min_count_frac : drop cells below this fraction of the shell's median count
 MASK_SPARSE = True
 if MASK_SPARSE:
-    keep = azimuthal_sampling_mask(src, plane="0kl", min_count=15, q_range=(1.5, 10.5))
+    keep = azimuthal_sampling_mask(src, plane="0kl", min_count_frac=0.25,
+                                   q_range=(1.5, 10.5))
     src = dataclasses.replace(src, mask=keep)
     print(f"sparse-azimuth mask: dropped {int((d.mask & ~keep).sum())} voxels")
 
@@ -73,14 +74,14 @@ if MASK_SPARSE:
 #   q_step            : radial bin width (finer than the ring to resolve peaks)
 #   baseline_smooth   : σ of the post-opening baseline smoothing (Å^-1)
 #   profile_percentiles: trim band per |Q| bin (low=gaps, high=Bragg)
-#   texture_model     : 'fourier' = low-order symmetric T(φ) (anisotropy, Bragg-
-#                       immune, extrapolates across sparse azimuths); 'patch' =
-#                       discrete Hann blend (no extrapolation)
-#   n_fourier         : azimuthal harmonics (1 = cos2φ only; long-wavelength)
+#   texture_model     : 'fourier' = low-order T(φ) (anisotropy, Bragg-immune);
+#                       'patch' = discrete Hann blend
+#   n_fourier         : azimuthal harmonics (general Fourier; long-wavelength)
+#   texture_symmetric : False = general T(φ) (no mmm assumption)
 prm = PatchedRadialRingModel(
     n_patches=36, plane="0kl", q_step=0.02, ring_width=0.24,
     baseline_smooth=0.06, profile_percentiles=(10.0, 80.0),
-    texture_model="fourier", n_fourier=1, texture_symmetric=True,
+    texture_model="fourier", n_fourier=3, texture_symmetric=False,
 )
 prof = prm.fit(src, q_range=(1.5, 10.5))
 print(f"ring model: texture={prm.texture_model} n_fourier={prm.n_fourier} "

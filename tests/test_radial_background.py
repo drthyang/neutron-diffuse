@@ -88,11 +88,12 @@ def test_radial_background_no_negative_ring_estimate():
 
 def test_fourier_texture_recovers_anisotropy_with_correct_phase():
     # Injected texture is 1 + 0.4 cos(2φ): max at φ=0/π, min at ±π/2.
+    # General (non-symmetric) basis must recover it given n_fourier>=2.
     vol, *_ = _ring_vol()
     model = PatchedRadialRingModel(n_patches=24, plane="hk0", q_step=0.04,
                                    ring_width=0.3, baseline_smooth=0.08,
-                                   texture_model="fourier", n_fourier=1,
-                                   texture_ridge=0.3)
+                                   texture_model="fourier", n_fourier=2,
+                                   texture_symmetric=False, texture_ridge=0.3)
     prof = model.fit(vol, q_range=(1.0, 4.0))
     assert prof.texture_coeffs.size                    # Fourier model populated
     qpk = float(prof.q_grid[np.argmax(prof.ring_profile.max(axis=0))])
@@ -126,8 +127,8 @@ def test_azimuthal_sampling_mask_drops_undersampled_sector():
     thin = sector & (rng.random(vol.shape) > 0.05)       # keep ~5% of it
     vol.mask[thin] = False
 
-    keep = azimuthal_sampling_mask(vol, plane="hk0", n_phi_bins=12,
-                                   n_q_bins=10, min_count=10, q_range=(1.0, 4.0))
+    keep = azimuthal_sampling_mask(vol, plane="hk0", n_phi_bins=12, n_q_bins=10,
+                                   min_count_frac=0.25, min_count=3, q_range=(1.0, 4.0))
     assert (keep <= vol.mask).all()                       # never adds voxels
     # Interior of the thinned sector (clear of bin edges, within q-range) is
     # dropped; the dense opposite side is kept.
@@ -137,3 +138,19 @@ def test_azimuthal_sampling_mask_drops_undersampled_sector():
     outer = (phi < -0.2) & vol.mask & in_q
     assert keep[inner].mean() < 0.3
     assert keep[outer].mean() > 0.9
+
+
+def test_sampling_mask_keeps_uniform_low_q_shells():
+    # Regression: a uniformly-sampled volume must NOT lose its low-|Q| annulus
+    # (few points per cell there is expected, not anomalous) — the old absolute
+    # threshold carved a "pixelised empty ring".
+    h = np.linspace(-4, 4, 101); k = np.linspace(-4, 4, 101); l = np.linspace(0, 0, 1)
+    ub = 2 * np.pi * np.eye(3) / 4.0
+    vol = HKLVolume.from_arrays(
+        np.ones((101, 101, 1)), (h[0], h[-1]), (k[0], k[-1]), (l[0], l[-1]), ub_matrix=ub
+    )
+    keep = azimuthal_sampling_mask(vol, plane="hk0", n_phi_bins=72, n_q_bins=90,
+                                   min_count_frac=0.25, min_count=1, q_range=(0.5, 4.0))
+    q = vol.q_magnitude()
+    low_q = vol.mask & (q > 0.6) & (q < 1.5)
+    assert keep[low_q].mean() > 0.9          # low-|Q| shells preserved

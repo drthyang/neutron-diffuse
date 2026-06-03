@@ -101,7 +101,7 @@ class RadialRingProfiles:
     counts: NDArray[np.float64] = field(default_factory=lambda: np.array([]))
     texture_coeffs: NDArray[np.float64] = field(default_factory=lambda: np.array([]))
     n_fourier: int = 0
-    symmetric: bool = True
+    symmetric: bool = False
 
     def evaluate(
         self,
@@ -219,15 +219,16 @@ class PatchedRadialRingModel:
         across azimuths that are sparsely sampled or unmeasured.  ``'patch'``
         keeps the discrete Hann patch blend (no extrapolation).
     n_fourier : int
-        Number of azimuthal harmonics for the Fourier texture (default 1 — the
-        single lowest *mmm* harmonic cos2φ; only long-wavelength texture, well
-        below the angular scale of Bragg peaks).  With the ring measured over
-        only narrow arcs, higher orders are poorly constrained — raise with care.
+        Number of azimuthal harmonics for the Fourier texture (default 3).  Low
+        order captures only long-wavelength texture, well below the angular scale
+        of (point-like) Bragg peaks, so they cannot leak into the texture.
     texture_symmetric : bool
-        Use the even-cosine basis {1, cos2φ, cos4φ, …} appropriate for a
-        symmetrised orthorhombic (*mmm*) volume in the kl/hl/hk plane (default
-        True).  The two symmetry-equivalent ring arcs then constrain one
-        texture, which is what makes the extrapolation well-posed.
+        If True, restrict the texture to the even-cosine basis {1, cos2φ, cos4φ,
+        …} (a symmetrised orthorhombic *mmm* volume in the plane).  Default
+        False — fit a **general** Fourier series {1, cosφ, sinφ, cos2φ, sin2φ,
+        …} that makes no symmetry assumption.  With full azimuthal coverage the
+        general fit is well-posed; impose symmetry only when coverage is
+        one-sided and the point group justifies it.
     texture_ridge : float
         Dimensionless smoothness prior on the harmonic coefficients (∝ order²),
         scaled to the weighted normal-matrix magnitude, to stabilise the fit
@@ -257,8 +258,8 @@ class PatchedRadialRingModel:
         min_voxels_per_patch: int = 200,
         min_voxels_per_bin: int = 4,
         texture_model: str = "fourier",
-        n_fourier: int = 1,
-        texture_symmetric: bool = True,
+        n_fourier: int = 3,
+        texture_symmetric: bool = False,
         texture_ridge: float = 0.3,
         texture_min_count_frac: float = 0.15,
         snr_mask_threshold: Optional[float] = None,
