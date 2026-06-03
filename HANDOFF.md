@@ -12,6 +12,26 @@ the full 3D volume and continue to Bragg punch / ΔPDF / writers.
 
 ## Progress log
 
+### 2026-06-02 (cont.) — Empty-ring fix + general (non-mmm) texture
+
+Two fixes (commit ad4b791):
+1. **Pixelised empty ring** at q≈1.5–2: `azimuthal_sampling_mask` used an
+   absolute `min_count`, deleting the whole low-|Q| annulus (cells there hold
+   few voxels because the circumference is small). Now the threshold is
+   **relative to each |Q|-shell's median cell occupancy** (`min_count_frac=0.25`,
+   tiny absolute floor `min_count=1`). Drops ~480 voxels (was ~3900); ring gone.
+   Regression test added.
+2. **General azimuthal texture** (drop the mmm assumption): default is now a
+   general Fourier series {1,cosφ,sinφ,cos2φ,…} (`texture_symmetric=False`,
+   `n_fourier=3`); the even-cosine basis stays available via
+   `texture_symmetric=True`. With full coverage the general fit tracks the
+   measured ~2-fold modulation; suppression unchanged (~90%, <0.05% over-sub).
+
+Still open on this slice: faint leftover concentric rings at the few-% level
+(radial under-subtraction — trimmed-mean profile slightly under the peak /
+opening baseline shoulder) and the bright radial spokes (sparse-sampling
+artefact, not rings). Tests 37/37.
+
 ### 2026-06-02 (cont.) — Azimuth-frame bug fix (oriented crystal)
 
 Found and fixed a real bug in `_azimuthal_angle`: it took φ from fixed lab-frame
