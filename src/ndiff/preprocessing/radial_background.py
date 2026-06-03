@@ -240,6 +240,17 @@ class PatchedRadialRingModel:
         Under-sampled patches bias the ring amplitude low (too few voxels miss
         the radial peak); excluding them keeps the texture on the well-measured
         arcs so the ring is fully subtracted there.
+    ring_templates : sequence, optional
+        Fixed radial ring shapes, each an object with ``q_center`` and ``sigma``
+        attributes (e.g. :class:`~ndiff.preprocessing.powder_rings.RingProfile`)
+        or a ``(q_center, sigma)`` tuple — typically from a Bragg-free linecut
+        (:func:`~ndiff.preprocessing.powder_rings.fit_ring_profiles`).  When
+        given, each patch's ring profile is rebuilt as Σ aᵢ·Gᵢ(|Q|) with the
+        amplitudes ``aᵢ`` projected from the patch's baseline-subtracted profile,
+        so the subtracted radial *shape* matches the measured ring width exactly
+        (the trimmed per-patch profile otherwise slightly under-fills the peak
+        and leaves a faint residual ring).  ``None`` keeps the fully
+        non-parametric profile.
     snr_mask_threshold : float or None
         After subtraction, mask voxels where ``I_ring / σ_data`` exceeds this,
         flagging them for the downstream backfill.  ``None`` leaves the mask
@@ -262,6 +273,7 @@ class PatchedRadialRingModel:
         texture_symmetric: bool = False,
         texture_ridge: float = 0.3,
         texture_min_count_frac: float = 0.15,
+        ring_templates: Optional[object] = None,
         snr_mask_threshold: Optional[float] = None,
     ) -> None:
         self.n_patches = n_patches
@@ -278,8 +290,22 @@ class PatchedRadialRingModel:
         self.texture_symmetric = texture_symmetric
         self.texture_ridge = texture_ridge
         self.texture_min_count_frac = texture_min_count_frac
+        self.ring_templates = ring_templates
         self.snr_mask_threshold = snr_mask_threshold
         self._profiles: Optional[RadialRingProfiles] = None
+
+    def _template_gaussians(self, q_grid: NDArray) -> list[NDArray]:
+        """Unit-height Gaussians Gᵢ(|Q|) on *q_grid* from ``ring_templates``."""
+        if not self.ring_templates:
+            return []
+        gauss = []
+        for t in self.ring_templates:
+            c = getattr(t, "q_center", None)
+            s = getattr(t, "sigma", None)
+            if c is None:                      # (center, sigma) tuple
+                c, s = t
+            gauss.append(np.exp(-0.5 * ((q_grid - float(c)) / float(s)) ** 2))
+        return gauss
 
     # ------------------------------------------------------------------
     # Public API
@@ -316,6 +342,12 @@ class PatchedRadialRingModel:
         ring = np.zeros((self.n_patches, n_q))
         counts = np.zeros((self.n_patches, n_q))
 
+        # Optional fixed radial templates Gᵢ(|Q|) (Gaussian, from a Bragg-free
+        # linecut fit).  When given, each patch's ring profile is rebuilt as
+        # Σ aᵢ·Gᵢ so the subtracted radial *shape* matches the measured ring
+        # width exactly (no washed-out peak / baseline shoulder).
+        templates = self._template_gaussians(q_grid)
+
         for p, pc in enumerate(patch_centers):
             d = _angular_distance(phiv_all, float(pc))
             in_p = np.abs(d) <= half_width
@@ -330,10 +362,11 @@ class PatchedRadialRingModel:
             b = _estimate_baseline(
                 prof, self.q_step, self.ring_width, self.baseline_smooth,
             )
+            excess = np.maximum(0.0, prof - b)
             raw[p] = prof
             base[p] = b
-            ring[p] = np.maximum(0.0, prof - b)
             counts[p] = cnt
+            ring[p] = _project_templates(excess, templates) if templates else excess
 
         # Per-|Q| low-order azimuthal Fourier texture, weighted by voxel count.
         texture_coeffs = np.array([])
@@ -434,6 +467,24 @@ def _angular_distance(phi: NDArray, phi_c: float) -> NDArray:
     """Signed angular distance in (-π, π], accounting for wrap-around."""
     d = phi - phi_c
     return (d + np.pi) % (2 * np.pi) - np.pi
+
+
+def _project_templates(excess: NDArray, templates: list[NDArray]) -> NDArray[np.float64]:
+    """Rebuild a radial ring profile as Σ aᵢ·Gᵢ from fixed Gaussian templates.
+
+    Each amplitude is the (non-negative) least-squares projection of the
+    baseline-subtracted profile onto that template, ``aᵢ = Σ excess·Gᵢ / Σ Gᵢ²``,
+    so overlapping templates share intensity sensibly and the result has exactly
+    the template radial shape.
+    """
+    out = np.zeros_like(excess)
+    for g in templates:
+        denom = float(g @ g)
+        if denom <= 0:
+            continue
+        a = max(0.0, float(excess @ g) / denom)
+        out += a * g
+    return out
 
 
 def _robust_radial_profile(

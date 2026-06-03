@@ -59,6 +59,27 @@ class RingShell:
         return 0.5 * (self.q_hi - self.q_lo)
 
 
+@dataclass
+class RingProfile:
+    """Radial shape of one powder ring fit on a (Bragg-free) linecut.
+
+    Attributes
+    ----------
+    q_center : float   Ring peak |Q| (Å⁻¹).
+    sigma    : float   Gaussian σ in |Q| (Å⁻¹).
+    amplitude: float   Peak height above the local baseline.
+    baseline : float   Local diffuse level under the ring.
+    """
+    q_center: float
+    sigma: float
+    amplitude: float
+    baseline: float = 0.0
+
+    @property
+    def fwhm(self) -> float:
+        return 2.3548 * self.sigma
+
+
 # ---------------------------------------------------------------------------
 # Known material helper
 # ---------------------------------------------------------------------------
@@ -187,6 +208,104 @@ def line_profile(
     intensity = interp(hkl)
     q_mag = np.linalg.norm(hkl @ vol.ub_matrix.T, axis=1)
     return q_mag, intensity, hkl
+
+
+def fit_ring_profiles(
+    q: NDArray,
+    intensity: NDArray,
+    centers: Optional[list[float]] = None,
+    prominence: float = 0.04,
+    min_distance: int = 8,
+    cluster_gap: float = 0.3,
+    half_window: float = 0.22,
+    sigma0: float = 0.04,
+) -> list["RingProfile"]:
+    """Fit each powder ring's radial shape (center, σ, amplitude, baseline).
+
+    Intended for a *Bragg-free* radial profile (see :func:`line_profile` along a
+    systematically-absent line such as ``(0, ±1, l)``), where each ring is a
+    clean peak.  Overlapping rings are fit jointly as a sum of Gaussians on a
+    shared linear baseline.
+
+    Parameters
+    ----------
+    q, intensity : 1D arrays
+        Radial |Q| (Å⁻¹) and intensity of the linecut (NaNs allowed).
+    centers : list of float, optional
+        Ring |Q| positions.  If None, detected via :func:`scipy.signal.find_peaks`
+        (``prominence``, ``min_distance``).
+    cluster_gap : float
+        Rings closer than this (Å⁻¹) are fit jointly.
+    half_window : float
+        Fit window padding on each side of a cluster (Å⁻¹).
+    sigma0 : float
+        Initial Gaussian σ guess (Å⁻¹).
+
+    Returns
+    -------
+    list[RingProfile]  (sorted by q_center)
+    """
+    from scipy.optimize import curve_fit
+    from scipy.signal import find_peaks
+
+    q = np.asarray(q, float)
+    intensity = np.asarray(intensity, float)
+    finite = np.isfinite(intensity)
+
+    if centers is None:
+        peaks, _ = find_peaks(np.where(finite, intensity, 0.0),
+                              prominence=prominence, distance=min_distance)
+        centers = list(q[peaks])
+    centers = sorted(centers)
+    if not centers:
+        return []
+
+    # Cluster nearby centers for joint fitting.
+    clusters: list[list[float]] = [[centers[0]]]
+    for c in centers[1:]:
+        if c - clusters[-1][-1] < cluster_gap:
+            clusters[-1].append(c)
+        else:
+            clusters.append([c])
+
+    def _model(x: NDArray, *p: float) -> NDArray:
+        n = (len(p) - 2) // 3
+        x0_ref = x.mean()
+        y = p[-2] + p[-1] * (x - x0_ref)
+        for i in range(n):
+            amp, x0, sig = p[3 * i:3 * i + 3]
+            y = y + amp * np.exp(-0.5 * ((x - x0) / sig) ** 2)
+        return y
+
+    out: list[RingProfile] = []
+    for cl in clusters:
+        lo, hi = min(cl) - half_window, max(cl) + half_window
+        sel = finite & (q >= lo) & (q <= hi)
+        if int(sel.sum()) < 3 * len(cl) + 2:
+            continue
+        qq, ii = q[sel], intensity[sel]
+        base0 = float(np.percentile(ii, 20))
+        p0: list[float] = []
+        lb: list[float] = []
+        ub: list[float] = []
+        for c in cl:
+            p0 += [max(1e-3, float(ii.max()) - base0), float(c), sigma0]
+            lb += [0.0, c - 0.1, 0.005]
+            ub += [np.inf, c + 0.1, 0.2]
+        p0 += [base0, 0.0]
+        lb += [0.0, -np.inf]
+        ub += [np.inf, np.inf]
+        try:
+            popt, _ = curve_fit(_model, qq, ii, p0=p0, bounds=(lb, ub), maxfev=20000)
+        except (RuntimeError, ValueError):
+            continue
+        baseline = float(popt[-2])
+        for i in range(len(cl)):
+            amp, x0, sig = popt[3 * i:3 * i + 3]
+            out.append(RingProfile(q_center=float(x0), sigma=abs(float(sig)),
+                                   amplitude=float(amp), baseline=baseline))
+    out.sort(key=lambda r: r.q_center)
+    return out
 
 
 # ---------------------------------------------------------------------------

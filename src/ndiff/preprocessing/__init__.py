@@ -27,10 +27,12 @@ from ndiff.preprocessing.sampling import azimuthal_sampling_mask
 from ndiff.preprocessing.backfill import backfill_ring_shells
 from ndiff.preprocessing.powder_rings import (
     RingShell,
+    RingProfile,
     detect_ring_shells,
     mask_ring_shells,
     radial_profile,
     line_profile,
+    fit_ring_profiles,
     al_ring_q_positions,
 )
 
@@ -46,9 +48,11 @@ __all__ = [
     "backfill_ring_shells",
     # Utilities / diagnostics
     "RingShell",
+    "RingProfile",
     "detect_ring_shells",
     "mask_ring_shells",
     "radial_profile",
     "line_profile",
+    "fit_ring_profiles",
     "al_ring_q_positions",
 ]
