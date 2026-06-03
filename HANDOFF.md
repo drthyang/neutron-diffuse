@@ -12,6 +12,42 @@ the full 3D volume and continue to Bragg punch / ΔPDF / writers.
 
 ## Progress log
 
+### 2026-06-02 (cont.) — Ring removal rebuilt: non-parametric + sparse-azimuth mask
+
+The committed `PatchedRingModel` removed almost nothing on the real 28K 0kl
+slice. Root-caused three compounding defects: (1) the rank-1 SVD forces one
+shared `T(φ)` on all rings, so an outlier ring (q=4.389, spiked by the streak)
+hijacks the first singular vector and collapses every other ring while driving
+`T(φ)` negative; (2) `flatness_cv` gates out the *strongest* rings; (3) the
+shell halfwidth (0.12) ≫ the true ring width (σ≈0.03), so the shell-mean washes
+the peak away (and ring centres drift from the Al hints). Net ~5–10× under-sub.
+
+**New estimator** `preprocessing/radial_background.py` — `PatchedRadialRingModel`
+(non-parametric, the chosen direction): per azimuthal patch, a robust
+trimmed-mean radial profile (rejects Bragg high tail + gap low tail) minus a
+morphological-opening baseline (`ring_width`) gives `ring = max(0, prof−base)`;
+patches are Hann-blended. No ring centres/widths/hints/Gaussians. Bragg is
+rejected by the trim and left for the punch. Tuned on the slice:
+`ring_width=0.24`, `profile_percentiles=(10,80)` → strong rings q=3.103/4.389
+suppressed **85–86%** (was 2–3%), diffuse preserved (removed≈0 between rings),
+over-subtraction <0.2% of voxels. (Also fixed the old `PatchedRingModel` to use
+per-ring `Aᵢ(φ)` instead of the shared rank-1 `T(φ)`; SVD kept as diagnostic.)
+
+**Sparse-azimuth streak** diagnosed as a *data-quality* artefact: the 0kl slice
+is densely measured near the L-axis (~1000 voxels/sector) and sparse near the
+K-axis (3–8/sector); those few samples are anomalously bright (q=4.389 data
+~1.5 vs the real ~0.63 ring level) and correctly survive ring removal (they are
+not rings). New `preprocessing/sampling.py::azimuthal_sampling_mask` drops
+under-sampled (|Q|,φ) cells (min_count=15 → ~7% of the slice) for the backfill;
+this is the diagonal `y=−x` band in (K,L). Wired into `explore_slice.py`
+(`MASK_SPARSE`). Both ring estimators + the mask are exported and swappable.
+Tests: 34/34 (added `tests/test_radial_background.py`).
+
+**To resume:** promote to the full 3D volume (watch `RadialRingProfiles.evaluate`
+perf — it loops `n_patches` over all voxels; chunk for 30M), then Bragg punch →
+backfill → ΔPDF. Minor: a faint q=4.39 residual ring remains (~8–14%); raising
+`ring_width` to 0.30 trims it further at slight diffuse cost.
+
 ### 2026-06-02 (cont.) — Pipeline shakedown + ring-model redesign (UNCOMMITTED)
 
 Validated the processing pipeline on the real 28K dataset; this surfaced four

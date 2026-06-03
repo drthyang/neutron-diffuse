@@ -21,7 +21,11 @@ from pathlib import Path
 import numpy as np
 
 import ndiff
-from ndiff.preprocessing import EmptySubtractor, PatchedRadialRingModel
+from ndiff.preprocessing import (
+    EmptySubtractor,
+    PatchedRadialRingModel,
+    azimuthal_sampling_mask,
+)
 from ndiff.visualization import interactive_slices
 
 raw = Path("data/raw")
@@ -53,19 +57,29 @@ if USE_BACKGROUND:
 else:
     src = d   # ring model fits the total ring signal directly
 
+# Mask under-sampled azimuthal sectors (the bright y=-x sparse-sampling streak):
+# those (|Q|, φ) cells hold only a few unreliable measurements and would survive
+# ring removal as bright artefacts.  Drop them for the downstream backfill.
+#   min_count : cells with fewer valid voxels are dropped (~7% of the slice at 15)
+MASK_SPARSE = True
+if MASK_SPARSE:
+    keep = azimuthal_sampling_mask(src, plane="0kl", min_count=15, q_range=(1.5, 10.5))
+    src = dataclasses.replace(src, mask=keep)
+    print(f"sparse-azimuth mask: dropped {int((d.mask & ~keep).sum())} voxels")
+
 # Non-parametric per-patch radial background subtraction.
 #   ring_width        : max ring full-width in |Q| removed as a peak (Å^-1)
 #   q_step            : radial bin width (finer than the ring to resolve peaks)
 #   baseline_smooth   : σ of the post-opening baseline smoothing (Å^-1)
 #   profile_percentiles: trim band per |Q| bin (low=gaps, high=Bragg)
 prm = PatchedRadialRingModel(
-    n_patches=36, plane="0kl", q_step=0.02, ring_width=0.18,
+    n_patches=36, plane="0kl", q_step=0.02, ring_width=0.24,
     baseline_smooth=0.06, profile_percentiles=(10.0, 80.0),
 )
 prof = prm.fit(src, q_range=(1.5, 10.5))
 res, I_ring = prm.subtract(src, prof)
-removed = dataclasses.replace(d, data=I_ring)                 # the fitted rings
-residual = dataclasses.replace(d, data=src.data - I_ring)     # data - rings
+removed = dataclasses.replace(src, data=I_ring)               # the fitted rings
+residual = dataclasses.replace(src, data=src.data - I_ring)   # data - rings
 
 print(f"0kl slice H={float(d.h_axis[0]):.3g}  background={'on' if USE_BACKGROUND else 'OFF'}  "
       f"non-parametric radial-background model")

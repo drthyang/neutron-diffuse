@@ -140,7 +140,10 @@ class PatchedRadialRingModel:
     ring_width : float
         Approximate maximum full width (Å⁻¹) of a powder ring in |Q|.  Sets the
         morphological-opening element: peaks narrower than this are treated as
-        rings; broader structure is kept as diffuse baseline (default 0.18).
+        rings; broader structure is kept as diffuse baseline (default 0.24,
+        validated on the 28K 0kl slice — larger removes broader rings more
+        completely at negligible diffuse cost; too large risks eating broad
+        diffuse features).
     baseline_smooth : float
         σ (Å⁻¹) of the Gaussian applied to the baseline after opening, to avoid
         kinks (default 0.06).  Set 0 to disable.
@@ -165,7 +168,7 @@ class PatchedRadialRingModel:
         overlap_frac: float = 0.3,
         plane: str = "hk0",
         q_step: float = 0.02,
-        ring_width: float = 0.18,
+        ring_width: float = 0.24,
         baseline_smooth: float = 0.06,
         profile_percentiles: tuple[float, float] = (10.0, 80.0),
         min_voxels_per_patch: int = 200,
