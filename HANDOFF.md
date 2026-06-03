@@ -1,16 +1,44 @@
 # Hand-off Notes — neutron-diffuse
 
-**Date:** 2026-06-02  
-**Repo:** `neutron-diffuse`  
-**Status:** Pipeline shakedown on real 28K data → 4 correctness/perf bugs fixed.
-Ring-removal algorithm under **active redesign** on a single 0kl slice (fast 2D
-harness). All session changes are **uncommitted** (HEAD still `17b1eba`); 31/31
-tests pass. Resume point: tune the ring-model flatness gate, then re-validate on
-the full 3D volume and continue to Bragg punch / ΔPDF / writers.
+**Date:** 2026-06-03
+**Repo:** `neutron-diffuse`
+**Status:** Real-data shakedown fixes and the 0kl slice ring-removal redesign
+are committed and pushed through `1b5302a` (`clean line cut`). Working tree was
+clean on `main` and in sync with `origin/main` during the 2026-06-03 health
+check. Syntax compilation passed across `src`, `tests`, and `examples`;
+public package imports are clean; a lightweight direct execution of all 38 test
+functions passed. The active Python environment is missing the dev tools
+`pytest`, `ruff`, and `mypy`, so the official project checks still need to be
+rerun after `pip install -e ".[dev]"`. Resume point: promote the validated
+0kl-slice ring settings to the full 3D volume, then continue Bragg punch →
+backfill → ΔPDF / writers.
 
 ---
 
 ## Progress log
+
+### 2026-06-03 — Repository health check and progress notes
+
+Checked the current repo state after the line-cut work:
+- `git status --short --branch` reported a clean `main...origin/main`.
+- Latest commit was `1b5302a clean line cut`; earlier "uncommitted" notes are
+  now stale because the real-data fixes and slice harness changes have been
+  committed.
+- `python3 -m compileall -q src tests examples` passed.
+- `PYTHONPATH=src python3 -c "import ndiff; ..."` imported the public package,
+  preprocessing, analysis, and visualization modules successfully.
+- The active environment lacks `pytest`, `ruff`, and `mypy`, so official
+  `python3 -m pytest`, `python3 -m ruff check .`, and `python3 -m mypy src`
+  could not run directly.
+- As a fallback sanity pass, every test function in the existing test modules
+  was executed directly with a tiny `pytest.skip` stub; all **38/38** passed.
+- Environment note: Matplotlib/fontconfig cache directories are not writable in
+  this shell, causing fallback temporary caches. Set `MPLCONFIGDIR` to a
+  writable directory for faster, quieter plotting imports.
+
+No code errors were found by the available checks. Next validation should use a
+proper dev install (`pip install -e ".[dev]"`) and then rerun pytest, ruff, and
+mypy verbatim.
 
 ### 2026-06-02 (cont.) — Bragg-free linecut for ring |Q| identification
 

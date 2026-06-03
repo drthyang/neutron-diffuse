@@ -44,7 +44,7 @@ Input: symmetrised 3D HKL volume from Mantid (or equivalent).
 
 ---
 
-## Phase 2 — Powder Ring Removal  ✓ implemented (needs real-data trial)
+## Phase 2 — Powder Ring Removal  ✓ implemented (slice-validated; full 3D pending)
 
 ### 2-1. Empty-scan subtraction  ✓
 
@@ -55,7 +55,7 @@ I_residual(Q) = I_sample(Q) − s × I_empty(Q)
 Scale factor `s` estimated analytically from ring-dominated |Q| shells.
 Removes environment ring; sample-holder ring remains.
 
-### 2-2. Factored ring model  ✓
+### 2-2. Ring model  ✓
 
 **Physical model:**
 
@@ -109,6 +109,14 @@ at the full 3D |Q| of each voxel — extends the 2D fit to the full 3D dataset.
 - What SNR threshold for the ring mask gives the best ΔPDF quality?
 - How to handle overlapping Gaussian peaks (closely spaced rings)?
 
+**2026-06-03 update:** the original Gaussian/SVD model remains available, but
+real-data shakedown moved the preferred remover to the non-parametric
+`PatchedRadialRingModel`: trimmed radial profiles, morphological-opening
+baseline, low-order azimuthal Fourier texture, and sparse-azimuth masking.
+The fast 0kl-slice harness now suppresses the main Al rings by roughly 85-90%
+while preserving off-ring diffuse signal. The next risk is scaling this
+slice-validated path to the full 3D volume efficiently.
+
 ### 2-3. Backfill  ✓
 
 Masked voxels (ring-dominated) filled by:
@@ -150,11 +158,14 @@ Masked voxels (ring-dominated) filled by:
 
 ---
 
-## Phase 5 — Validation & Release  (pending)
+## Phase 5 — Validation & Release  (in progress)
 
 | Task | Status |
 |------|--------|
-| Real-data trial: load, ring remove, ΔPDF | **next step** |
+| Real-data trial: load and inspect Mantid NeXus volumes | done |
+| Real-data trial: 0kl slice ring-removal validation | done |
+| Real-data trial: full 3D ring remove, Bragg punch, ΔPDF | **next step** |
+| Repository health check: syntax/imports/lightweight tests | done 2026-06-03; official pytest/ruff/mypy blocked by missing dev deps |
 | Synthetic benchmark: injected ring + diffuse, evaluate ΔPDF quality | pending |
 | Per-ring T_i(φ) if rank1_variance < 0.90 | pending |
 | Mantid integration — export-compatible format | pending |

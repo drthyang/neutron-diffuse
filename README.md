@@ -120,9 +120,12 @@ After fitting `PatchedRingModel`, inspect:
 
 ## Status
 
-Design and skeleton implementation complete; ready for first real-data trial.
-See [HANDOFF.md](HANDOFF.md) for hand-off notes and [ROADMAP.md](ROADMAP.md) for
-the development plan.
+Design and skeleton implementation are complete. Real Mantid NeXus loading,
+0kl-slice ring-removal shakedown, and repository health checks have passed; the
+next development step is promoting the slice-validated ring-removal settings to
+the full 3D volume, then continuing through Bragg punch, backfill, and ΔPDF
+validation. See [HANDOFF.md](HANDOFF.md) for current hand-off notes and
+[ROADMAP.md](ROADMAP.md) for the development plan.
 
 ## Dependencies
 
