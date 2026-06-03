@@ -4,6 +4,7 @@ import numpy as np
 
 from ndiff.core import HKLVolume
 from ndiff.preprocessing import PatchedRadialRingModel, azimuthal_sampling_mask
+from ndiff.preprocessing.radial_background import _project_templates
 from ndiff.preprocessing.ring_model import _gaussian
 
 
@@ -86,6 +87,18 @@ def test_radial_background_no_negative_ring_estimate():
     assert (prof.ring_profile >= 0).all()
 
 
+def test_template_projection_fits_overlapping_rings_jointly():
+    q = np.linspace(2.8, 3.5, 300)
+    g0 = np.exp(-0.5 * ((q - 3.10) / 0.055) ** 2)
+    g1 = np.exp(-0.5 * ((q - 3.18) / 0.055) ** 2)
+    excess = 0.7 * g0 + 0.4 * g1
+
+    projected = _project_templates(excess, [g0, g1])
+
+    assert np.max(np.abs(projected - excess)) < 1e-10
+    assert projected.max() < 1.15 * excess.max()
+
+
 def test_fourier_texture_recovers_anisotropy_with_correct_phase():
     # Injected texture is 1 + 0.4 cos(2φ): max at φ=0/π, min at ±π/2.
     # General (non-symmetric) basis must recover it given n_fourier>=2.
@@ -101,6 +114,23 @@ def test_fourier_texture_recovers_anisotropy_with_correct_phase():
     t90 = float(prof.texture(qpk, np.array([np.pi / 2]))[0])   # cos2φ = -1
     assert t0 > t90                                    # correct phase
     assert t0 / t90 > 1.4                              # substantial anisotropy captured
+
+
+def test_smooth_texture_model_runs_and_suppresses_ring():
+    vol, *_ = _ring_vol()
+    q = vol.q_magnitude()
+    model = PatchedRadialRingModel(n_patches=24, plane="hk0", q_step=0.04,
+                                   ring_width=0.3, baseline_smooth=0.08,
+                                   texture_model="smooth", texture_smoothness=10.0)
+    prof = model.fit(vol, q_range=(1.0, 4.0))
+    out, I_ring = model.subtract(vol, prof)
+
+    assert prof.texture_values.shape == prof.ring_profile.shape
+    baseline = _radial_median(vol, q, 1.2, 1.8)
+    before = _radial_median(vol, q, 2.55, 2.65) - baseline
+    after = _radial_median(out, q, 2.55, 2.65) - baseline
+    assert after < 0.35 * before
+    assert np.isfinite(I_ring).all()
 
 
 def test_fourier_texture_is_immune_to_bragg():

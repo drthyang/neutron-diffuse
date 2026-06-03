@@ -25,6 +25,8 @@ from ndiff.preprocessing import (
     EmptySubtractor,
     PatchedRadialRingModel,
     azimuthal_sampling_mask,
+    fit_ring_profiles,
+    line_profile,
 )
 from ndiff.visualization import interactive_slices
 
@@ -78,10 +80,43 @@ if MASK_SPARSE:
 #                       'patch' = discrete Hann blend
 #   n_fourier         : azimuthal harmonics (general Fourier; long-wavelength)
 #   texture_symmetric : False = general T(φ) (no mmm assumption)
+#   ring_templates    : fixed Gaussian radial shapes from clean linecuts.  The
+#                       clean cuts here run along (0, ±1, l) from l=0 to ±30,
+#                       which avoids Bragg peaks and resolves close rings.
+USE_LINECUT_TEMPLATES = False
+
+
+def _linecut_templates():
+    lmax = float(max(abs(data.l_axis.min()), abs(data.l_axis.max())))
+    q_ref = None
+    cuts = []
+    for k0 in (-1.0, 1.0):
+        for l1 in (-lmax, lmax):
+            q, I, _ = line_profile(data, (0.0, k0, 0.0), (0.0, k0, l1), n_points=900)
+            if q_ref is None:
+                q_ref = q
+            elif not np.allclose(q, q_ref, rtol=0.0, atol=1e-8):
+                I = np.interp(q_ref, q, I, left=np.nan, right=np.nan)
+            cuts.append(I)
+    prof = np.nanmean(np.vstack(cuts), axis=0)
+    return fit_ring_profiles(
+        q_ref, prof, prominence=0.04, min_distance=8,
+        cluster_gap=0.35, half_window=0.24, sigma0=0.04,
+    )
+
+
+templates = _linecut_templates() if USE_LINECUT_TEMPLATES else None
+if templates:
+    print("linecut ring templates from (0, ±1, ±30):")
+    for r in templates:
+        print(f"  q={r.q_center:6.3f} Å^-1  sigma={r.sigma:6.4f}  "
+              f"FWHM={r.fwhm:6.4f}  amp={r.amplitude:6.3f}")
+
 prm = PatchedRadialRingModel(
     n_patches=36, plane="0kl", q_step=0.02, ring_width=0.24,
     baseline_smooth=0.06, profile_percentiles=(10.0, 80.0),
     texture_model="fourier", n_fourier=3, texture_symmetric=False,
+    ring_templates=templates,
 )
 prof = prm.fit(src, q_range=(1.5, 10.5))
 print(f"ring model: texture={prm.texture_model} n_fourier={prm.n_fourier} "

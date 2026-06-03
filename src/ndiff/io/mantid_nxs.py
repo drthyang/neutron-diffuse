@@ -131,10 +131,16 @@ def _parse_dim_axes(
     for d_label, file_axis in _DIM_TO_FILE_AXIS.items():
         ds = data_grp[d_label]
         edges: NDArray[np.float64] = ds[:].astype(np.float64)
-        long_name: str = ds.attrs["long_name"].decode()
+        long_name = _as_text(ds.attrs["long_name"])
         hkl_char = _identify_hkl_char(long_name)
         result[hkl_char] = (file_axis, _bin_centers(edges))
     return result
+
+
+def _as_text(value: object) -> str:
+    if isinstance(value, bytes):
+        return value.decode()
+    return str(value)
 
 
 def _identify_hkl_char(long_name: str) -> str:

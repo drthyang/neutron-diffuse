@@ -2,20 +2,83 @@
 
 **Date:** 2026-06-03
 **Repo:** `neutron-diffuse`
-**Status:** Real-data shakedown fixes and the 0kl slice ring-removal redesign
-are committed and pushed through `1b5302a` (`clean line cut`). Working tree was
-clean on `main` and in sync with `origin/main` during the 2026-06-03 health
-check. Syntax compilation passed across `src`, `tests`, and `examples`;
-public package imports are clean; a lightweight direct execution of all 38 test
-functions passed. The active Python environment is missing the dev tools
-`pytest`, `ruff`, and `mypy`, so the official project checks still need to be
-rerun after `pip install -e ".[dev]"`. Resume point: promote the validated
-0kl-slice ring settings to the full 3D volume, then continue Bragg punch →
-backfill → ΔPDF / writers.
+**Status:** Ring-removal development remains the active focus; do **not** move
+to Bragg punch / backfill / ΔPDF yet.  The conservative reference setting is
+still `PatchedRadialRingModel(q_step=0.02, texture_model="fourier",
+n_fourier=3, texture_ridge=0.3, profile_percentiles=(10,80))`.  A new
+experimental `texture_model="smooth"` path fits a nonnegative smooth azimuthal
+texture with an L-BFGS-B minimizer and cyclic curvature penalty.  The preferred
+validation input is now
+`data/raw/TbTi3Bi4_22K_mmm_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm.nxs`;
+its `H=0.3333` slice exposes diffuse signal more clearly than the earlier 28K
+file.  Syntax compilation and focused radial-background tests passed in the
+`rmc-discord` environment; official `pytest` / `ruff` / `mypy` still need a
+proper dev install if desired.
 
 ---
 
 ## Progress log
+
+### 2026-06-03 — Ring-removal diagnostics on improved 22K mmm data
+
+Switched slice validation to the better symmetrised Mantid file:
+`TbTi3Bi4_22K_mmm_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm.nxs`.
+This file is `(H,K,L) = (301,401,401)`, nearly fully valid, and has an
+essentially exact `H=0.3333337` slice.  Reader fix: Mantid dimension
+`long_name` attributes may be stored as Python strings instead of bytes; the
+reader now accepts both.
+
+Key conclusions from the ring-removal sweeps:
+- Keep the current conservative reference for visual judgement:
+  `q_step=0.02`, `texture_model="fourier"`, `n_fourier=3`,
+  `texture_ridge=0.3`, `profile_percentiles=(10,80)`.
+- Smaller `q_step` values can lower scalar ring residual metrics, but on slices
+  with visible diffuse signal they also remove broad off-ring/diffuse signal
+  and can create disc-like or blurry residuals.  Positive-leftover-only metrics
+  were misleading because they rewarded over-subtraction.
+- `n_fourier=6` and `n_fourier=10` capture some azimuthal inhomogeneity better
+  than `n_fourier=3`, but broad use of higher order texture can wash out diffuse
+  contrast.  On the 22K mmm slice, `q.02 f10 r.02` / `q.015 f10 r.02` were
+  plausible diagnostics but not clear defaults.
+- Clean-linecut Gaussian templates from `(0, ±1, ±30)` give real ring widths,
+  but forcing those narrow templates into the 2D subtraction made the residual
+  worse on the earlier 28K slice; keep them as diagnostics only.
+- Off-centering is not the main issue on the improved data.  Circle fits on
+  the `H=0.3333` slice gave weighted mean center `|c|≈0.0014 Å⁻¹`.
+- Added experimental `texture_model="smooth"`: for each `|Q|` bin, fit one
+  nonnegative amplitude per azimuth patch with an L-BFGS-B minimizer and cyclic
+  second-difference smoothness penalty.  On the improved data, `q.02 smooth10`
+  reduced ring residual / radial roughness relative to `q.02 f3` without
+  allowing fine patch texture, but it is a candidate to inspect, not a new
+  default.
+
+New/updated diagnostics:
+- `examples/_normal_slice_cmp.py`: visual slice grid, now supports `DATA_FILE`,
+  `H_VALUE`, `LOG_SCALE`, `VMIN`, `VMAX`.  For the 22K mmm file use
+  `LOG_SCALE=1 VMIN=0.01 VMAX=5`.
+- `examples/_radial_continuity_cmp.py`: signed residual, negative trough,
+  radial roughness, and off-ring removal metrics; this is more trustworthy than
+  positive leftover alone.
+- `examples/_ring_center_fit.py`: fits apparent ring centers in the in-plane Q
+  frame.
+- `examples/_qstep_cmp.py`, `_percentile_cmp.py`, `_profile_method_cmp.py`,
+  `_texture_cmp.py`, `_offset_cmp.py`, `_template_cmp.py`: retained as focused
+  comparison harnesses.
+
+Validation in `rmc-discord`:
+- `python -m compileall -q src tests examples` passed.
+- `python -m pytest -o addopts=` passed: **40/40** tests.
+- Plain `python -m pytest` is blocked in this environment because `pyproject`
+  requests `pytest-cov` (`--cov=ndiff`) but the plugin is not installed.
+- Focused direct tests passed:
+  `test_radial_background_suppresses_ring_preserves_diffuse_and_bragg`,
+  `test_template_projection_fits_overlapping_rings_jointly`, and
+  `test_smooth_texture_model_runs_and_suppresses_ring`.
+
+Recommended next step: continue ring-removal work on the 22K mmm `H=0.3333`
+slice using log-scale visual comparisons plus signed/radial-continuity metrics.
+Do not promote to full 3D or downstream Bragg/ΔPDF until the slice residual
+preserves diffuse signal without visible circular troughs.
 
 ### 2026-06-03 — Repository health check and progress notes
 

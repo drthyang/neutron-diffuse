@@ -48,6 +48,7 @@ from typing import Optional
 import numpy as np
 from numpy.typing import NDArray
 from scipy.ndimage import gaussian_filter1d, grey_opening
+from scipy.optimize import minimize, nnls
 
 from ndiff.core import HKLVolume
 
@@ -84,6 +85,9 @@ class RadialRingProfiles:
         Per-|Q| azimuthal-texture Fourier coefficients Tᵩ(φ).  ``M`` is
         ``1 + n_fourier`` (symmetric, even-cosine basis) or ``1 + 2·n_fourier``
         (full).  Empty when the texture model is the discrete patch blend.
+    texture_values : (P, Q)
+        Per-patch smooth texture values from the minimizer-based texture model.
+        Empty unless ``texture_model='smooth'``.
     n_fourier : int
         Number of azimuthal harmonics in ``texture_coeffs``.
     symmetric : bool
@@ -100,6 +104,7 @@ class RadialRingProfiles:
     baseline: NDArray[np.float64]
     counts: NDArray[np.float64] = field(default_factory=lambda: np.array([]))
     texture_coeffs: NDArray[np.float64] = field(default_factory=lambda: np.array([]))
+    texture_values: NDArray[np.float64] = field(default_factory=lambda: np.array([]))
     n_fourier: int = 0
     symmetric: bool = False
 
@@ -116,6 +121,8 @@ class RadialRingProfiles:
         """
         if self.texture_coeffs.size:
             return self._evaluate_fourier(q_mag, phi)
+        if self.texture_values.size:
+            return self._evaluate_smooth(q_mag, phi)
         return self._evaluate_patches(q_mag, phi)
 
     def _evaluate_fourier(
@@ -161,6 +168,35 @@ class RadialRingProfiles:
         I[good] /= wsum[good]
         return I.reshape(q_mag.shape)
 
+    def _evaluate_smooth(
+        self, q_mag: NDArray, phi: NDArray
+    ) -> NDArray[np.float64]:
+        flat_q = q_mag.ravel()
+        flat_phi = phi.ravel()
+
+        # Interpolate the optimized patch values across |Q|, then periodic
+        # linear-interpolate along φ.  This keeps the smooth-minimizer texture
+        # independent of the Hann patch windows used to build the observations.
+        vals_at_q = np.empty((self.patch_centers.size, flat_q.size))
+        for p in range(self.patch_centers.size):
+            vals_at_q[p] = np.interp(
+                flat_q, self.q_grid, self.texture_values[p], left=0.0, right=0.0
+            )
+
+        period = 2 * np.pi
+        phi_mod = flat_phi % period
+        centers = self.patch_centers
+        step = period / centers.size
+        idx_float = phi_mod / step
+        i0 = np.floor(idx_float).astype(int) % centers.size
+        i1 = (i0 + 1) % centers.size
+        t = idx_float - np.floor(idx_float)
+
+        n = np.arange(flat_q.size)
+        I = (1.0 - t) * vals_at_q[i0, n] + t * vals_at_q[i1, n]
+        np.maximum(I, 0.0, out=I)
+        return I.reshape(q_mag.shape)
+
     def texture(self, q0: float, phi: NDArray) -> NDArray[np.float64]:
         """Evaluate the azimuthal ring texture Tᵩ(φ) at a single |Q|=q0 (diagnostic)."""
         basis = _azimuthal_basis(np.asarray(phi, float), self.n_fourier, self.symmetric)
@@ -202,22 +238,39 @@ class PatchedRadialRingModel:
     baseline_smooth : float
         σ (Å⁻¹) of the Gaussian applied to the baseline after opening, to avoid
         kinks (default 0.06).  Set 0 to disable.
+    ring_smooth : float
+        σ (Å⁻¹) of an optional Gaussian applied to the fitted ring excess along
+        |Q| after baseline subtraction/template projection.  This suppresses
+        radial bin-to-bin noise, which becomes visible when ``q_step`` is very
+        fine, and helps keep the residual background continuous through ring
+        shells.  Set 0 to disable.
     profile_percentiles : tuple[float, float]
         Low/high percentile band kept per |Q| bin when forming the robust
         radial profile (default 10–80).  Low-trim drops gaps/shadows; high-trim
         drops Bragg peaks.
+    profile_method : {'trimmed_mean', 'winsorized_mean', 'median', 'huber'}
+        Robust statistic used after the per-bin signal distribution is
+        collected.  ``'trimmed_mean'`` is the current default: drop values
+        outside ``profile_percentiles`` and average the rest.  ``'winsorized_mean'``
+        clips values to the percentile interval before averaging.  ``'median'``
+        uses the median only.  ``'huber'`` clips values to median ± 3·MAD before
+        averaging, which is a symmetric outlier rejection not tied to fixed
+        percentile cutoffs.
     min_voxels_per_patch : int
         Patches with fewer valid voxels are skipped (contribute no ring).
     min_voxels_per_bin : int
         |Q| bins with fewer voxels fall back to the bin median (or NaN, then
         interpolated) rather than a trimmed mean.
-    texture_model : {'fourier', 'patch'}
+    texture_model : {'fourier', 'smooth', 'patch'}
         ``'fourier'`` (default): model the ring's azimuthal amplitude Tᵩ(φ) as a
         low-order Fourier series fit per |Q| to the robust per-patch amplitudes,
         weighted by voxel count.  Smooth, immune to Bragg (low order + trimmed),
         and defined over all φ — so it interpolates/extrapolates the texture
-        across azimuths that are sparsely sampled or unmeasured.  ``'patch'``
-        keeps the discrete Hann patch blend (no extrapolation).
+        across azimuths that are sparsely sampled or unmeasured.  ``'smooth'``
+        fits one nonnegative texture value per patch with a minimizer and a
+        cyclic second-difference penalty, so the texture is smooth without
+        choosing a Fourier basis.  ``'patch'`` keeps the discrete Hann patch
+        blend (no extrapolation).
     n_fourier : int
         Number of azimuthal harmonics for the Fourier texture (default 3).  Low
         order captures only long-wavelength texture, well below the angular scale
@@ -240,6 +293,10 @@ class PatchedRadialRingModel:
         Under-sampled patches bias the ring amplitude low (too few voxels miss
         the radial peak); excluding them keeps the texture on the well-measured
         arcs so the ring is fully subtracted there.
+    texture_smoothness : float
+        Smoothness penalty for ``texture_model='smooth'``.  Larger values
+        suppress fine azimuthal texture more strongly by penalizing cyclic
+        second differences between neighboring patch amplitudes.
     ring_templates : sequence, optional
         Fixed radial ring shapes, each an object with ``q_center`` and ``sigma``
         attributes (e.g. :class:`~ndiff.preprocessing.powder_rings.RingProfile`)
@@ -251,6 +308,10 @@ class PatchedRadialRingModel:
         (the trimmed per-patch profile otherwise slightly under-fills the peak
         and leaves a faint residual ring).  ``None`` keeps the fully
         non-parametric profile.
+    center_offset : (float, float)
+        Experimental in-plane ring-center offset in Å⁻¹, in the same
+        orthonormal plane frame used for φ. ``(0, 0)`` means rings are centered
+        on Q=0.
     snr_mask_threshold : float or None
         After subtraction, mask voxels where ``I_ring / σ_data`` exceeds this,
         flagging them for the downstream backfill.  ``None`` leaves the mask
@@ -265,7 +326,9 @@ class PatchedRadialRingModel:
         q_step: float = 0.02,
         ring_width: float = 0.24,
         baseline_smooth: float = 0.06,
+        ring_smooth: float = 0.0,
         profile_percentiles: tuple[float, float] = (10.0, 80.0),
+        profile_method: str = "trimmed_mean",
         min_voxels_per_patch: int = 200,
         min_voxels_per_bin: int = 4,
         texture_model: str = "fourier",
@@ -273,7 +336,9 @@ class PatchedRadialRingModel:
         texture_symmetric: bool = False,
         texture_ridge: float = 0.3,
         texture_min_count_frac: float = 0.15,
+        texture_smoothness: float = 10.0,
         ring_templates: Optional[object] = None,
+        center_offset: tuple[float, float] = (0.0, 0.0),
         snr_mask_threshold: Optional[float] = None,
     ) -> None:
         self.n_patches = n_patches
@@ -282,7 +347,9 @@ class PatchedRadialRingModel:
         self.q_step = q_step
         self.ring_width = ring_width
         self.baseline_smooth = baseline_smooth
+        self.ring_smooth = ring_smooth
         self.profile_percentiles = profile_percentiles
+        self.profile_method = profile_method
         self.min_voxels_per_patch = min_voxels_per_patch
         self.min_voxels_per_bin = min_voxels_per_bin
         self.texture_model = texture_model
@@ -290,7 +357,9 @@ class PatchedRadialRingModel:
         self.texture_symmetric = texture_symmetric
         self.texture_ridge = texture_ridge
         self.texture_min_count_frac = texture_min_count_frac
+        self.texture_smoothness = texture_smoothness
         self.ring_templates = ring_templates
+        self.center_offset = center_offset
         self.snr_mask_threshold = snr_mask_threshold
         self._profiles: Optional[RadialRingProfiles] = None
 
@@ -317,8 +386,8 @@ class PatchedRadialRingModel:
         q_range: Optional[tuple[float, float]] = None,
     ) -> RadialRingProfiles:
         """Estimate per-patch ring profiles from *vol*."""
-        q_mag = vol.q_magnitude()
-        phi = _azimuthal_angle(vol, self.plane)
+        q_mag = _offset_q_magnitude(vol, self.plane, self.center_offset)
+        phi = _azimuthal_angle(vol, self.plane, self.center_offset)
         valid = vol.mask & np.isfinite(vol.data)
 
         if q_range is None:
@@ -357,6 +426,7 @@ class PatchedRadialRingModel:
             prof, cnt = _robust_radial_profile(
                 qv_all[in_p], Iv_all[in_p], edges,
                 self.profile_percentiles, self.min_voxels_per_bin,
+                self.profile_method,
             )
             prof = _fill_nan_1d(prof)
             b = _estimate_baseline(
@@ -367,14 +437,23 @@ class PatchedRadialRingModel:
             base[p] = b
             counts[p] = cnt
             ring[p] = _project_templates(excess, templates) if templates else excess
+            if self.ring_smooth > 0:
+                ring[p] = gaussian_filter1d(
+                    ring[p], self.ring_smooth / self.q_step, mode="nearest"
+                )
 
         # Per-|Q| low-order azimuthal Fourier texture, weighted by voxel count.
         texture_coeffs = np.array([])
+        texture_values = np.array([])
         if self.texture_model == "fourier":
             texture_coeffs = _fit_azimuthal_texture(
                 patch_centers, ring, counts, self.n_fourier,
                 self.texture_symmetric, self.texture_ridge,
                 self.texture_min_count_frac,
+            )
+        elif self.texture_model == "smooth":
+            texture_values = _fit_smooth_texture(
+                ring, counts, self.texture_smoothness, self.texture_min_count_frac,
             )
 
         self._profiles = RadialRingProfiles(
@@ -387,6 +466,7 @@ class PatchedRadialRingModel:
             baseline=base,
             counts=counts,
             texture_coeffs=texture_coeffs,
+            texture_values=texture_values,
             n_fourier=self.n_fourier,
             symmetric=self.texture_symmetric,
         )
@@ -407,8 +487,8 @@ class PatchedRadialRingModel:
         if prof is None:
             raise RuntimeError("Call fit() before subtract().")
 
-        q_mag = vol.q_magnitude()
-        phi = _azimuthal_angle(vol, self.plane)
+        q_mag = _offset_q_magnitude(vol, self.plane, self.center_offset)
+        phi = _azimuthal_angle(vol, self.plane, self.center_offset)
         I_ring = prof.evaluate(q_mag, phi)
 
         data_sub = vol.data - I_ring
@@ -432,18 +512,10 @@ class PatchedRadialRingModel:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _azimuthal_angle(vol: HKLVolume, plane: str) -> NDArray[np.float64]:
-    """Azimuthal angle φ (radians) for every voxel, within the given plane.
-
-    The angle is measured in the plane spanned by the two in-plane reciprocal
-    axes (e.g. b*, c* for ``'0kl'``), NOT from fixed lab-frame Q components.
-    This matters because the UB matrix carries the crystal orientation: when the
-    crystal is rotated, a reciprocal-lattice plane does not lie in a lab
-    coordinate plane, so ``atan2`` of raw lab components collapses every voxel
-    to ≈±90° and destroys the azimuth.  Projecting Q onto an orthonormal basis
-    built from the in-plane reciprocal axes gives the correct angle for any
-    orientation (and any lattice).
-    """
+def _plane_components(
+    vol: HKLVolume,
+    plane: str,
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
     axes = {"hk0": (0, 1), "h0l": (0, 2), "0kl": (1, 2)}
     if plane not in axes:
         raise ValueError(f"Unknown plane: {plane!r}")
@@ -460,7 +532,42 @@ def _azimuthal_angle(vol: HKLVolume, plane: str) -> NDArray[np.float64]:
     a2_perp = a2 - (a2 @ e1) * e1
     e2 = a2_perp / (np.linalg.norm(a2_perp) + 1e-12)
 
-    return np.arctan2(Q @ e2, Q @ e1)
+    return Q, Q @ e1, Q @ e2
+
+
+def _offset_q_magnitude(
+    vol: HKLVolume,
+    plane: str,
+    center_offset: tuple[float, float] = (0.0, 0.0),
+) -> NDArray[np.float64]:
+    Q, x, y = _plane_components(vol, plane)
+    cx, cy = center_offset
+    if cx == 0.0 and cy == 0.0:
+        return np.linalg.norm(Q, axis=-1)
+    q2 = np.einsum("...i,...i->...", Q, Q)
+    q2 = q2 - x * x - y * y + (x - cx) ** 2 + (y - cy) ** 2
+    return np.sqrt(np.maximum(q2, 0.0))
+
+
+def _azimuthal_angle(
+    vol: HKLVolume,
+    plane: str,
+    center_offset: tuple[float, float] = (0.0, 0.0),
+) -> NDArray[np.float64]:
+    """Azimuthal angle φ (radians) for every voxel, within the given plane.
+
+    The angle is measured in the plane spanned by the two in-plane reciprocal
+    axes (e.g. b*, c* for ``'0kl'``), NOT from fixed lab-frame Q components.
+    This matters because the UB matrix carries the crystal orientation: when the
+    crystal is rotated, a reciprocal-lattice plane does not lie in a lab
+    coordinate plane, so ``atan2`` of raw lab components collapses every voxel
+    to ≈±90° and destroys the azimuth.  Projecting Q onto an orthonormal basis
+    built from the in-plane reciprocal axes gives the correct angle for any
+    orientation (and any lattice).
+    """
+    _, x, y = _plane_components(vol, plane)
+    cx, cy = center_offset
+    return np.arctan2(y - cy, x - cx)
 
 
 def _angular_distance(phi: NDArray, phi_c: float) -> NDArray:
@@ -472,19 +579,20 @@ def _angular_distance(phi: NDArray, phi_c: float) -> NDArray:
 def _project_templates(excess: NDArray, templates: list[NDArray]) -> NDArray[np.float64]:
     """Rebuild a radial ring profile as Σ aᵢ·Gᵢ from fixed Gaussian templates.
 
-    Each amplitude is the (non-negative) least-squares projection of the
-    baseline-subtracted profile onto that template, ``aᵢ = Σ excess·Gᵢ / Σ Gᵢ²``,
-    so overlapping templates share intensity sensibly and the result has exactly
-    the template radial shape.
+    The template amplitudes are fit jointly with non-negative least squares, so
+    close/overlapping rings compete for the shared intensity instead of each
+    independently claiming the same tail.  The result has exactly the
+    linecut-measured radial shapes while preserving the local per-patch
+    amplitudes.
     """
-    out = np.zeros_like(excess)
-    for g in templates:
-        denom = float(g @ g)
-        if denom <= 0:
-            continue
-        a = max(0.0, float(excess @ g) / denom)
-        out += a * g
-    return out
+    if not templates:
+        return np.zeros_like(excess)
+    G = np.column_stack(templates)
+    good = np.isfinite(excess) & np.isfinite(G).all(axis=1)
+    if int(good.sum()) < len(templates):
+        return np.zeros_like(excess)
+    amps, _ = nnls(G[good], excess[good])
+    return G @ amps
 
 
 def _robust_radial_profile(
@@ -493,6 +601,7 @@ def _robust_radial_profile(
     edges: NDArray,
     percentiles: tuple[float, float],
     min_per_bin: int,
+    method: str = "trimmed_mean",
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Per-|Q|-bin trimmed mean (rejects Bragg high tail and gap low tail).
 
@@ -508,12 +617,39 @@ def _robust_radial_profile(
         sel = I[bin_idx == b]
         counts[b] = sel.size
         if sel.size >= min_per_bin:
-            lo, hi = np.percentile(sel, (lo_p, hi_p))
-            keep = sel[(sel >= lo) & (sel <= hi)]
-            out[b] = keep.mean() if keep.size else float(np.median(sel))
+            out[b] = _robust_bin_stat(sel, lo_p, hi_p, method)
         elif sel.size > 0:
             out[b] = float(np.median(sel))
     return out, counts
+
+
+def _robust_bin_stat(
+    vals: NDArray,
+    lo_p: float,
+    hi_p: float,
+    method: str,
+) -> float:
+    vals = np.asarray(vals, dtype=np.float64)
+    if method == "median":
+        return float(np.median(vals))
+
+    if method in {"trimmed_mean", "winsorized_mean"}:
+        lo, hi = np.percentile(vals, (lo_p, hi_p))
+        if method == "winsorized_mean":
+            return float(np.clip(vals, lo, hi).mean())
+        keep = vals[(vals >= lo) & (vals <= hi)]
+        return float(keep.mean()) if keep.size else float(np.median(vals))
+
+    if method == "huber":
+        med = float(np.median(vals))
+        mad = float(np.median(np.abs(vals - med)))
+        if mad <= 0:
+            return med
+        scale = 1.4826 * mad
+        clipped = np.clip(vals, med - 3.0 * scale, med + 3.0 * scale)
+        return float(clipped.mean())
+
+    raise ValueError(f"Unknown profile_method: {method!r}")
 
 
 def _azimuthal_basis(phi: NDArray, n_fourier: int, symmetric: bool) -> NDArray[np.float64]:
@@ -587,6 +723,94 @@ def _fit_azimuthal_texture(
         except np.linalg.LinAlgError:
             coeffs[b], *_ = np.linalg.lstsq(AtA + ridge * scale * reg, Aty, rcond=None)
     return coeffs
+
+
+def _fit_smooth_texture(
+    ring: NDArray,          # (P, Q) per-patch ring amplitude
+    counts: NDArray,        # (P, Q) per-patch voxel counts
+    smoothness: float,
+    min_count_frac: float,
+) -> NDArray[np.float64]:
+    """Fit smooth nonnegative per-patch texture values with a minimizer.
+
+    For each |Q| bin, solve
+
+        Σ_p w_p (t_p - y_p)^2 + λ Σ_p (t_{p-1} - 2t_p + t_{p+1})^2
+
+    with cyclic boundary conditions and ``t_p >= 0``.  This captures broad
+    azimuthal texture without choosing a Fourier basis and without allowing
+    high-frequency patch-to-patch structure.
+    """
+    P, n_q = ring.shape
+    out = np.zeros_like(ring, dtype=np.float64)
+    prev: Optional[NDArray[np.float64]] = None
+
+    for b in range(n_q):
+        w = counts[:, b].astype(np.float64).copy()
+        y = ring[:, b].astype(np.float64)
+        if w.max() <= 0 or not np.any(y > 0):
+            prev = None
+            continue
+
+        w[w < min_count_frac * w.max()] = 0.0
+        active = w > 0
+        if not np.any(active):
+            prev = None
+            continue
+
+        # Fill missing/under-sampled patches with a circular interpolation so
+        # the smoothness penalty has a reasonable starting point everywhere.
+        x0 = _fill_circular_patches(y, active)
+        if prev is not None and prev.shape == x0.shape:
+            x0 = 0.5 * x0 + 0.5 * prev
+        x0 = np.maximum(x0, 0.0)
+
+        wn = np.zeros_like(w)
+        wn[active] = w[active] / w[active].mean()
+        scale = float(np.mean(wn[active]))
+        lam = max(0.0, smoothness) * max(scale, 1e-12)
+
+        def objective(t: NDArray[np.float64]) -> tuple[float, NDArray[np.float64]]:
+            data_resid = t - y
+            curv = np.roll(t, 1) - 2.0 * t + np.roll(t, -1)
+            value = float(np.sum(wn * data_resid**2) + lam * np.sum(curv**2))
+
+            grad = 2.0 * wn * data_resid
+            # D2 is symmetric with cyclic boundaries, so grad of ||D2 t||² is
+            # 2 D2(D2 t).
+            grad += 2.0 * lam * (
+                np.roll(curv, 1) - 2.0 * curv + np.roll(curv, -1)
+            )
+            return value, grad
+
+        res = minimize(
+            lambda t: objective(t),
+            x0,
+            method="L-BFGS-B",
+            jac=True,
+            bounds=[(0.0, None)] * P,
+            options={"maxiter": 200, "ftol": 1e-9},
+        )
+        out[:, b] = np.maximum(0.0, res.x if res.success else x0)
+        prev = out[:, b]
+
+    return out
+
+
+def _fill_circular_patches(y: NDArray, active: NDArray) -> NDArray[np.float64]:
+    if active.all():
+        return y.copy()
+    P = y.size
+    idx = np.arange(P)
+    active_idx = idx[active]
+    if active_idx.size == 0:
+        return np.zeros_like(y, dtype=np.float64)
+    if active_idx.size == 1:
+        return np.full_like(y, float(y[active_idx[0]]), dtype=np.float64)
+
+    xp = np.concatenate([active_idx - P, active_idx, active_idx + P])
+    fp = np.concatenate([y[active], y[active], y[active]])
+    return np.interp(idx, xp, fp)
 
 
 def _fill_nan_1d(prof: NDArray) -> NDArray[np.float64]:

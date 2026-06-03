@@ -117,6 +117,18 @@ The fast 0kl-slice harness now suppresses the main Al rings by roughly 85-90%
 while preserving off-ring diffuse signal. The next risk is scaling this
 slice-validated path to the full 3D volume efficiently.
 
+**2026-06-03 ring-removal continuation:** validation moved to the improved
+`TbTi3Bi4_22K_mmm...401x401x301_mmm.nxs` dataset, especially the `H=0.3333`
+slice where diffuse signal is visible.  The conservative reference remains
+`q_step=0.02`, `texture_model="fourier"`, `n_fourier=3`, `texture_ridge=0.3`;
+smaller radial bins and higher-order texture often lower ring residual metrics
+but can over-subtract diffuse signal or create circular troughs/disc-like
+background changes.  New diagnostics score signed residuals, negative troughs,
+radial roughness, and off-ring removal instead of positive ring leftover alone.
+A new experimental `texture_model="smooth"` fits nonnegative per-patch azimuthal
+texture with an L-BFGS-B minimizer plus cyclic curvature penalty.  It provides a
+smooth non-Fourier texture option, but it is not yet a promoted default.
+
 ### 2-3. Backfill  ✓
 
 Masked voxels (ring-dominated) filled by:
