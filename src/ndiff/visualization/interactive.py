@@ -16,12 +16,36 @@ or launch IPython with ``--matplotlib=macosx``.  See ``docs/interactive.md``.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Optional, Sequence
 
 import numpy as np
 
 from ndiff.core import HKLVolume
-from ndiff.visualization.slices import extract_slice, _imshow_extent
+from ndiff.visualization.slices import (
+    extract_slice, _imshow_extent, _PLANE, _ALIASES,
+)
+
+
+def _take_plane(vol: HKLVolume, key: str, value: float):
+    """Cheap nearest-plane extraction (masks only the 2D plane, not the whole
+    volume like :func:`extract_slice`) — used while scrubbing the cut slider so
+    moving through a 300-plane volume stays responsive."""
+    fixed_attr, array_dim, y_attr, x_attr, y_label, x_label, transpose = _PLANE[key]
+    fixed_axis = getattr(vol, fixed_attr)
+    idx = int(np.argmin(np.abs(fixed_axis - value)))
+    actual = float(fixed_axis[idx])
+    data2d = np.take(vol.data, idx, axis=array_dim).astype(float)
+    mask2d = np.take(vol.mask, idx, axis=array_dim)
+    data2d = np.where(mask2d, data2d, np.nan)
+    if transpose:
+        data2d = data2d.T
+    name = fixed_attr[0].upper()
+    return SimpleNamespace(
+        data=data2d, x_axis=getattr(vol, x_attr), y_axis=getattr(vol, y_attr),
+        x_label=x_label, y_label=y_label,
+        cut_label=f"{name} = {actual:.4g} r.l.u.",
+    )
 
 
 def interactive_slices(
@@ -35,6 +59,7 @@ def interactive_slices(
     vmax: Optional[float] = None,
     slider_min: Optional[float] = None,
     slider_max: Optional[float] = None,
+    value_slider: bool = False,
     show: bool = True,
 ):
     """Open an interactive window comparing slices with live colour controls.
@@ -63,6 +88,12 @@ def interactive_slices(
         (e.g. ``slider_min=-0.05, slider_max=0.5``) for fine control near the
         diffuse level.  Ignored in log₁₀ mode (bounds are computed from the
         data there).
+    value_slider : bool
+        Add a slider over the cut (fixed-axis) position, so you can scrub through
+        e.g. every H plane of a 3D volume in place.  All panels move together and
+        the colour limits are held fixed across the scrub, so slices are directly
+        comparable.  Scrubbing extracts only the 2D plane (not the whole volume),
+        so it stays responsive on a 300-plane stack.
     show : bool
         Call ``plt.show()`` before returning (set False for headless tests).
 
@@ -77,9 +108,15 @@ def interactive_slices(
     if not items:
         raise ValueError("panels must contain at least one (label, volume)")
 
+    key = _ALIASES.get(plane.lower(), plane.lower())
+
+    def panel_slice(v: HKLVolume, val: float):
+        if value_slider:
+            return _take_plane(v, key, val)
+        return extract_slice(v, plane=plane, value=val, interp=interp)
+
     labels = [lab for lab, _ in items]
-    slices = [extract_slice(v, plane=plane, value=value, interp=interp)
-              for _, v in items]
+    slices = [panel_slice(v, value) for _, v in items]
     raw = [s.data.astype(float) for s in slices]
 
     finite = np.concatenate([a[np.isfinite(a)].ravel() for a in raw])
@@ -130,17 +167,24 @@ def interactive_slices(
         imgs.append(im)
 
     fig.suptitle(slices[0].cut_label)
-    fig.subplots_adjust(left=0.16, right=0.97, bottom=0.26, top=0.90, wspace=0.25)
+    # Leave more room at the bottom when the cut (H) slider is shown so the
+    # navigation control sits clearly above the colour-scale controls.
+    fig.subplots_adjust(left=0.16, right=0.97,
+                        bottom=0.34 if value_slider else 0.22,
+                        top=0.90, wspace=0.25)
     fig.colorbar(imgs[-1], ax=axes, fraction=0.046, pad=0.02,
                  label="log₁₀(I)" if state["log"] else "Intensity (arb.)")
 
+    # Colour-scale controls share one column (sliders right of the linear/log
+    # toggle); the cut slider, when present, is added a clear gap above them.
+    slx, slw = 0.26, 0.56
     lo, hi = scale_bounds()
-    ax_vmin = fig.add_axes([0.18, 0.13, 0.64, 0.03])
-    ax_vmax = fig.add_axes([0.18, 0.08, 0.64, 0.03])
+    ax_vmin = fig.add_axes([slx, 0.115, slw, 0.03])
+    ax_vmax = fig.add_axes([slx, 0.065, slw, 0.03])
     s_vmin = Slider(ax_vmin, "vmin", lo, hi, valinit=min(v0, v1))
     s_vmax = Slider(ax_vmax, "vmax", lo, hi, valinit=max(v0, v1))
 
-    ax_mode = fig.add_axes([0.015, 0.06, 0.10, 0.12])
+    ax_mode = fig.add_axes([0.045, 0.05, 0.13, 0.10])
     radio = RadioButtons(ax_mode, ("linear", "log₁₀"),
                          active=1 if state["log"] else 0)
 
@@ -168,8 +212,34 @@ def interactive_slices(
     s_vmax.on_changed(apply_clim)
     radio.on_clicked(on_mode)
 
+    widgets = [s_vmin, s_vmax, radio]
+
+    # Optional cut-position (e.g. H) slider: scrub the fixed axis in place.  The
+    # colour limits are deliberately NOT recomputed per slice, so the scale stays
+    # fixed and slices are directly comparable as you move through H.
+    if value_slider:
+        fixed_attr = _PLANE[key][0]
+        fixed_axis = getattr(items[0][1], fixed_attr)
+        fixed_name = fixed_attr[0].upper()
+        ax_val = fig.add_axes([slx, 0.19, slw, 0.035], facecolor="#e8eef7")
+        s_val = Slider(ax_val, f"{fixed_name} plane", float(fixed_axis.min()),
+                       float(fixed_axis.max()), valinit=float(value),
+                       color="#3a6ea5")
+
+        def on_value(val):
+            for i, (_, v) in enumerate(items):
+                s = panel_slice(v, val)
+                slices[i] = s
+                raw[i] = s.data.astype(float)
+                imgs[i].set_data(to_display(raw[i]))
+            fig.suptitle(slices[0].cut_label)
+            apply_clim()
+
+        s_val.on_changed(on_value)
+        widgets.append(s_val)
+
     # keep widget refs alive on the figure so they aren't garbage-collected
-    fig._ndiff_widgets = (s_vmin, s_vmax, radio)  # type: ignore[attr-defined]
+    fig._ndiff_widgets = tuple(widgets)  # type: ignore[attr-defined]
 
     if show:
         plt.show()
