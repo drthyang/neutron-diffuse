@@ -28,7 +28,6 @@ from ndiff.preprocessing import (
     azimuthal_sampling_mask,
     fit_ring_profiles,
     line_profile,
-    replace_masked_ring_regions,
 )
 from ndiff.visualization import interactive_slices
 
@@ -134,46 +133,59 @@ center_offset_h_slope = (
     float(os.environ.get("CENTER_H_SLOPE_Y", "0.0")),
 )
 
+# q_step (radial bin width): the dominant lever on the residual ring leftover.
+# The ring estimate is a *robust* (Bragg-trimmed) profile, which sits slightly
+# below the true peak — so a positive ring residual is left by construction, and
+# it shrinks as the bins resolve the peak more finely.  q_step=0.015 cuts the
+# 28K leftover ~15% with NO over-subtraction and the close-pair valley preserved;
+# but on a slice with rich diffuse, too-fine bins can eat broad diffuse, so A/B
+# this on YOUR validation slice (the 22K H=0.3333) before adopting it.  Finer
+# than ~0.01 starts cutting troughs.  Override with Q_STEP.
+q_step = float(os.environ.get("Q_STEP", "0.02"))
+
+# profile_method: the per-(patch,|Q|) central estimator.  The default
+# 'trimmed_mean' (10–80) is ASYMMETRIC — it trims 20% off the top (to reject
+# Bragg) but only 10% off the bottom, so on a right-skewed cell it sits BELOW the
+# true ring level and under-subtracts the bright ring arcs (~12% of the arc
+# residual on 28K).  'median' is the symmetric unbiased robust centre — Bragg is
+# a small fraction of each cell so it can't move the median — and cuts the arc
+# under-fill ~10–12% with no extra over-subtraction.  A/B on YOUR 22K H=0.3333
+# slice before adopting.  Override with PROFILE_METHOD.
+profile_method = os.environ.get("PROFILE_METHOD", "trimmed_mean")
+
+# texture_q_smooth: pools the azimuthal texture SHAPE across the ring's radial
+# width.  It assumes the ring's azimuthal pattern is the same at the peak and the
+# wings — but that only holds if the ring's WIDTH is azimuthally uniform.  When
+# the width varies with φ (strong at H≠0: the powder ring is broad at some
+# azimuths, narrow at others), pooling across |Q| forces one shared pattern and
+# HOMOGENISES the width → under-subtracts the broad arcs and over-subtracts the
+# narrow ones.  Setting it to 0 lets each |Q| bin keep its own azimuthal pattern
+# (the low-order Fourier basis still smooths in φ), capturing the inhomogeneous
+# width: on 28K H=0.32 this cuts both under-fill (−26%) and over-fill (−33%) with
+# no diffuse cost.  The trade-off it was added for is ringing into UNMEASURED
+# azimuths (one-sided coverage) — if your slice has sparse arcs, a small value
+# (~0.02) compromises.  Override with TEXTURE_Q_SMOOTH.
+texture_q_smooth = float(os.environ.get("TEXTURE_Q_SMOOTH", "0.06"))
+
 prm = PatchedRadialRingModel(
-    n_patches=36, plane="0kl", q_step=0.02, ring_width=0.24,
+    n_patches=36, plane="0kl", q_step=q_step, ring_width=0.24,
     baseline_method="snip", baseline_smooth=0.06,
-    profile_percentiles=(10.0, 80.0), texture_model="fourier",
-    texture_symmetric=False, ring_templates=templates,
+    profile_percentiles=(10.0, 80.0), profile_method=profile_method,
+    texture_model="fourier", texture_symmetric=False, texture_q_smooth=texture_q_smooth,
+    ring_templates=templates,
     center_offset=center_offset, center_offset_h_slope=center_offset_h_slope,
 )
 prof = prm.fit(src, q_range=(1.5, 10.5))
 print(f"ring model: texture={prm.texture_model} n_fourier={prm.n_fourier} "
-      f"symmetric={prm.texture_symmetric}")
+      f"symmetric={prm.texture_symmetric} q_step={q_step} profile={profile_method} "
+      f"q_smooth={texture_q_smooth}")
 print(f"center offset={center_offset}  H slope={center_offset_h_slope} Å^-1/H")
 res, I_ring = prm.subtract(src, prof)
 removed = dataclasses.replace(src, data=I_ring)               # the fitted rings
 residual = dataclasses.replace(src, data=src.data - I_ring)   # data - rings
 
-cleanup_mode = os.environ.get("RING_CLEANUP_MODE", "subtract")
-if cleanup_mode == "mask_replace":
-    repl = replace_masked_ring_regions(
-        src,
-        prm,
-        prof,
-        model_threshold_frac=float(os.environ.get("RING_MASK_MODEL_FRAC", "0.18")),
-        excess_sigma=float(os.environ.get("RING_MASK_EXCESS_SIGMA", "2.5")),
-        dilation_iter=int(os.environ.get("RING_MASK_DILATE", "1")),
-        closing_iter=int(os.environ.get("RING_MASK_CLOSE", "1")),
-        fill_method=os.environ.get("RING_FILL_METHOD", "sideband"),
-        n_phi_bins=int(os.environ.get("RING_FILL_PHI_BINS", "180")),
-    )
-    mask_panel = dataclasses.replace(src, data=repl.mask.astype(float))
-    background = dataclasses.replace(src, data=repl.background)
-    residual = repl.clean
-    removed = mask_panel
-    print(f"mask-replace cleanup: fill={os.environ.get('RING_FILL_METHOD', 'sideband')} "
-          f"masked {int(repl.mask.sum())} voxels "
-          f"({100.0 * repl.mask.mean():.3f}% of slice volume)")
-elif cleanup_mode != "subtract":
-    raise ValueError(f"Unknown RING_CLEANUP_MODE={cleanup_mode!r}")
-
 print(f"0kl slice H={float(d.h_axis[0]):.3g}  background={'on' if USE_BACKGROUND else 'OFF'}  "
-      f"non-parametric radial-background model  cleanup={cleanup_mode}")
+      f"non-parametric radial-background subtraction")
 print("Drag the vmin/vmax sliders; toggle linear/log₁₀ (bottom-left). "
       "Close the window to exit.")
 
@@ -183,8 +195,8 @@ print("Drag the vmin/vmax sliders; toggle linear/log₁₀ (bottom-left). "
 slider_min = float(os.environ.get("SLIDER_MIN", "0.0"))
 slider_max = float(os.environ.get("SLIDER_MAX", "1.0"))
 interactive_slices(
-    [("0kl data", src), ("ring mask" if cleanup_mode == "mask_replace" else "removed rings (I_ring)", removed),
-     ("cleaned" if cleanup_mode == "mask_replace" else "residual = data - rings", residual)],
+    [("0kl data", src), ("removed rings (I_ring)", removed),
+     ("residual = data - rings", residual)],
     plane="0kl", value=0.0, cmap="viridis", vmin=0.0, vmax=0.3,
     slider_min=slider_min, slider_max=slider_max,
 )

@@ -34,48 +34,117 @@
 > code, then wire an **automatic** centre fit into `PatchedRadialRingModel.fit`
 > (and decide global vs per-ring) before continuing thickness/texture work.
 
-> ## ⛳ HIGHEST PRIORITY — mask/backfill must preserve diffuse structure
+> ## ✅ RESOLVED / DROPPED — mask-and-replace cleanup removed (2026-06-03)
 >
-> The experimental mask-based cleanup is promising because it identifies ring
-> regions better than a perfect circular `|Q|` shell, but the current output is
-> **not physically trustworthy yet**.  User inspection on 2026-06-03 found:
+> The experimental mask-based cleanup (`masked_rings.py`,
+> `replace_masked_ring_regions`) was **diagnosed as fundamentally broken and
+> removed** this session (user decision).  Root cause: its mask criterion is
+> "excess above the smooth radial background", but **diffuse scattering IS that
+> excess** — so it cannot separate ring from diffuse.  Measured: 27% of the
+> masked intensity was real structured (non-ring) signal; the sideband fill
+> carved concentric troughs into the diffuse and had a catastrophic
+> interpolation outlier (|cleaned−original| up to 134, a Bragg value leaking into
+> the |Q|-interpolation).  A ring is distinguished from diffuse ONLY by being
+> azimuthally smooth, which the excess criterion never checks.  Deleted the
+> module + test + exports + the `mask_replace` path in `explore_slice.py`.
+> **Decision: ring removal is SUBTRACTIVE only** — it subtracts the
+> azimuthally-smooth ring estimate and keeps the structured residual, so diffuse
+> is preserved by construction.  Do not resurrect a mask-based cleanup unless its
+> criterion keys on azimuthal smoothness, not radial excess.
+
+> ## ✅ RE-INVESTIGATED — ring off-centering is NOT the issue (2026-06-03)
 >
-> 1. **Artifacts remain and the diffuse-signal structure looks wrong.**  The
->    ring mask can make the image cleaner, but the backfilled/cleaned result can
->    distort or remove the real diffuse signal.  Next work must improve the ring
->    removal **and** the backfill together; do not optimize the mask by visual
->    cleanliness alone.
-> 2. **A mask segment that is not close to an Al ring may be crystal signal, not
->    powder-ring contamination.**  The mask criterion must include a stronger
->    prior that candidate pixels lie on/near a coherent Al ring trajectory
->    (allowing ellipse/distortion/off-centering), rather than accepting any local
->    excess at a given `|Q|`.  Otherwise crystal diffuse features can be marked
->    and removed.
->
-> Immediate direction: use the mask as a *candidate* ring-region detector, but
-> validate it against a distorted-ring model/trajectory and backfill from local
-> sidebands in a way that preserves diffuse continuity.  Track false positives:
-> masked regions disconnected from any fitted Al ring should be rejected or sent
-> to a separate diagnostic panel.
+> Re-ran `_ring_center_fit.py` and `_offset_cmp.py` on the 28K data.  At **H=0**
+> the ring centres are exactly at the origin (|c|≈3×10⁻⁵ Å⁻¹, machine noise); at
+> **H=0.32** the apparent offsets are tiny (|c|≈0.001–0.007) and applying any
+> `center_offset`/`center_offset_h_slope` correction changes the residual metrics
+> by <0.003 — negligible.  The apparent H≠0 offsets are an H-projection / fit
+> artefact, not real ring off-centering.  **Verified independently:** the true 3D
+> |Q| of the ring peak is constant with φ to within bin resolution (the powder
+> ring genuinely sits at constant |Q|), so the radial binning is correct.
+> Off-centering is no longer a blocker.  (The 22K file is not on this machine —
+> if its rings look off-centre there, re-check with `_ring_center_fit.py`, but on
+> all testable data the centre is correct.)
 
 **Status:** Ring-removal development remains the active focus; do **not** move
-to Bragg punch / backfill / ΔPDF yet.  The reference is now the class DEFAULTS:
+to Bragg punch / backfill / ΔPDF yet.  The class DEFAULTS are still
 `PatchedRadialRingModel(q_step=0.02, texture_model="fourier", n_fourier=8,
 texture_ridge=0.05, texture_q_smooth=0.06, baseline_method="snip",
-adaptive_ring_width=True, ring_width_scale=3.0, ring_width_cap_frac=0.9,
-profile_percentiles=(10,80))`.  Three improvements landed this session (all
-below, newest first): per-ring **adaptive baseline thickness**; |Q|-pooled
-high-order **azimuthal texture** (inhomogeneous ring texture); and the
-slope-aware **SNIP baseline**.  Full suite 46/46.  Remaining ring-removal item:
-a uniform positive ring leftover (radial-amplitude under-fill).
+adaptive_ring_width=True, profile_percentiles=(10,80), profile_method="trimmed_mean")`.
+This session **root-caused the residual ring leftover** (the "uniform positive
+under-fill") and found **three independent levers**, all exposed as env knobs in
+`explore_slice.py` for A/B on the 22K H=0.3333 slice before any default flip:
+**(1) `TEXTURE_Q_SMOOTH=0`** — the principled one: captures azimuthally-varying
+ring WIDTH (the user's insight), cuts both under- and over-fill ~30% at H≠0 with
+no downside on testable slices; **(2) `PROFILE_METHOD=median`** — unbiased robust
+centre, −12% arc under-fill; **(3) `Q_STEP=0.015`** — finer bins, −15% leftover.
+The defaults were NOT changed (the fine-q_step / aggressive settings interact
+with the 22K rich-diffuse slice I can't test here).  Full suite **47/47**.
 The preferred validation input is
 `data/raw/TbTi3Bi4_22K_mmm_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm.nxs`;
 its `H=0.3333` slice exposes diffuse signal more clearly than the earlier 28K
-file.  `pytest -o addopts=` passes **43/43** in the `rmc-discord` environment.
+file.  `pytest -o addopts=` passes **47/47** in the `rmc-discord` environment.
 
 ---
 
 ## Progress log
+
+### 2026-06-03 (cont.) — Residual leftover root-caused; mask cleanup removed
+
+Three threads this session, all on the subtractive `PatchedRadialRingModel`.
+
+**1. Dropped the mask-and-replace cleanup** (see the RESOLVED box up top).
+Diagnosed it conflates ring and diffuse (27% of masked intensity was real
+signal; sideband fill carved troughs + a 134 outlier).  Removed
+`preprocessing/masked_rings.py`, `tests/test_masked_rings.py`, the two exports,
+and the `mask_replace` path in `explore_slice.py`.  Kept the `_detect_rings`
+helper (factored out of `_adaptive_ring_width_profile` — clean refactor, used by
+adaptive width).  Ring removal is now subtractive-only.
+
+**2. Root-caused the residual ring leftover.**  It is NOT the SNIP baseline
+(verified exact on a clean Gaussian, 0% under-fill) and NOT the texture model in
+aggregate.  Two stacked causes, with three independent levers (all added as env
+knobs in `explore_slice.py`; defaults unchanged pending 22K validation):
+
+  - **Asymmetric trim bias.**  The per-cell estimator `trimmed_mean (10,80)`
+    trims 20% off the top (Bragg) but only 10% off the bottom, so it sits *below*
+    the true ring level and under-subtracts the bright arcs.  `PROFILE_METHOD=
+    median` (symmetric, unbiased; Bragg is a small fraction of each cell so can't
+    move it) cuts arc under-fill ~10–12% with no extra over-subtraction.
+    huber/winsorized(10,90) were rejected (Bragg leaks → troughs).
+
+  - **Azimuthally-varying ring WIDTH** (user's insight — the key one).  Measured:
+    the ring's radial FWHM varies with φ (28K H=0: 4–16%, growing with |Q|).
+    The ring stays at constant 3D |Q| (binning is correct; an apparent per-patch
+    "centre shift" was a Gaussian-fit artefact).  `texture_q_smooth` pools the
+    azimuthal texture *shape across |Q|*, which assumes the ring's azimuthal
+    pattern is identical at the peak and the wings — true only if the width is
+    azimuthally uniform.  When the width varies with φ, pooling forces one shared
+    pattern and **homogenises the width** → under-subtracts broad arcs,
+    over-subtracts narrow arcs.  **`TEXTURE_Q_SMOOTH=0`** lets each |Q| bin keep
+    its own azimuthal pattern (the low-order Fourier basis still smooths in φ),
+    capturing the width: on 28K H=0.32 it cut under-fill −26% and over-fill −33%
+    with no diffuse cost; H=0 unchanged.  Matches patch-blend performance while
+    keeping Fourier smoothness/extrapolation.  Caveat: `q_smooth` was originally
+    added to suppress ringing into *unmeasured* azimuths (one-sided coverage), so
+    on a slice with sparse arcs use ~0.02.
+
+  - **Bin resolution.**  Finer `Q_STEP=0.015` resolves the peak so the robust
+    profile tracks it better: −15% leftover, no over-subtraction, close-pair
+    valley preserved.  Finer than ~0.01 starts cutting troughs (slice-dependent).
+
+  The three stack.  Recommended combo to A/B on 22K H=0.3333:
+  `TEXTURE_Q_SMOOTH=0 PROFILE_METHOD=median` (and optionally `Q_STEP=0.015`).
+  Of the three, `texture_q_smooth=0` is the most principled and the only one with
+  no downside on the testable slices — promote it (likely with `median`) once the
+  22K slice confirms it.
+
+**3. Re-investigated off-centering** (see the RE-INVESTIGATED box): negligible on
+all testable data; not a blocker.
+
+Tests 47/47.  Note: the dominant *visual* residual is actually the radial
+**spokes** (sparse-azimuth artefact, handled by `azimuthal_sampling_mask`), not
+the ring under-fill — a separate thread if visual cleanliness is the goal.
 
 ### 2026-06-03 — Per-ring thickness: adaptive baseline window
 

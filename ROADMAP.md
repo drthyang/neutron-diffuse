@@ -142,8 +142,24 @@ score signed residuals, negative troughs, radial roughness, and off-ring removal
 (not positive ring leftover alone); `examples/_azimuthal_texture_cmp.py` scores
 the azimuthal texture fit directly.  The experimental `texture_model="smooth"`
 (L-BFGS-B per-patch with cyclic curvature penalty) remains available but is not
-the default.  Remaining: a uniform positive ring leftover (radial-amplitude
-under-fill), to attack next.
+the default.
+
+**2026-06-03 — residual leftover root-caused.**  The "uniform positive ring
+leftover" was traced to two stacked causes (SNIP and the texture model in
+aggregate are NOT the cause).  Three independent levers, all exposed as env knobs
+in `explore_slice.py` (`TEXTURE_Q_SMOOTH`, `PROFILE_METHOD`, `Q_STEP`); defaults
+unchanged pending 22K H=0.3333 validation:
+- **`texture_q_smooth=0`** captures the ring's *azimuthally-varying width* —
+  `q_smooth` pools the texture shape across |Q|, which homogenises the width when
+  it varies with φ (under-subtracting broad arcs, over-subtracting narrow ones).
+  Turning it off cut both under- and over-fill ~30% at H≠0 with no diffuse cost.
+  The most principled lever; promote it (likely with `median`) once 22K confirms.
+- **`profile_method="median"`** removes the asymmetric-trim bias of the default
+  `trimmed_mean (10,80)` (−12% arc under-fill, no extra over-subtraction).
+- **`q_step=0.015`** resolves the peak better (−15% leftover, no troughs).
+The experimental mask-and-replace cleanup (`masked_rings.py`) was **removed** —
+its excess-based mask could not separate ring from diffuse (27% of masked
+intensity was real signal).  Ring removal is **subtractive only**.
 
 ### 2-3. Backfill  ✓
 
@@ -188,12 +204,12 @@ Masked voxels (ring-dominated) filled by:
 
 ## Phase 5 — Validation & Release  (in progress)
 
-> **⛳ HIGHEST PRIORITY — ring off-centering (unresolved).** The radial model
-> assumes rings are concentric about Q=0; the user flagged (2026-06-03) that
-> they are off-centre.  Must be resolved before further ring-removal tuning.
-> `center_offset=(cx,cy)` exists but is manual/global and not auto-fit; an
-> earlier "negligible offset" finding is now contested.  See the HIGHEST-
-> PRIORITY box in HANDOFF.md for the full investigation plan.
+> **✅ Ring off-centering — re-investigated 2026-06-03, NOT an issue.** On all
+> testable data the ring centre is at the origin (H=0: |c|≈3×10⁻⁵; H=0.32: tiny
+> H-projection artefact, correcting it changes residuals <0.003).  Verified the
+> ring sits at constant 3D |Q| with φ, so the radial binning is correct.  No
+> longer a blocker.  (Re-check on the 22K file with `_ring_center_fit.py` if its
+> rings look off-centre there.)  See HANDOFF.md.
 
 **Standard preview tool:** always investigate ring-removal results with the
 interactive viewer `examples/explore_slice.py` (live 3-panel data | removed

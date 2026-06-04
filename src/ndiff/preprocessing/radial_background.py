@@ -968,6 +968,55 @@ def _fill_nan_1d(prof: NDArray) -> NDArray[np.float64]:
     return prof
 
 
+def _detect_rings(
+    q_grid: NDArray,
+    pooled: NDArray,
+    q_step: float,
+    base_width: float,
+    counts: Optional[NDArray] = None,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Detect powder rings in a pooled radial profile.
+
+    Returns ``(centers_q, fwhm_q)`` — the |Q| centre and FWHM (both Å⁻¹) of each
+    detected ring, sorted by |Q|.  A ring is a *narrow* positive peak (FWHM ≤
+    ``base_width``) above the SNIP baseline; broad bumps are diffuse structure
+    and are rejected.  Empty arrays are returned when no rings are found.
+    """
+    from scipy.signal import find_peaks, peak_widths
+
+    empty = (np.array([]), np.array([]))
+    g = _fill_nan_1d(pooled)
+    # Drop sparsely-sampled |Q| bins (e.g. a thin shell that, on a coarse grid,
+    # contains only Bragg voxels) before detection — interpolate across them so
+    # they can't masquerade as a giant narrow "ring".
+    if counts is not None and np.any(counts > 0):
+        sparse = counts < 0.1 * np.median(counts[counts > 0])
+        if np.any(sparse) and not np.all(sparse):
+            idx = np.arange(g.size)
+            g = g.copy()
+            g[sparse] = np.interp(idx[sparse], idx[~sparse], g[~sparse])
+    rough = _snip_baseline(g, max(3, int(round(base_width / q_step))))
+    exc = np.maximum(0.0, g - rough)
+    if not np.any(exc > 0):
+        return empty
+    prom = 0.06 * float(np.max(exc))
+    min_sep = max(1, int(round(0.05 / q_step)))
+    peaks, _ = find_peaks(exc, prominence=max(prom, 1e-9), distance=min_sep)
+    if peaks.size == 0:
+        return empty
+
+    fwhm_bins = peak_widths(exc, peaks, rel_height=0.5)[0]
+    # Keep only genuine *rings* — narrow peaks.  Broad bumps (≳ the fallback
+    # window) are diffuse structure, not rings.
+    narrow = fwhm_bins * q_step <= base_width
+    peaks, fwhm_bins = peaks[narrow], fwhm_bins[narrow]
+    if peaks.size == 0:
+        return empty
+    fwhm_q = np.maximum(fwhm_bins * q_step, q_step)
+    centers = q_grid[peaks]
+    return centers, fwhm_q
+
+
 def _adaptive_ring_width_profile(
     q_grid: NDArray,
     pooled: NDArray,
@@ -992,39 +1041,10 @@ def _adaptive_ring_width_profile(
     Returns an array of widths (Å⁻¹) the same length as ``q_grid``.  Falls back
     to a constant ``base_width`` array when no rings are detected.
     """
-    from scipy.signal import find_peaks, peak_widths
-
     out = np.full(q_grid.size, float(base_width))
-    g = _fill_nan_1d(pooled)
-    # Drop sparsely-sampled |Q| bins (e.g. a thin shell that, on a coarse grid,
-    # contains only Bragg voxels) before detection — interpolate across them so
-    # they can't masquerade as a giant narrow "ring".
-    if counts is not None and np.any(counts > 0):
-        sparse = counts < 0.1 * np.median(counts[counts > 0])
-        if np.any(sparse) and not np.all(sparse):
-            idx = np.arange(g.size)
-            g = g.copy()
-            g[sparse] = np.interp(idx[sparse], idx[~sparse], g[~sparse])
-    rough = _snip_baseline(g, max(3, int(round(base_width / q_step))))
-    exc = np.maximum(0.0, g - rough)
-    if not np.any(exc > 0):
+    centers, fwhm_q = _detect_rings(q_grid, pooled, q_step, base_width, counts)
+    if centers.size == 0:
         return out
-    prom = 0.06 * float(np.max(exc))
-    min_sep = max(1, int(round(0.05 / q_step)))
-    peaks, _ = find_peaks(exc, prominence=max(prom, 1e-9), distance=min_sep)
-    if peaks.size == 0:
-        return out
-
-    fwhm_bins = peak_widths(exc, peaks, rel_height=0.5)[0]
-    # Keep only genuine *rings* — narrow peaks.  Broad bumps (≳ the fallback
-    # window) are diffuse structure, not rings, and must not drive (or, via the
-    # neighbour cap, shrink) the adaptive window.
-    narrow = fwhm_bins * q_step <= base_width
-    peaks, fwhm_bins = peaks[narrow], fwhm_bins[narrow]
-    if peaks.size == 0:
-        return out
-    fwhm_q = np.maximum(fwhm_bins * q_step, q_step)
-    centers = q_grid[peaks]
 
     # Cap each ring's window so it cannot bridge to its nearest neighbour ring.
     win = scale * fwhm_q
