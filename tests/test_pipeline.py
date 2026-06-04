@@ -126,3 +126,16 @@ def test_full_pipeline_runs_and_produces_finite_dpdf():
     dpdf = compute_delta_pdf(vol_diffuse, apodization="hann", zero_pad=False)
     assert dpdf.data.shape == vol.data.shape
     assert np.isfinite(dpdf.data).all()
+
+
+def test_bragg_local_backfill_uses_nearby_background_level():
+    data = np.ones((9, 9, 9), dtype=float) * 0.5
+    sigma = np.ones_like(data) * 0.1
+    vol = HKLVolume.from_arrays(data, (-1, 1), (-1, 1), (-1, 1), sigma=sigma)
+    vol.data[4, 4, 4] = 100.0
+    vol.mask[4, 4, 4] = False
+
+    filled = backfill_bragg(vol, method="local", local_radius=1)
+
+    assert filled.mask.all()
+    assert abs(float(filled.data[4, 4, 4]) - 0.5) < 1e-12

@@ -68,9 +68,10 @@
 
 **Status (2026-06-04):** Ring removal is **done and validated in full 3D**
 (per-slice loop + cross-H phantom/amplitude fixes — see boxes above).  The
-pipeline has advanced to the **Bragg punch** stage (now implemented, two modes —
-see the progress entry below).  **Next: backfill** the punched holes, then ΔPDF.
-The ring-model class DEFAULTS are now
+pipeline has advanced through **Bragg punch + local backfill**.  The current
+interactive QA harness is `examples/explore_slice.py`: it processes all H planes
+and opens an H-slider viewer with four panels — **data**, **Removed ring**,
+**Punched**, **Backfilled**.  The ring-model class DEFAULTS are now
 `PatchedRadialRingModel(q_step=0.02, texture_model="fourier", n_fourier=8,
 texture_ridge=0.05, texture_q_smooth=0.0, baseline_method="snip",
 adaptive_ring_width=True, profile_percentiles=(10,80), profile_method="median")`.
@@ -93,6 +94,39 @@ file.  `pytest -o addopts=` passes **47/47** in the `rmc-discord` environment.
 ---
 
 ## Progress log
+
+### 2026-06-04 — Bragg punch/backfill QA: origin punch + phi-tail cleanup
+
+Updated the Bragg cleanup stage after visual QA in `explore_slice.py`:
+
+- `examples/explore_slice.py` now computes the cleanup stack for **all H planes**
+  and opens `interactive_slices(..., value_slider=True)`, so the viewer has an
+  H slider.  Panels are exactly: `data`, `Removed ring`, `Punched`, `Backfilled`.
+- `backfill_bragg` now defaults to **local background fill** (`method="local"`):
+  each punched connected component is filled with the median of its nearby valid
+  shell.  TV/symmetry methods remain available for comparison, but local fill is
+  the preferred real-data Bragg backfill because it does not invent a smooth TV
+  surface through structured diffuse scattering.
+- TV inpainting now seeds masked voxels from the valid-data median before
+  iteration, preventing bright punched values from bleeding into the solution.
+- `BraggRemover(force_origin=True)` now always punches the nearest `(0,0,0)`
+  voxel.  This removes the strong direct-beam / elastic-line remnant, which is
+  not a physical Bragg peak and can be missed by search mode because `|Q|=0` is
+  a sparse shell edge case.
+- `BraggRemover(phi_tail_hkl=...)` adds tangential punch expansion in the K-L
+  plane, along the local powder-ring φ direction.  This targets Bragg tails that
+  smear along the ring rather than along the H/K/L axes.  The current examples
+  default to `PHI_TAIL_HKL=0.12`; increase to e.g. `0.20` if tails remain.
+- `examples/punch_bragg_3d.py` was updated with the same origin punch and
+  `PHI_TAIL_HKL` preset knob.  New `examples/backfill_bragg_3d.py` saves the
+  final backfilled volume and reports filled-value summary statistics.
+
+Focused tests covering Bragg, inpainting, and the pipeline pass **23/23** with:
+
+```
+PYTHONPATH=src /Users/tt9/miniforge3/envs/rmc-discord/bin/python -m pytest \
+  -o addopts='' tests/test_bragg.py tests/test_pipeline.py tests/test_inpainting.py
+```
 
 ### 2026-06-04 — Bragg punch: real-data rewrite, two modes (integer + search)
 

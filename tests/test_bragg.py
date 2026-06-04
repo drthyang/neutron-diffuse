@@ -118,6 +118,33 @@ def test_search_mode_punches_off_integer_satellite():
     assert not search.build_mask(vol)[i1h, i1, i1]
 
 
+def test_search_mode_forces_origin_punch():
+    vol, _ = _peaky_vol()
+    search = BraggRemover(mode="search", punch_radii=(0.25, 0.25, 0.25),
+                          search_n_mad=6.0, search_min_intensity=10.0,
+                          search_q_step=0.5)
+    i0 = int(np.argmin(np.abs(vol.h_axis)))
+    assert not search.build_mask(vol)[i0, i0, i0]
+
+
+def test_phi_tail_expands_punch_along_ring_tangent():
+    vol, _ = _peaky_vol()
+    ih = int(np.argmin(np.abs(vol.h_axis - 0)))
+    ik = int(np.argmin(np.abs(vol.k_axis - 1)))
+    il = int(np.argmin(np.abs(vol.l_axis - 0)))
+    vol.data[ih, ik, il] = 100.0
+
+    base = BraggRemover(mode="integer", punch_radii=(0.2, 0.2, 0.2),
+                        min_intensity=10.0, force_origin=False)
+    phi = BraggRemover(mode="integer", punch_radii=(0.2, 0.2, 0.2),
+                       min_intensity=10.0, force_origin=False,
+                       phi_tail_hkl=0.4)
+
+    base_line = int((~base.build_mask(vol))[ih, ik, :].sum())
+    phi_line = int((~phi.build_mask(vol))[ih, ik, :].sum())
+    assert phi_line > base_line
+
+
 def test_auto_mode_aliases_search_mode():
     vol, _ = _peaky_vol()
     sh = int(np.argmin(np.abs(vol.h_axis - 0.5)))

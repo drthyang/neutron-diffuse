@@ -14,6 +14,9 @@ Run::
 Env overrides:
     DATA_FILE    ring-removed input .h5 (default: data/processed/<22K>_ringremoved.h5)
     OUT_FILE     punched output .h5  (default: <stem>_braggpunched.h5)
+    PUNCH_PRESET "cc_off" | "cc_on" | unset.  "cc_off" saves the earlier
+                 aggressive weak-peak setup; "cc_on" is less aggressive for the
+                 cleaner cc-on data so diffuse scattering is not over-masked.
     MODE         "integer" | "auto" | "search" | "both" (default both).
                  "auto"/"search" detects sharp high-tail outliers above the
                  robust per-|Q| diffuse level, analogous to the ring-removal
@@ -44,6 +47,45 @@ import ndiff
 from ndiff.analysis import BraggRemover
 
 proc = Path("data/processed")
+PRESETS = {
+    # Earlier setup tuned on the cc-off style volume.  Good weak-peak capture,
+    # but too aggressive for cleaner cc-on data: it can mask diffuse features at
+    # H≈0.333/0.666.
+    "cc_off": {
+        "MODE": "auto",
+        "R_HKL": "0.09,0.12,0.45",
+        "SEARCH_NMAD": "4.0",
+        "SEARCH_MIN_I": "1.0",
+        "SEARCH_PROM": "1.0",
+        "MARGIN": "0.02",
+        "MAX_SCALE": "2.0",
+        "PHI_TAIL_HKL": "0.12",
+    },
+    # Cleaner cc-on data has better-shaped Bragg peaks, so the absolute search
+    # floor can be higher.  This preserves more diffuse signal while retaining
+    # the same local-sharpness gate.
+    "cc_on": {
+        "MODE": "auto",
+        "R_HKL": "0.09,0.12,0.45",
+        "SEARCH_NMAD": "4.0",
+        "SEARCH_MIN_I": "1.5",
+        "SEARCH_PROM": "1.0",
+        "MARGIN": "0.02",
+        "MAX_SCALE": "2.0",
+        "PHI_TAIL_HKL": "0.12",
+    },
+}
+
+preset_name = os.environ.get("PUNCH_PRESET", "")
+if preset_name and preset_name not in PRESETS:
+    raise ValueError(f"Unknown PUNCH_PRESET={preset_name!r}; choose one of {sorted(PRESETS)}")
+preset = PRESETS.get(preset_name, {})
+
+
+def env_default(name: str, default: str) -> str:
+    return os.environ.get(name, preset.get(name, default))
+
+
 data_file = os.environ.get("DATA_FILE")
 if data_file:
     in_path = Path(data_file)
@@ -51,14 +93,15 @@ else:
     cands = sorted(proc.glob("*_ringremoved.h5"))
     in_path = next((p for p in cands if "22K_mmm" in p.stem), cands[0])
 
-mode = os.environ.get("MODE", "both")
-r_hkl = tuple(float(x) for x in os.environ.get("R_HKL", "0.12,0.12,0.45").split(","))
-min_i = float(os.environ.get("MIN_I", "2.0"))
-search_nmad = float(os.environ.get("SEARCH_NMAD", "6.0"))
-search_min_i = float(os.environ.get("SEARCH_MIN_I", "2.0"))
-search_prom = float(os.environ.get("SEARCH_PROM", "0.0"))
-margin = float(os.environ.get("MARGIN", "0.03"))
-max_scale = float(os.environ.get("MAX_SCALE", "3.0"))
+mode = env_default("MODE", "both")
+r_hkl = tuple(float(x) for x in env_default("R_HKL", "0.12,0.12,0.45").split(","))
+min_i = float(env_default("MIN_I", "2.0"))
+search_nmad = float(env_default("SEARCH_NMAD", "6.0"))
+search_min_i = float(env_default("SEARCH_MIN_I", "2.0"))
+search_prom = float(env_default("SEARCH_PROM", "0.0"))
+margin = float(env_default("MARGIN", "0.03"))
+max_scale = float(env_default("MAX_SCALE", "3.0"))
+phi_tail_hkl = float(env_default("PHI_TAIL_HKL", "0.12"))
 
 out_file = os.environ.get("OUT_FILE")
 out_path = Path(out_file) if out_file else proc / f"{in_path.stem}_braggpunched.h5"
@@ -69,12 +112,13 @@ vol = ndiff.load(in_path)
 remover = BraggRemover(
     mode=mode, punch_radii=r_hkl, min_intensity=min_i, min_prominence=1.0,
     intensity_scale=True, max_radius_scale=max_scale, margin=margin,
+    force_origin=True, phi_tail_hkl=phi_tail_hkl,
     search_n_mad=search_nmad, search_min_intensity=search_min_i,
     search_min_prominence=search_prom,
 )
-print(f"mode={mode}  radii={r_hkl}  min_I={min_i}  "
+print(f"preset={preset_name or 'none'}  mode={mode}  radii={r_hkl}  min_I={min_i}  "
       f"search_nmad={search_nmad}  search_min_I={search_min_i}  "
-      f"search_prom={search_prom}", flush=True)
+      f"search_prom={search_prom}  phi_tail={phi_tail_hkl}", flush=True)
 t = time.time()
 peaks = remover.detect_peaks(vol)
 keep = remover.build_mask(vol)

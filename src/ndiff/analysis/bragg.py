@@ -75,6 +75,14 @@ class BraggRemover:
     margin:
         Extra half-width (HKL) added to every punch radius — a guard band so the
         peak's faint wings are removed too.
+    force_origin:
+        Always punch the nearest voxel to (0,0,0).  This handles the direct-beam
+        / elastic-line remnant, which is not a physical Bragg reflection and can
+        be missed by search mode because |Q|=0 is a sparse shell.
+    phi_tail_hkl:
+        Extra tangential half-width in the K-L plane, along the local powder-ring
+        φ direction.  Use this when Bragg tails smear along rings rather than
+        along the H/K/L grid axes.
     subtract_profile:
         Reserved (profile-subtraction path not implemented in this pass).
     """
@@ -89,6 +97,8 @@ class BraggRemover:
     intensity_ref: Optional[float] = None
     max_radius_scale: float = 3.0
     margin: float = 0.0
+    force_origin: bool = True
+    phi_tail_hkl: float = 0.0
     # --- search mode (|Q|-shell outlier detection) ---
     search_q_step: float = 0.05
     search_n_mad: float = 8.0
@@ -104,10 +114,15 @@ class BraggRemover:
 
     @staticmethod
     def _steps(vol: HKLVolume) -> tuple[float, float, float]:
+        def step(axis: NDArray) -> float:
+            if axis.size < 2:
+                return 1.0
+            return float(axis[1] - axis[0])
+
         return (
-            float(vol.h_axis[1] - vol.h_axis[0]),
-            float(vol.k_axis[1] - vol.k_axis[0]),
-            float(vol.l_axis[1] - vol.l_axis[0]),
+            step(vol.h_axis),
+            step(vol.k_axis),
+            step(vol.l_axis),
         )
 
     def enumerate_bragg(self, vol: HKLVolume) -> list[tuple[int, int, int]]:
@@ -130,9 +145,9 @@ class BraggRemover:
         - ``"both"`` — the union of the two (integer centres take precedence).
         """
         if self.mode == "integer":
-            return self._detect_integer(vol)
+            return self._with_forced_origin(vol, self._detect_integer(vol))
         if self.mode in {"auto", "search"}:
-            return self._detect_search(vol)
+            return self._with_forced_origin(vol, self._detect_search(vol))
         if self.mode == "both":
             # Sequential: punch the integer Bragg first, then search on the
             # residual.  With the strong integer peaks already masked out, the
@@ -141,8 +156,25 @@ class BraggRemover:
             integer = self._detect_integer(vol)
             keep = self._punch_centers(vol, np.ones(vol.shape, dtype=bool), integer)
             residual = dataclasses.replace(vol, mask=vol.mask & keep)
-            return integer + self._detect_search(residual)
+            return self._with_forced_origin(vol, integer + self._detect_search(residual))
         raise ValueError(f"Unknown mode: {self.mode!r}")
+
+    def _with_forced_origin(
+        self,
+        vol: HKLVolume,
+        peaks: list[tuple[int, int, int, float]],
+    ) -> list[tuple[int, int, int, float]]:
+        """Append the nearest (0,0,0) voxel unless it is already represented."""
+        if not self.force_origin:
+            return peaks
+        ih = int(np.argmin(np.abs(vol.h_axis)))
+        ik = int(np.argmin(np.abs(vol.k_axis)))
+        il = int(np.argmin(np.abs(vol.l_axis)))
+        if not (vol.mask[ih, ik, il] and np.isfinite(vol.data[ih, ik, il])):
+            return peaks
+        if any((p[0], p[1], p[2]) == (ih, ik, il) for p in peaks):
+            return peaks
+        return peaks + [(ih, ik, il, float(vol.data[ih, ik, il]))]
 
     def _detect_integer(self, vol: HKLVolume) -> list[tuple[int, int, int, float]]:
         """Peaks at integer (h,k,l) nodes.
@@ -296,15 +328,39 @@ class BraggRemover:
             s = self._scale_factor(peak, ref if ref is not None else 1.0)
             rh, rk, rl = rh0 * s + self.margin, rk0 * s + self.margin, rl0 * s + self.margin
             ch, ck, cl = vol.h_axis[ih], vol.k_axis[ik], vol.l_axis[il]
-            wh, wk, wl = (int(np.ceil(rh / abs(dh))), int(np.ceil(rk / abs(dk))),
-                          int(np.ceil(rl / abs(dl))))
+            phi_tail = max(0.0, float(self.phi_tail_hkl)) * s
+            ktan = -cl
+            ltan = ck
+            tan_norm = float(np.hypot(ktan, ltan))
+            if phi_tail > 0 and tan_norm > 0:
+                ktan /= tan_norm
+                ltan /= tan_norm
+                wk_extra = abs(ktan) * phi_tail
+                wl_extra = abs(ltan) * phi_tail
+            else:
+                wk_extra = wl_extra = 0.0
+            wh, wk, wl = (
+                int(np.ceil(rh / abs(dh))),
+                int(np.ceil((rk + wk_extra) / abs(dk))),
+                int(np.ceil((rl + wl_extra) / abs(dl))),
+            )
             hs, he = max(0, ih - wh), min(nh, ih + wh + 1)
             ks, ke = max(0, ik - wk), min(nk, ik + wk + 1)
             ls, le = max(0, il - wl), min(nl, il + wl + 1)
             HH, KK, LL = np.meshgrid(vol.h_axis[hs:he], vol.k_axis[ks:ke],
                                      vol.l_axis[ls:le], indexing="ij")
-            ell = ((HH - ch) / rh) ** 2 + ((KK - ck) / rk) ** 2 + ((LL - cl) / rl) ** 2
-            keep[hs:he, ks:ke, ls:le] &= ell > 1.0
+            dH, dK, dL = HH - ch, KK - ck, LL - cl
+            ell = (dH / rh) ** 2 + (dK / rk) ** 2 + (dL / rl) ** 2
+            punch = ell <= 1.0
+            if phi_tail > 0 and tan_norm > 0:
+                krad, lrad = ck / tan_norm, cl / tan_norm
+                d_rad = dK * krad + dL * lrad
+                d_tan = dK * ktan + dL * ltan
+                radial_half = max(float(np.hypot(krad * rk, lrad * rl)), 1e-12)
+                tangent_half = max(float(np.hypot(ktan * rk, ltan * rl)) + phi_tail, 1e-12)
+                phi_ell = (dH / rh) ** 2 + (d_rad / radial_half) ** 2 + (d_tan / tangent_half) ** 2
+                punch |= phi_ell <= 1.0
+            keep[hs:he, ks:ke, ls:le] &= ~punch
         return keep
 
     def apply(self, vol: HKLVolume) -> HKLVolume:
@@ -320,6 +376,8 @@ def bragg_mask(
     min_intensity: Optional[float] = None,
     intensity_scale: bool = False,
     margin: float = 0.0,
+    force_origin: bool = True,
+    phi_tail_hkl: float = 0.0,
 ) -> NDArray[np.bool_]:
     """Convenience wrapper.  Returns a keep-mask (True = valid)."""
     return BraggRemover(
@@ -328,4 +386,6 @@ def bragg_mask(
         min_intensity=min_intensity,
         intensity_scale=intensity_scale,
         margin=margin,
+        force_origin=force_origin,
+        phi_tail_hkl=phi_tail_hkl,
     ).build_mask(vol)

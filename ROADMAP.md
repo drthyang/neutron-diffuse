@@ -44,7 +44,7 @@ Input: symmetrised 3D HKL volume from Mantid (or equivalent).
 
 ---
 
-## Phase 2 — Powder Ring Removal  ✓ implemented (slice-validated; full 3D pending)
+## Phase 2 — Powder Ring Removal  ✓ implemented (slice-validated and full 3D)
 
 ### 2-1. Empty-scan subtraction  ✓
 
@@ -168,14 +168,24 @@ Masked voxels (ring-dominated) filled by:
 2. Weighted interpolation across the thin gap → C¹ by construction.
 3. TV inpainting (Chambolle-Pock) fallback for voxels with too few clean neighbours.
 
+**2026-06-04 update:** ring removal is now promoted to the full 3D volume via
+`examples/remove_rings_3d.py`, which fits the validated `PatchedRadialRingModel`
+independently on each H plane.  Cross-H ring-shell confirmation and per-shell
+amplitude ceilings suppress integer-H phantom troughs while keeping real powder
+rings continuous across H.
+
 ---
 
 ## Phase 3 — Bragg Peak Removal  ✓ implemented
 
-- Ellipsoidal punch at each integer (h,k,l).
-- Adaptive punch radius (scale with intensity).
-- Sigmoid-tapered boundary.
-- Backfill via `backfill_bragg` (default `symmetry+tv`).
+- Data-driven local-window punch at detected integer Bragg peaks.
+- `mode="auto"` / `mode="search"` detects sharp off-integer satellites as
+  robust per-|Q|-shell outliers.
+- Adaptive anisotropic punch radius (scale with intensity).
+- Forced origin punch removes the non-physical `(0,0,0)` direct-beam remnant.
+- Optional `phi_tail_hkl` expands punches tangentially in the K-L plane to catch
+  Bragg tails smeared along the powder-ring direction.
+- Backfill via `backfill_bragg` (default `method="local"` shell-median fill).
 
 **2026-06-04 auto-punch update:** `BraggRemover(mode="auto")` is now an alias
 for search mode: robust per-|Q|-shell background (`median + n·MAD`) plus local
@@ -187,13 +197,18 @@ punched.  Current visual candidate:
 SEARCH_MIN_I=1.0 SEARCH_PROM=1.0`.  Inspect H=0.333/0.666 for diffuse
 preservation and H=2 K=±8/±10 for weak-peak capture before promoting defaults.
 
+**2026-06-04 punch/backfill update:** visual QA showed two remaining punch
+issues: the strong `(0,0,0)` intensity is not real, and Bragg tails persisted
+along φ.  `BraggRemover` now defaults to `force_origin=True` and supports
+`phi_tail_hkl`; the example drivers default to `PHI_TAIL_HKL=0.12`.  The
+interactive QA script `examples/explore_slice.py` now processes all H planes and
+opens an H-slider viewer with four panels: `data`, `Removed ring`, `Punched`,
+and `Backfilled`.  `backfill_bragg` now defaults to local shell-median fill,
+with TV/symmetry retained for comparisons.
+
 **Pending refinements:**
 - Profile subtraction before punch (reduces punch radius needed).
 - Absolute monitor normalisation.
-- Symmetry fill helps little for Bragg-adjacent diffuse: the Laue
-  equivalents of a near-Bragg voxel sit next to other (also-punched)
-  Bragg peaks, so TV inpainting does most of the work.  Consider making
-  `method="tv"` the Bragg-fill default.
 
 ---
 

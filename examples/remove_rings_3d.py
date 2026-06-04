@@ -22,6 +22,11 @@ Env overrides:
     DATA_FILE   input .nxs (default: the 22K mmm validation file)
     OUT_FILE    output .h5 (default: data/processed/<stem>_ringremoved.h5)
     Q_MIN,Q_MAX radial fit range (default 1.5, 10.5 — matches the slice harness)
+    RING_PRESET cc_off|cc_on. cc_off keeps the previous aggressive defaults;
+                cc_on is less flexible in texture so diffuse scattering at
+                H≈1/3 is less likely to enter I_ring.
+    Q_STEP,N_FOURIER,N_PATCHES,PROFILE_METHOD,TEXTURE_Q_SMOOTH,TEXTURE_RIDGE
+                override the selected preset/model defaults.
 """
 import matplotlib
 matplotlib.use("Agg")              # headless: write PNGs, no window
@@ -54,6 +59,44 @@ else:
 q_range = (float(os.environ.get("Q_MIN", "1.5")),
            float(os.environ.get("Q_MAX", "10.5")))
 
+PRESETS = {
+    # Historical reference used for the cc-off volumes.  It follows strong
+    # azimuthal ring texture closely, but on cc-on data it can also follow the
+    # H≈1/3 diffuse structure visible in the ring panel.
+    "cc_off": {
+        "PROFILE_METHOD": "median",
+        "N_FOURIER": "8",
+        "N_PATCHES": "36",
+        "Q_STEP": "0.02",
+        "TEXTURE_Q_SMOOTH": "0.0",
+        "TEXTURE_RIDGE": "0.05",
+        "RING_AMP_CAP": "4.0",
+    },
+    # Cleaner cc-on / cc-sub-bkg data needs less freedom in the ring texture.
+    # A lower harmonic order plus slight |Q|-pooling makes I_ring smoother and
+    # reduces subtraction of structured diffuse signal while keeping true rings.
+    "cc_on": {
+        "PROFILE_METHOD": "median",
+        "N_FOURIER": "6",
+        "N_PATCHES": "36",
+        "Q_STEP": "0.02",
+        "TEXTURE_Q_SMOOTH": "0.02",
+        "TEXTURE_RIDGE": "0.08",
+        "RING_AMP_CAP": "3.0",
+    },
+}
+
+preset_name = os.environ.get("RING_PRESET", "cc_off")
+if preset_name not in PRESETS:
+    raise ValueError(
+        f"Unknown RING_PRESET={preset_name!r}; choose one of {sorted(PRESETS)}"
+    )
+preset = PRESETS[preset_name]
+
+
+def env_default(name: str, default: str) -> str:
+    return os.environ.get(name, preset.get(name, default))
+
 out_file = os.environ.get("OUT_FILE")
 if out_file:
     out_path = Path(out_file)
@@ -82,7 +125,7 @@ print(f"volume (H,K,L)=({nh},{nk},{nl})  |Q| fit range {q_range}", flush=True)
 # to the cross-plane norm; normal planes (amplitude below the ceiling) are
 # untouched.  RING_AMP_CAP=0 disables the cap.
 confirm = os.environ.get("CONFIRM_RINGS", "1") != "0"
-amp_cap = float(os.environ.get("RING_AMP_CAP", "4.0"))
+amp_cap = float(env_default("RING_AMP_CAP", "4.0"))
 ring_centers = ring_halfwidths = ring_ceilings = None
 if confirm:
     t_pre = time.time()
@@ -102,12 +145,22 @@ if confirm:
 # the per-slice profiles never leak between H).  All knobs at class defaults,
 # plus the cross-H confirmed shells and per-shell amplitude ceilings.
 model = PatchedRadialRingModel(
-    plane="0kl", allowed_ring_centers=ring_centers,
-    allowed_ring_halfwidths=ring_halfwidths, allowed_ring_ceilings=ring_ceilings,
+    plane="0kl",
+    q_step=float(env_default("Q_STEP", "0.02")),
+    n_patches=int(env_default("N_PATCHES", "36")),
+    n_fourier=int(env_default("N_FOURIER", "8")),
+    profile_method=env_default("PROFILE_METHOD", "median"),
+    texture_q_smooth=float(env_default("TEXTURE_Q_SMOOTH", "0.0")),
+    texture_ridge=float(env_default("TEXTURE_RIDGE", "0.05")),
+    allowed_ring_centers=ring_centers,
+    allowed_ring_halfwidths=ring_halfwidths,
+    allowed_ring_ceilings=ring_ceilings,
 )
-print(f"model: profile={model.profile_method} n_fourier={model.n_fourier} "
+print(f"model: preset={preset_name} profile={model.profile_method} "
+      f"n_fourier={model.n_fourier} "
       f"q_step={model.q_step} q_smooth={model.texture_q_smooth} "
-      f"baseline={model.baseline_method} adaptive_width={model.adaptive_ring_width} "
+      f"ridge={model.texture_ridge} baseline={model.baseline_method} "
+      f"adaptive_width={model.adaptive_ring_width} "
       f"confirmed_shells={'none' if ring_centers is None else ring_centers.size} "
       f"amp_cap={amp_cap}",
       flush=True)

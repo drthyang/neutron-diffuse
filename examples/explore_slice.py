@@ -1,10 +1,11 @@
-"""Interactive ring-removal viewer on a single 0kl slice (H=0).
+"""Interactive cleanup viewer for 0kl slices across H.
 
 Fast 2D development harness: extracts the H=0 plane and runs Step 2
 (``PatchedRadialRingModel``, plane='0kl') — non-parametric per-patch radial
-background subtraction — then opens an interactive window with live
-colour-scale (vmin/vmax) sliders and a linear/log toggle so you can drag the
-scale to reveal weak rings/diffuse.
+background subtraction — then punches Bragg/satellite peaks and backfills the
+holes.  The viewer shows the four processing states:
+
+    (1) data, (2) ring removed, (3) punched, (4) backfilled.
 
 Run with an interactive backend, e.g.::
 
@@ -22,6 +23,7 @@ from pathlib import Path
 import numpy as np
 
 import ndiff
+from ndiff.analysis import BraggRemover, backfill_bragg
 from ndiff.preprocessing import (
     EmptySubtractor,
     PatchedRadialRingModel,
@@ -34,8 +36,7 @@ from ndiff.visualization import interactive_slices
 raw = Path("data/raw")
 # Default to the preferred 22K mmm validation file; the alphabetically-first
 # .nxs is the older 28K file, so select the 22K one explicitly unless DATA_FILE
-# overrides.  H_VALUE picks the slice (default 0.3333, where the diffuse signal
-# is clearest).
+# overrides.  H_VALUE picks the initial H plane in the viewer.
 data_file = os.environ.get("DATA_FILE")
 if data_file:
     data = ndiff.load(Path(data_file))
@@ -54,32 +55,15 @@ bkg = ndiff.load_mantid_nxs(
 # rings straight from the data:  residual = data - rings.
 USE_BACKGROUND = False
 
-ih0 = int(np.argmin(np.abs(data.h_axis - H_VALUE)))
-def _hslice(v):
+q_range = (float(os.environ.get("Q_MIN", "1.5")),
+           float(os.environ.get("Q_MAX", "10.5")))
+
+
+def _hslice(v, ih):
+    s = slice(ih, ih + 1)
     return dataclasses.replace(
-        v, data=v.data[ih0:ih0 + 1], sigma=v.sigma[ih0:ih0 + 1],
-        mask=v.mask[ih0:ih0 + 1], h_axis=v.h_axis[ih0:ih0 + 1],
+        v, data=v.data[s], sigma=v.sigma[s], mask=v.mask[s], h_axis=v.h_axis[s],
     )
-
-d = _hslice(data)
-
-if USE_BACKGROUND:
-    sub = EmptySubtractor(_hslice(bkg), scale_q_range=(2.4, 3.3))
-    src = sub.subtract(d)
-    print(f"step1 empty subtraction: s={sub.scale:.3f}")
-else:
-    src = d   # ring model fits the total ring signal directly
-
-# Mask azimuthally under-sampled (|Q|, φ) cells (anomalously sparse sectors whose
-# few measurements are unreliable).  The threshold is relative to each |Q|-shell
-# so uniformly low-density shells (e.g. small |Q|) are NOT carved out.
-#   min_count_frac : drop cells below this fraction of the shell's median count
-MASK_SPARSE = True
-if MASK_SPARSE:
-    keep = azimuthal_sampling_mask(src, plane="0kl", min_count_frac=0.25,
-                                   q_range=(1.5, 10.5))
-    src = dataclasses.replace(src, mask=keep)
-    print(f"sparse-azimuth mask: dropped {int((d.mask & ~keep).sum())} voxels")
 
 # Non-parametric per-patch radial background subtraction (the current reference
 # config — all knobs at their class defaults: SNIP baseline, n_fourier=8,
@@ -181,18 +165,158 @@ prm = PatchedRadialRingModel(
     ring_templates=templates,
     center_offset=center_offset, center_offset_h_slope=center_offset_h_slope,
 )
-prof = prm.fit(src, q_range=(1.5, 10.5))
 print(f"ring model: texture={prm.texture_model} n_fourier={prm.n_fourier} "
       f"symmetric={prm.texture_symmetric} q_step={q_step} profile={profile_method} "
       f"q_smooth={texture_q_smooth} n_patches={n_patches}")
 print(f"center offset={center_offset}  H slope={center_offset_h_slope} Å^-1/H")
-res, I_ring = prm.subtract(src, prof)
-removed = dataclasses.replace(src, data=I_ring)               # the fitted rings
-residual = dataclasses.replace(src, data=src.data - I_ring)   # data - rings
 
-print(f"0kl slice H={float(d.h_axis[0]):.3g}  background={'on' if USE_BACKGROUND else 'OFF'}  "
+# Bragg/satellite punch on the ring-removed volume.  The defaults mirror the
+# cleaner cc-on 3D punch preset; override with the same env vars used by
+# punch_bragg_3d.py when A/B testing thresholds.
+PUNCH_PRESETS = {
+    "cc_off": {
+        "MODE": "auto",
+        "R_HKL": "0.09,0.12,0.45",
+        "SEARCH_NMAD": "4.0",
+        "SEARCH_MIN_I": "1.0",
+        "SEARCH_PROM": "1.0",
+        "MARGIN": "0.02",
+        "MAX_SCALE": "2.0",
+        "PHI_TAIL_HKL": "0.12",
+    },
+    "cc_on": {
+        "MODE": "auto",
+        "R_HKL": "0.09,0.12,0.45",
+        "SEARCH_NMAD": "4.0",
+        "SEARCH_MIN_I": "1.5",
+        "SEARCH_PROM": "1.0",
+        "MARGIN": "0.02",
+        "MAX_SCALE": "2.0",
+        "PHI_TAIL_HKL": "0.12",
+    },
+}
+
+punch_preset_name = os.environ.get("PUNCH_PRESET", "cc_on")
+if punch_preset_name not in PUNCH_PRESETS:
+    raise ValueError(
+        f"Unknown PUNCH_PRESET={punch_preset_name!r}; choose one of "
+        f"{sorted(PUNCH_PRESETS)}"
+    )
+punch_preset = PUNCH_PRESETS[punch_preset_name]
+
+
+def punch_default(name: str, default: str) -> str:
+    return os.environ.get(name, punch_preset.get(name, default))
+
+
+mode = punch_default("MODE", "auto")
+r_hkl = tuple(float(x) for x in punch_default("R_HKL", "0.09,0.12,0.45").split(","))
+min_i_env = punch_default("MIN_I", "")
+min_i = None if min_i_env == "" else float(min_i_env)
+min_prom = float(punch_default("MIN_PROM", "1.0"))
+search_nmad = float(punch_default("SEARCH_NMAD", "4.0"))
+search_min_i = float(punch_default("SEARCH_MIN_I", "1.5"))
+search_prom = float(punch_default("SEARCH_PROM", "1.0"))
+margin = float(punch_default("MARGIN", "0.02"))
+max_scale = float(punch_default("MAX_SCALE", "2.0"))
+phi_tail_hkl = float(punch_default("PHI_TAIL_HKL", "0.12"))
+
+remover = BraggRemover(
+    mode=mode,
+    punch_radii=r_hkl,
+    min_intensity=min_i,
+    min_prominence=min_prom,
+    intensity_scale=True,
+    max_radius_scale=max_scale,
+    margin=margin,
+    force_origin=True,
+    phi_tail_hkl=phi_tail_hkl,
+    search_n_mad=search_nmad,
+    search_min_intensity=search_min_i,
+    search_min_prominence=search_prom,
+)
+
+# Compute ring removal for every H plane so the viewer can scrub H.  This keeps
+# the slice-validated fit independent on each plane, matching remove_rings_3d.py.
+MASK_SPARSE = True
+residual_data = np.empty_like(data.data)
+residual_mask = data.mask.copy()
+sparse_dropped = 0
+n_skipped = 0
+
+print(f"processing {data.shape[0]} H planes for the slider...", flush=True)
+for ih in range(data.shape[0]):
+    d = _hslice(data, ih)
+    if USE_BACKGROUND:
+        sub = EmptySubtractor(_hslice(bkg, ih), scale_q_range=(2.4, 3.3))
+        src = sub.subtract(d)
+    else:
+        src = d
+
+    if MASK_SPARSE:
+        keep_sparse = azimuthal_sampling_mask(
+            src, plane="0kl", min_count_frac=0.25, q_range=q_range
+        )
+        sparse_dropped += int((src.mask & ~keep_sparse).sum())
+        src = dataclasses.replace(src, mask=keep_sparse)
+
+    valid = src.mask & np.isfinite(src.data)
+    if int(valid.sum()) < prm.min_voxels_per_patch:
+        residual_data[ih] = src.data[0]
+        residual_mask[ih] = src.mask[0]
+        n_skipped += 1
+        continue
+
+    try:
+        prof = prm.fit(src, q_range=q_range)
+        _, I_ring = prm.subtract(src, prof)
+    except Exception as exc:
+        print(f"  H[{ih}]={data.h_axis[ih]:+.3f}: fit failed ({exc}); left as-is",
+              flush=True)
+        residual_data[ih] = src.data[0]
+        residual_mask[ih] = src.mask[0]
+        n_skipped += 1
+        continue
+
+    residual_data[ih] = src.data[0] - I_ring[0]
+    residual_mask[ih] = src.mask[0]
+    if ih % 30 == 0 or ih == data.shape[0] - 1:
+        print(f"  H[{ih:3d}]={data.h_axis[ih]:+.3f}", flush=True)
+
+residual = dataclasses.replace(data, data=residual_data, mask=residual_mask)
+print(f"sparse-azimuth mask: dropped {sparse_dropped} voxels across H")
+if n_skipped:
+    print(f"ring removal: {n_skipped} sparse/failed H planes left unchanged")
+
+peaks = remover.detect_peaks(residual)
+keep = remover._punch_centers(residual, np.ones(residual.shape, dtype=bool), peaks)
+punched_mask = residual.mask & keep
+punched_voxels = residual.mask & ~keep
+punched = dataclasses.replace(residual, mask=punched_mask)
+punch_only = dataclasses.replace(residual, mask=~punched_voxels)
+
+backfill_method = os.environ.get("BACKFILL_METHOD", "local")
+backfilled = backfill_bragg(
+    punch_only,
+    method=backfill_method,
+    tv_lam=float(os.environ.get("TV_LAM", "0.2")),
+    tv_iter=int(os.environ.get("TV_ITER", "300")),
+    local_radius=int(os.environ.get("LOCAL_RADIUS", "2")),
+    local_min_count=int(os.environ.get("LOCAL_MIN_COUNT", "8")),
+)
+backfilled = dataclasses.replace(backfilled, mask=residual.mask)
+
+print(f"0kl volume viewer initial H={H_VALUE:.4g}  "
+      f"background={'on' if USE_BACKGROUND else 'OFF'}  "
       f"non-parametric radial-background subtraction")
-print("Drag the vmin/vmax sliders; toggle linear/log₁₀ (bottom-left). "
+valid = residual.mask & np.isfinite(residual.data)
+print(f"Bragg punch: preset={punch_preset_name} mode={mode} radii={r_hkl} "
+      f"phi_tail={phi_tail_hkl} "
+      f"peaks={len(peaks)} punched={int(punched_voxels.sum())} voxels "
+      f"({100 * punched_voxels.sum() / max(int(valid.sum()), 1):.2f}% of valid)")
+print(f"Backfill: method={backfill_method}")
+print("Drag the H slider to scrub planes; drag the vmin/vmax sliders; "
+      "toggle linear/log₁₀ (bottom-left). "
       "Close the window to exit.")
 
 # Tight slider travel so the pullbar gives fine control near the diffuse level
@@ -201,8 +325,10 @@ print("Drag the vmin/vmax sliders; toggle linear/log₁₀ (bottom-left). "
 slider_min = float(os.environ.get("SLIDER_MIN", "0.0"))
 slider_max = float(os.environ.get("SLIDER_MAX", "1.0"))
 interactive_slices(
-    [("0kl data", src), ("removed rings (I_ring)", removed),
-     ("residual = data - rings", residual)],
-    plane="0kl", value=0.0, cmap="viridis", vmin=0.0, vmax=0.3,
-    slider_min=slider_min, slider_max=slider_max,
+    [("data", data),
+     ("Removed ring", residual),
+     ("Punched", punched),
+     ("Backfilled", backfilled)],
+    plane="0kl", value=H_VALUE, cmap="viridis", vmin=0.0, vmax=0.3,
+    slider_min=slider_min, slider_max=slider_max, value_slider=True,
 )

@@ -78,6 +78,18 @@ dpdf = compute_delta_pdf(vol_diffuse, apodization="hann")
 ndiff.save(vol_diffuse, "diffuse_only.h5")
 ```
 
+For the current real-data workflow, the example drivers are the most up-to-date
+entry points:
+
+```bash
+PYTHONPATH=src python examples/remove_rings_3d.py
+PYTHONPATH=src python examples/punch_bragg_3d.py
+PYTHONPATH=src python examples/backfill_bragg_3d.py
+```
+
+Use `examples/explore_slice.py` for interactive QA.  It opens an H-slider viewer
+with four panels: data, ring-removed, punched, and backfilled.
+
 ## Installation
 
 ```bash
@@ -120,12 +132,12 @@ After fitting `PatchedRingModel`, inspect:
 
 ## Status
 
-Design and skeleton implementation are complete. Real Mantid NeXus loading,
-0kl-slice ring-removal shakedown, and repository health checks have passed; the
-next development step is promoting the slice-validated ring-removal settings to
-the full 3D volume, then continuing through Bragg punch, backfill, and ΔPDF
-validation. See [HANDOFF.md](HANDOFF.md) for current hand-off notes and
-[ROADMAP.md](ROADMAP.md) for the development plan.
+Real Mantid NeXus loading, full-3D ring removal, Bragg/satellite punching, local
+Bragg backfill, and 3D-DeltaPDF computation are implemented.  The current Bragg
+punch stage includes forced origin removal and optional phi-direction tail
+expansion for peaks smeared along powder rings.  See [HANDOFF.md](HANDOFF.md)
+for current hand-off notes and [ROADMAP.md](ROADMAP.md) for the development
+plan.
 
 ## Dependencies
 

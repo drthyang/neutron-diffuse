@@ -74,6 +74,9 @@ def fill(
 
     if remaining.any():
         if method in ("tv", "symmetry+tv"):
+            valid_vals = data[work_mask & np.isfinite(data)]
+            seed = float(np.median(valid_vals)) if valid_vals.size else 0.0
+            data[remaining] = seed
             data = tv_inpaint(data, work_mask, lam=tv_lam, max_iter=tv_iter)
             filled_flag |= remaining
         elif method in ("rbf", "symmetry+rbf"):

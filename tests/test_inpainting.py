@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from ndiff.inpainting.tv_inpainting import tv_inpaint
+from ndiff.inpainting.pipeline import fill
 from ndiff.inpainting.interpolation import rbf_fill, biharmonic_fill
 from ndiff.inpainting.symmetry import symmetry_fill, ORTHORHOMBIC_MMM
 from ndiff.core import HKLVolume
@@ -87,3 +88,16 @@ def test_symmetry_fill_centrosymmetric():
 
     data_f, _, flag = symmetry_fill(vol, symmetry_ops=ORTHORHOMBIC_MMM)
     assert flag[8, 8, 8], "Centrosymmetric equivalent should fill the voxel"
+
+
+def test_fill_seeds_tv_masked_voxels_from_valid_data():
+    data = np.ones((7, 7, 7), dtype=float)
+    sigma = np.ones_like(data) * 0.1
+    vol = HKLVolume.from_arrays(data, (-1, 1), (-1, 1), (-1, 1), sigma=sigma)
+    vol.data[3, 3, 3] = 1000.0
+    vol.mask[3, 3, 3] = False
+
+    out = fill(vol, method="tv", tv_lam=0.2, tv_iter=20)
+
+    assert out.mask[3, 3, 3]
+    assert out.data[3, 3, 3] < 10.0
