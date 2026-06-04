@@ -372,6 +372,19 @@ class PatchedRadialRingModel:
         (the trimmed per-patch profile otherwise slightly under-fills the peak
         and leaves a faint residual ring).  ``None`` keeps the fully
         non-parametric profile.
+    allowed_ring_centers, allowed_ring_halfwidths : array, optional
+        Restrict ring subtraction to these confirmed |Q| shells (Å⁻¹).  When set,
+        the per-patch ring excess is multiplied by a smooth [0, 1] envelope that
+        is 1 within ``±halfwidth`` of a centre and tapers to 0 over the next
+        half-width; excess outside every shell is dropped.  This is how a ring set
+        confirmed *across the stack axis* (see
+        :func:`confirm_ring_shells_across_h`) is enforced on each plane: it
+        rejects single-plane phantom rings (Bragg peaks that fill a |Q| shell at
+        several azimuths on integer-index planes) and makes the subtracted shells
+        identical plane-to-plane, so the cleaned volume is continuous along the
+        stack axis (no FFT-corrupting discontinuity for the ΔPDF).
+        ``halfwidths`` defaults to ``ring_width`` when omitted.  ``None`` (both)
+        disables the envelope — the default single-plane behaviour.
     center_offset : (float, float)
         Experimental in-plane ring-center offset in Å⁻¹, in the same
         orthonormal plane frame used for φ. ``(0, 0)`` means rings are centered
@@ -412,6 +425,8 @@ class PatchedRadialRingModel:
         texture_q_smooth: float = 0.0,
         texture_smoothness: float = 10.0,
         ring_templates: Optional[object] = None,
+        allowed_ring_centers: Optional[NDArray[np.float64]] = None,
+        allowed_ring_halfwidths: Optional[NDArray[np.float64]] = None,
         center_offset: tuple[float, float] = (0.0, 0.0),
         center_offset_h_slope: tuple[float, float] = (0.0, 0.0),
         snr_mask_threshold: Optional[float] = None,
@@ -439,6 +454,14 @@ class PatchedRadialRingModel:
         self.texture_q_smooth = texture_q_smooth
         self.texture_smoothness = texture_smoothness
         self.ring_templates = ring_templates
+        self.allowed_ring_centers = (
+            None if allowed_ring_centers is None
+            else np.asarray(allowed_ring_centers, dtype=np.float64)
+        )
+        self.allowed_ring_halfwidths = (
+            None if allowed_ring_halfwidths is None
+            else np.asarray(allowed_ring_halfwidths, dtype=np.float64)
+        )
         self.center_offset = center_offset
         self.center_offset_h_slope = center_offset_h_slope
         self.snr_mask_threshold = snr_mask_threshold
@@ -456,6 +479,34 @@ class PatchedRadialRingModel:
                 c, s = t
             gauss.append(np.exp(-0.5 * ((q_grid - float(c)) / float(s)) ** 2))
         return gauss
+
+    def _ring_q_envelope(self, q_grid: NDArray) -> Optional[NDArray[np.float64]]:
+        """A [0, 1] per-|Q|-bin weight that is 1 inside the confirmed ring shells
+        and tapers to 0 between them, or ``None`` when no shells are configured.
+
+        Each confirmed ring (centre cᵢ, half-width wᵢ) contributes a flat-topped,
+        raised-cosine-tapered window: 1 for ``|q − cᵢ| ≤ wᵢ`` then a half-cosine
+        roll-off to 0 over the next ``wᵢ``.  The taper (rather than a hard box)
+        avoids stamping a new sharp |Q| edge into the subtracted profile, which
+        would itself ring radially.  The envelope is the max over rings, so
+        overlapping shells merge smoothly.
+        """
+        centers = self.allowed_ring_centers
+        if centers is None or centers.size == 0:
+            return None
+        half = self.allowed_ring_halfwidths
+        if half is None:
+            half = np.full(centers.size, max(self.ring_width, 4.0 * self.q_step))
+        env = np.zeros_like(q_grid, dtype=np.float64)
+        for c, w in zip(centers, np.atleast_1d(half)):
+            w = max(float(w), self.q_step)
+            d = np.abs(q_grid - float(c))
+            bump = np.where(
+                d <= w, 1.0,
+                np.where(d <= 2.0 * w, 0.5 * (1.0 + np.cos(np.pi * (d - w) / w)), 0.0),
+            )
+            env = np.maximum(env, bump)
+        return env
 
     # ------------------------------------------------------------------
     # Public API
@@ -534,6 +585,16 @@ class PatchedRadialRingModel:
             )
         self._ring_width_profile = ring_width
 
+        # Optional |Q|-envelope restricting ring excess to confirmed shells.  On
+        # a single 2D plane the per-patch profiles cannot tell a real powder ring
+        # from symmetry-replicated Bragg peaks that happen to populate a |Q|
+        # shell at several azimuths (integer-H planes) — the latter masquerade as
+        # a ring and get a phantom subtraction.  A ring set confirmed *across H*
+        # (see :func:`confirm_ring_shells_across_h`) rejects those phantoms and
+        # makes the subtracted shells identical on every plane, so the cleaned
+        # volume is continuous in H (no FFT-corrupting discontinuity for ΔPDF).
+        ring_envelope = self._ring_q_envelope(q_grid)
+
         # Pass 2 — baseline + ring excess per patch with the (adaptive) window.
         for p in np.nonzero(filled)[0]:
             prof = raw[p]
@@ -544,6 +605,8 @@ class PatchedRadialRingModel:
             excess = np.maximum(0.0, prof - b)
             base[p] = b
             ring[p] = _project_templates(excess, templates) if templates else excess
+            if ring_envelope is not None:
+                ring[p] = ring[p] * ring_envelope
             if self.ring_smooth > 0:
                 ring[p] = gaussian_filter1d(
                     ring[p], self.ring_smooth / self.q_step, mode="nearest"
@@ -618,6 +681,66 @@ class PatchedRadialRingModel:
     @property
     def profiles(self) -> Optional[RadialRingProfiles]:
         return self._profiles
+
+
+def confirm_ring_shells_across_h(
+    vol: HKLVolume,
+    plane: str = "0kl",
+    q_range: tuple[float, float] = (1.5, 10.5),
+    q_step: float = 0.02,
+    profile_percentiles: tuple[float, float] = (10.0, 80.0),
+    profile_method: str = "median",
+    min_voxels_per_bin: int = 8,
+    ring_width: float = 0.24,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Detect the powder-ring |Q| shells that are present *across the stack axis*.
+
+    A real powder ring is a sphere at constant 3D |Q|, so it sits at the same |Q|
+    on **every** plane that geometrically samples that shell.  A Bragg-fed phantom
+    (symmetry-replicated peaks filling a |Q| shell at several azimuths) appears on
+    only a few integer-index planes.  This computes one **all-azimuth** robust
+    radial profile per plane — Bragg-robust because each |Q| bin pools every
+    azimuth, so the few Bragg voxels are a small fraction the median/trim rejects
+    — then pools across planes (median over only the planes that sample each |Q|
+    bin).  Real rings survive the across-plane median; phantoms wash out.
+
+    Returns ``(centers, halfwidths)`` in Å⁻¹ — the confirmed ring centres and
+    their FWHM — ready to pass to ``PatchedRadialRingModel(allowed_ring_centers=…,
+    allowed_ring_halfwidths=…)``.  Empty arrays when no rings are confirmed.
+    """
+    stack_axis = {"0kl": 0, "h0l": 1, "hk0": 2}[plane]
+    q_mag = _offset_q_magnitude(vol, plane)            # full 3D |Q|
+    valid = vol.mask & np.isfinite(vol.data)
+
+    q0, q1 = q_range
+    edges = np.arange(q0, q1 + q_step, q_step)
+    q_grid = 0.5 * (edges[:-1] + edges[1:])
+    n_planes = vol.data.shape[stack_axis]
+    n_q = q_grid.size
+
+    prof_all = np.full((n_planes, n_q), np.nan)
+    samp_all = np.zeros((n_planes, n_q))
+    for ip in range(n_planes):
+        vv = np.take(valid, ip, axis=stack_axis)
+        if not vv.any():
+            continue
+        qm = np.take(q_mag, ip, axis=stack_axis)[vv]
+        dv = np.take(vol.data, ip, axis=stack_axis)[vv]
+        prof, cnt = _robust_radial_profile(
+            qm, dv, edges, profile_percentiles, min_voxels_per_bin, profile_method,
+        )
+        prof_all[ip] = prof
+        samp_all[ip] = cnt
+
+    # Pool across planes per |Q| bin, using only planes that actually sample it.
+    sampled = samp_all >= min_voxels_per_bin
+    n_sampled = sampled.sum(axis=0).astype(np.float64)
+    pooled = np.full(n_q, np.nan)
+    for b in range(n_q):
+        if n_sampled[b] > 0:
+            pooled[b] = np.nanmedian(prof_all[sampled[:, b], b])
+
+    return _detect_rings(q_grid, pooled, q_step, ring_width, counts=n_sampled)
 
 
 # ---------------------------------------------------------------------------

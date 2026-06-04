@@ -91,6 +91,57 @@ file.  `pytest -o addopts=` passes **47/47** in the `rmc-discord` environment.
 
 ## Progress log
 
+### 2026-06-04 — Promoted ring removal to the full 3D volume (per-slice loop)
+
+New driver `examples/remove_rings_3d.py`: applies the slice-validated
+`PatchedRadialRingModel` (class defaults) to every H-plane of the 22K mmm volume
+**independently** and stacks the residuals (`residual = data − rings`) into a
+clean 3D volume.  Per-slice (not one global fit) so each plane keeps its own
+H-dependent ring width/texture — the whole point of the `texture_q_smooth=0`
+default; a global fit would re-pool across H.  Runtime **~90 s** for all 301
+planes (~0.27 s/plane; the default Fourier `evaluate` is vectorised, so the old
+per-voxel-loop perf worry does not apply).  Output saved to
+`data/processed/<stem>_ringremoved.h5` (689 MB, gzip; `data/processed/` is
+gitignored).  Round-trips correctly (shape/UB/finite preserved).  Spot-check
+PNGs `examples/_remove_rings_3d_H{+0.000,+0.333,+0.667}.png` match the
+interactive slice views: rings cleanly removed, diffuse preserved, residual
+dominated by the known radial spokes (sparse-azimuth artefact).
+
+> ## ✅ MOSTLY FIXED — integer-H phantom-ring troughs (cross-H confirmation)
+>
+> **Fixed via cross-H ring confirmation (2026-06-04).**  New
+> `confirm_ring_shells_across_h(vol, plane, …)` (exported) computes one
+> all-azimuth robust radial profile per plane (Bragg-robust — each |Q| bin pools
+> every azimuth so the few Bragg voxels are rejected by the median/trim), pools
+> across planes (median over only the planes that sample each |Q| bin), and
+> detects the ring |Q| set present **across H**.  A real powder ring sits at the
+> same 3D |Q| on every sampling plane → survives; a Bragg-fed phantom appears on
+> a few integer-H planes → washes out.  `PatchedRadialRingModel` gained
+> `allowed_ring_centers` / `allowed_ring_halfwidths`: when set, the per-patch
+> ring excess is multiplied by a smooth [0,1] |Q|-envelope (flat within ±FWHM of
+> a confirmed centre, raised-cosine taper to 0 over the next FWHM), dropping
+> excess outside every shell.  This rejects the phantom **and** makes the
+> subtracted shells identical plane-to-plane → continuous in H (no FFT-corrupting
+> discontinuity for the ΔPDF).  `remove_rings_3d.py` runs it as a ~50 s pre-pass
+> (env `CONFIRM_RINGS=0` to disable); it confirmed 12 shells on the 22K volume
+> (1.91, 2.69, 3.11, 4.39, 5.15, 5.39, 6.23, 6.97, 7.63, 8.09, 9.35, 9.85 —
+> matching the Bragg-free linecut Al rings plus higher orders).  **Result:**
+> residual min **−104 → −21.3**; voxels < −1 **3275 → 512 (−84%)**; the dominant
+> **H=±2 −104 trough is eliminated** (its |Q|2.05–2.30 band is now +0.22 min,
+> 0.25 median); H=±1 and ±2.967 troughs gone/much reduced.  Tests +3 (50/50).
+>
+> **Still open — H=±4 −21 trough (DIFFERENT mechanism).**  The remaining worst
+> trough (H=±4, |Q|≈4.32) sits *inside* the real 4.39 Å⁻¹ Al-ring shell, so the
+> envelope correctly passes it — it is a real ring.  Here Bragg peaks near 4.32
+> on the H=4 plane inflate that ring's **per-plane amplitude** (6/92 voxels at
+> Bragg points; the rest spread along the ring by the texture, so the Bragg punch
+> won't clean them either).  Cross-H *shell* confirmation cannot help (the |Q| is
+> legitimate); this needs a complementary **cross-H amplitude-consistency** guard
+> (cap a plane's ring amplitude to the across-H median where Bragg spikes it) or
+> a harder per-plane Bragg trim on integer-H planes.  Small (≈92 voxels/plane on
+> H=±4) but still a coherent H-discontinuity — NOT yet fixed.
+
+
 ### 2026-06-03 (cont.) — Residual leftover root-caused; mask cleanup removed
 
 Three threads this session, all on the subtractive `PatchedRadialRingModel`.

@@ -3,7 +3,11 @@
 import numpy as np
 
 from ndiff.core import HKLVolume
-from ndiff.preprocessing import PatchedRadialRingModel, azimuthal_sampling_mask
+from ndiff.preprocessing import (
+    PatchedRadialRingModel,
+    azimuthal_sampling_mask,
+    confirm_ring_shells_across_h,
+)
 from ndiff.preprocessing.radial_background import (
     _project_templates,
     _snip_baseline,
@@ -339,3 +343,100 @@ def test_h_dependent_center_offset_changes_q_and_phi_by_slice():
         _azimuthal_angle(vol, "0kl", center_offset, h_slope),
         phi_expected,
     )
+
+
+# ---------------------------------------------------------------------------
+# Cross-H ring confirmation / phantom-ring rejection
+# ---------------------------------------------------------------------------
+
+def _stacked_ring_vol(nh=11, nkl=41, q_real=2.6, q_phantom=1.8,
+                      sigma=0.06, phantom_plane=5, seed=0):
+    """3D volume stacked over H (axis 0): a real spherical ring on every plane
+    plus a ring-shaped 'phantom' on a single H-plane (mimicking the symmetric
+    Bragg peaks that fool single-plane detection at integer H).
+
+    UB = 2π/(2π)·I = I, so |Q| = sqrt(H²+K²+L²) in the same units as h,k,l.
+    """
+    rng = np.random.default_rng(seed)
+    h = np.linspace(-1.0, 1.0, nh)
+    k = np.linspace(-4.0, 4.0, nkl)
+    l = np.linspace(-4.0, 4.0, nkl)
+    ub = np.eye(3)
+    vol = HKLVolume.from_arrays(
+        np.ones((nh, nkl, nkl)), (h[0], h[-1]), (k[0], k[-1]), (l[0], l[-1]),
+        ub_matrix=ub,
+    )
+    q = vol.q_magnitude()
+    data = 1.0 + 3.0 * _gaussian(q, 1.0, q_real, sigma)        # real ring, all H
+    # Phantom: an azimuthally-smooth ring at q_phantom on ONE plane only.
+    phantom = 3.0 * _gaussian(q[phantom_plane], 1.0, q_phantom, sigma)
+    data[phantom_plane] += phantom
+    data += rng.normal(0, 0.01, data.shape)
+    return HKLVolume.from_arrays(
+        data, (h[0], h[-1]), (k[0], k[-1]), (l[0], l[-1]), ub_matrix=ub,
+    ), phantom_plane
+
+
+def test_confirm_ring_shells_keeps_real_ring_rejects_phantom():
+    vol, _ = _stacked_ring_vol()
+    centers, fwhm = confirm_ring_shells_across_h(
+        vol, plane="0kl", q_range=(1.2, 3.2), q_step=0.04, min_voxels_per_bin=4,
+    )
+    # The real ring at |Q|≈2.6 (present on every plane) is confirmed.
+    assert centers.size >= 1
+    assert np.min(np.abs(centers - 2.6)) < 0.08
+    # The phantom at |Q|≈1.8 (one plane only) is washed out of the across-H
+    # median and NOT confirmed.
+    assert np.all(np.abs(centers - 1.8) > 0.15)
+
+
+def test_ring_q_envelope_passes_shells_and_zeros_between():
+    model = PatchedRadialRingModel(
+        plane="0kl", allowed_ring_centers=np.array([2.6]),
+        allowed_ring_halfwidths=np.array([0.1]),
+    )
+    q_grid = np.linspace(1.2, 3.2, 201)
+    env = model._ring_q_envelope(q_grid)
+    assert env is not None
+    assert env[np.argmin(np.abs(q_grid - 2.6))] == 1.0      # on the shell
+    assert env[np.argmin(np.abs(q_grid - 1.8))] == 0.0      # far from any shell
+    assert np.all((env >= 0.0) & (env <= 1.0))
+    # No envelope when no shells configured (default single-plane behaviour).
+    assert PatchedRadialRingModel(plane="0kl")._ring_q_envelope(q_grid) is None
+
+
+def test_confirmed_shells_suppress_phantom_ring_subtraction():
+    """On the phantom plane, the default model subtracts the phantom ring; with
+    the cross-H confirmed shells it leaves it (no over-subtraction trough)."""
+    import dataclasses
+
+    vol, ip = _stacked_ring_vol()
+    q_range = (1.2, 3.2)
+    centers, fwhm = confirm_ring_shells_across_h(
+        vol, plane="0kl", q_range=q_range, q_step=0.04, min_voxels_per_bin=4)
+
+    sl = dataclasses.replace(
+        vol, data=vol.data[ip:ip + 1], sigma=vol.sigma[ip:ip + 1],
+        mask=vol.mask[ip:ip + 1], h_axis=vol.h_axis[ip:ip + 1],
+    )
+    q2d = sl.q_magnitude()
+    phantom_sel = (q2d > 1.7) & (q2d < 1.9)
+    real_sel = (q2d > 2.5) & (q2d < 2.7)
+
+    common = dict(n_patches=24, plane="0kl", q_step=0.04, ring_width=0.3,
+                  baseline_smooth=0.08, min_voxels_per_patch=40)
+    naive = PatchedRadialRingModel(**common)
+    naive.fit(sl, q_range=q_range)
+    _, I_naive = naive.subtract(sl)
+
+    guarded = PatchedRadialRingModel(
+        allowed_ring_centers=centers, allowed_ring_halfwidths=fwhm, **common)
+    guarded.fit(sl, q_range=q_range)
+    _, I_guarded = guarded.subtract(sl)
+
+    # Default model subtracts a phantom ring; the guarded model essentially does
+    # not (the confirmed shells exclude |Q|≈1.8).
+    assert np.median(I_naive[phantom_sel]) > 0.3
+    assert np.median(I_guarded[phantom_sel]) < 0.1 * np.median(I_naive[phantom_sel])
+    # Both still remove the real ring at |Q|≈2.6.
+    assert np.median(I_guarded[real_sel]) > 0.3

@@ -22,6 +22,7 @@ from ndiff.preprocessing.ring_model import PatchedRingModel, RingParams, FittedR
 from ndiff.preprocessing.radial_background import (
     PatchedRadialRingModel,
     RadialRingProfiles,
+    confirm_ring_shells_across_h,
 )
 from ndiff.preprocessing.sampling import azimuthal_sampling_mask
 from ndiff.preprocessing.backfill import backfill_ring_shells
@@ -44,6 +45,7 @@ __all__ = [
     "FittedRingModel",
     "PatchedRadialRingModel",
     "RadialRingProfiles",
+    "confirm_ring_shells_across_h",
     "azimuthal_sampling_mask",
     "backfill_ring_shells",
     # Utilities / diagnostics
