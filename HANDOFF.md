@@ -107,7 +107,7 @@ PNGs `examples/_remove_rings_3d_H{+0.000,+0.333,+0.667}.png` match the
 interactive slice views: rings cleanly removed, diffuse preserved, residual
 dominated by the known radial spokes (sparse-azimuth artefact).
 
-> ## ✅ MOSTLY FIXED — integer-H phantom-ring troughs (cross-H confirmation)
+> ## ✅ FIXED — integer-H over-subtraction troughs (cross-H confirmation + amplitude ceiling)
 >
 > **Fixed via cross-H ring confirmation (2026-06-04).**  New
 > `confirm_ring_shells_across_h(vol, plane, …)` (exported) computes one
@@ -130,16 +130,22 @@ dominated by the known radial spokes (sparse-azimuth artefact).
 > **H=±2 −104 trough is eliminated** (its |Q|2.05–2.30 band is now +0.22 min,
 > 0.25 median); H=±1 and ±2.967 troughs gone/much reduced.  Tests +3 (50/50).
 >
-> **Still open — H=±4 −21 trough (DIFFERENT mechanism).**  The remaining worst
-> trough (H=±4, |Q|≈4.32) sits *inside* the real 4.39 Å⁻¹ Al-ring shell, so the
-> envelope correctly passes it — it is a real ring.  Here Bragg peaks near 4.32
-> on the H=4 plane inflate that ring's **per-plane amplitude** (6/92 voxels at
-> Bragg points; the rest spread along the ring by the texture, so the Bragg punch
-> won't clean them either).  Cross-H *shell* confirmation cannot help (the |Q| is
-> legitimate); this needs a complementary **cross-H amplitude-consistency** guard
-> (cap a plane's ring amplitude to the across-H median where Bragg spikes it) or
-> a harder per-plane Bragg trim on integer-H planes.  Small (≈92 voxels/plane on
-> H=±4) but still a coherent H-discontinuity — NOT yet fixed.
+> **H=±4 −21 trough — ALSO FIXED (cross-H amplitude ceiling).**  The remaining
+> trough (H=±4, |Q|≈4.32) sat *inside* the real 4.39 Å⁻¹ Al-ring shell — a
+> different mechanism: Bragg near 4.32 inflated that ring's **per-plane
+> amplitude**, over-subtracting along the ring (the |Q|-envelope can't help — the
+> shell is real).  Fixed with a complementary **amplitude ceiling**:
+> `confirm_ring_shells_across_h` now also returns each shell's across-H typical
+> amplitude, and `PatchedRadialRingModel(allowed_ring_ceilings=…)` caps each
+> shell's per-patch excess to `RING_AMP_CAP×` (default 4×) that amplitude.  A
+> Bragg-inflated plane is capped back to the cross-plane norm; normal planes
+> (amplitude well below the ceiling) are untouched.  **Combined result on the 22K
+> volume: residual min −104 → −21.3 → −0.29; voxels < −1: 3275 → 512 → 0; voxels
+> < −2: 0.**  The worst residuals are now ≈−0.29 on near-H=0 planes (ordinary
+> diffuse noise, not coherent integer-H troughs).  Real-ring removal preserved
+> (total removed 1.756e6 → 1.234e6 — the −30% is the phantom + Bragg-inflation
+> that should NOT have been subtracted; the H=0.333 slice still shows rings
+> cleanly removed, diffuse intact).  Tests 51/51.
 
 
 ### 2026-06-03 (cont.) — Residual leftover root-caused; mask cleanup removed

@@ -385,6 +385,17 @@ class PatchedRadialRingModel:
         stack axis (no FFT-corrupting discontinuity for the ΔPDF).
         ``halfwidths`` defaults to ``ring_width`` when omitted.  ``None`` (both)
         disables the envelope — the default single-plane behaviour.
+    allowed_ring_ceilings : array, optional
+        Per-shell upper bound (intensity units, same length as
+        ``allowed_ring_centers``) on the per-patch ring excess inside each shell.
+        Catches what the |Q|-envelope cannot: a Bragg peak landing *on* a real
+        ring inflates that ring's per-patch amplitude on one plane, spiking the
+        subtraction (an over-subtraction trough *inside* a legitimate shell).
+        Setting the ceiling from the across-H typical ring amplitude (see
+        :func:`confirm_ring_shells_across_h`, × a margin) caps the spike back to
+        the cross-plane norm — keeping the ring amplitude continuous in H while
+        leaving normal planes (amplitude below the ceiling) untouched.  ``None``
+        disables the cap.
     center_offset : (float, float)
         Experimental in-plane ring-center offset in Å⁻¹, in the same
         orthonormal plane frame used for φ. ``(0, 0)`` means rings are centered
@@ -427,6 +438,7 @@ class PatchedRadialRingModel:
         ring_templates: Optional[object] = None,
         allowed_ring_centers: Optional[NDArray[np.float64]] = None,
         allowed_ring_halfwidths: Optional[NDArray[np.float64]] = None,
+        allowed_ring_ceilings: Optional[NDArray[np.float64]] = None,
         center_offset: tuple[float, float] = (0.0, 0.0),
         center_offset_h_slope: tuple[float, float] = (0.0, 0.0),
         snr_mask_threshold: Optional[float] = None,
@@ -461,6 +473,10 @@ class PatchedRadialRingModel:
         self.allowed_ring_halfwidths = (
             None if allowed_ring_halfwidths is None
             else np.asarray(allowed_ring_halfwidths, dtype=np.float64)
+        )
+        self.allowed_ring_ceilings = (
+            None if allowed_ring_ceilings is None
+            else np.asarray(allowed_ring_ceilings, dtype=np.float64)
         )
         self.center_offset = center_offset
         self.center_offset_h_slope = center_offset_h_slope
@@ -507,6 +523,34 @@ class PatchedRadialRingModel:
             )
             env = np.maximum(env, bump)
         return env
+
+    def _ring_q_ceiling(self, q_grid: NDArray) -> Optional[NDArray[np.float64]]:
+        """Per-|Q|-bin upper bound on the per-patch ring excess, or ``None``.
+
+        Built from ``allowed_ring_centers`` + ``allowed_ring_ceilings``: within
+        each confirmed shell (``±2·half-width``, matching the envelope support)
+        the excess is capped to that shell's ceiling; elsewhere the cap is
+        infinite (no effect — the envelope has already zeroed it).  This catches
+        the case the |Q|-envelope cannot: a Bragg peak landing *on* a real ring
+        inflates that ring's per-patch amplitude on one plane, so the subtraction
+        spikes and over-subtracts.  A ceiling set from the across-H typical ring
+        amplitude (× a margin) caps the spike back to the cross-plane norm,
+        keeping the subtracted amplitude continuous in H while leaving the real
+        ring (whose amplitude is below the ceiling on normal planes) untouched.
+        """
+        centers = self.allowed_ring_centers
+        ceilings = self.allowed_ring_ceilings
+        if centers is None or ceilings is None or centers.size == 0:
+            return None
+        half = self.allowed_ring_halfwidths
+        if half is None:
+            half = np.full(centers.size, max(self.ring_width, 4.0 * self.q_step))
+        half = np.atleast_1d(half)
+        out = np.full(q_grid.shape, np.inf, dtype=np.float64)
+        for c, w, cap in zip(centers, half, np.atleast_1d(ceilings)):
+            in_shell = np.abs(q_grid - float(c)) <= 2.0 * max(float(w), self.q_step)
+            out[in_shell] = np.minimum(out[in_shell], float(cap))
+        return out
 
     # ------------------------------------------------------------------
     # Public API
@@ -594,6 +638,7 @@ class PatchedRadialRingModel:
         # makes the subtracted shells identical on every plane, so the cleaned
         # volume is continuous in H (no FFT-corrupting discontinuity for ΔPDF).
         ring_envelope = self._ring_q_envelope(q_grid)
+        ring_ceiling = self._ring_q_ceiling(q_grid)
 
         # Pass 2 — baseline + ring excess per patch with the (adaptive) window.
         for p in np.nonzero(filled)[0]:
@@ -607,6 +652,8 @@ class PatchedRadialRingModel:
             ring[p] = _project_templates(excess, templates) if templates else excess
             if ring_envelope is not None:
                 ring[p] = ring[p] * ring_envelope
+            if ring_ceiling is not None:
+                ring[p] = np.minimum(ring[p], ring_ceiling)
             if self.ring_smooth > 0:
                 ring[p] = gaussian_filter1d(
                     ring[p], self.ring_smooth / self.q_step, mode="nearest"
@@ -692,7 +739,7 @@ def confirm_ring_shells_across_h(
     profile_method: str = "median",
     min_voxels_per_bin: int = 8,
     ring_width: float = 0.24,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
     """Detect the powder-ring |Q| shells that are present *across the stack axis*.
 
     A real powder ring is a sphere at constant 3D |Q|, so it sits at the same |Q|
@@ -704,9 +751,13 @@ def confirm_ring_shells_across_h(
     — then pools across planes (median over only the planes that sample each |Q|
     bin).  Real rings survive the across-plane median; phantoms wash out.
 
-    Returns ``(centers, halfwidths)`` in Å⁻¹ — the confirmed ring centres and
-    their FWHM — ready to pass to ``PatchedRadialRingModel(allowed_ring_centers=…,
-    allowed_ring_halfwidths=…)``.  Empty arrays when no rings are confirmed.
+    Returns ``(centers, halfwidths, amplitudes)`` in Å⁻¹ (amplitudes in intensity
+    units) — the confirmed ring centres, their FWHM, and the **across-H typical
+    ring excess** at each centre (the pooled profile peak above its SNIP
+    baseline).  The first two go to ``PatchedRadialRingModel(allowed_ring_centers=
+    …, allowed_ring_halfwidths=…)``; the amplitude sets the cross-H scale a
+    per-plane ``allowed_ring_ceilings`` can cap a Bragg-inflated plane back to.
+    Empty arrays when no rings are confirmed.
     """
     stack_axis = {"0kl": 0, "h0l": 1, "hk0": 2}[plane]
     q_mag = _offset_q_magnitude(vol, plane)            # full 3D |Q|
@@ -740,7 +791,19 @@ def confirm_ring_shells_across_h(
         if n_sampled[b] > 0:
             pooled[b] = np.nanmedian(prof_all[sampled[:, b], b])
 
-    return _detect_rings(q_grid, pooled, q_step, ring_width, counts=n_sampled)
+    centers, fwhm = _detect_rings(q_grid, pooled, q_step, ring_width, counts=n_sampled)
+    if centers.size == 0:
+        empty = np.array([])
+        return empty, empty, empty
+
+    # Cross-H typical ring excess at each centre: the pooled profile peak above a
+    # SNIP baseline (the same excess _detect_rings keys on).  Sets the amplitude
+    # scale a per-plane ceiling caps a Bragg-inflated plane back to.
+    g = _fill_nan_1d(pooled)
+    rough = _snip_baseline(g, max(3, int(round(ring_width / q_step))))
+    exc = np.maximum(0.0, g - rough)
+    amplitudes = np.interp(centers, q_grid, exc)
+    return centers, fwhm, amplitudes
 
 
 # ---------------------------------------------------------------------------

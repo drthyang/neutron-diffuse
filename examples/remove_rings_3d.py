@@ -73,28 +73,43 @@ print(f"volume (H,K,L)=({nh},{nk},{nl})  |Q| fit range {q_range}", flush=True)
 # phantom-ring over-subtraction troughs AND making the subtracted shells the same
 # on every plane (continuous in H — no discontinuity for the ΔPDF FFT).  Set
 # CONFIRM_RINGS=0 to disable and reproduce the old per-slice behaviour.
+#
+# A second, complementary guard caps each shell's per-plane amplitude: where a
+# Bragg peak lands ON a real ring (e.g. |Q|≈4.32 inside the 4.39 Å^-1 ring at
+# H=±4) it inflates that ring's amplitude on the one plane and over-subtracts
+# along the ring — which the |Q|-envelope cannot catch (the shell is real).
+# The ceiling = RING_AMP_CAP × the across-H typical amplitude caps the spike back
+# to the cross-plane norm; normal planes (amplitude below the ceiling) are
+# untouched.  RING_AMP_CAP=0 disables the cap.
 confirm = os.environ.get("CONFIRM_RINGS", "1") != "0"
-ring_centers = ring_halfwidths = None
+amp_cap = float(os.environ.get("RING_AMP_CAP", "4.0"))
+ring_centers = ring_halfwidths = ring_ceilings = None
 if confirm:
     t_pre = time.time()
-    ring_centers, ring_halfwidths = confirm_ring_shells_across_h(
+    ring_centers, ring_halfwidths, ring_amps = confirm_ring_shells_across_h(
         vol, plane="0kl", q_range=q_range)
+    if amp_cap > 0 and ring_amps.size:
+        ring_ceilings = amp_cap * ring_amps
     print(f"cross-H confirmed {ring_centers.size} ring shells in "
-          f"{time.time() - t_pre:.1f}s:", flush=True)
-    for c, w in zip(ring_centers, ring_halfwidths):
-        print(f"    |Q|={c:6.3f} Å^-1  FWHM={w:6.3f}", flush=True)
+          f"{time.time() - t_pre:.1f}s "
+          f"(amplitude cap = {amp_cap}× across-H):", flush=True)
+    for i, (c, w) in enumerate(zip(ring_centers, ring_halfwidths)):
+        ceil = "" if ring_ceilings is None else f"  ceiling={ring_ceilings[i]:7.3f}"
+        print(f"    |Q|={c:6.3f} Å^-1  FWHM={w:6.3f}  amp={ring_amps[i]:6.3f}{ceil}",
+              flush=True)
 
 # One model instance, reused per slice (fit() is called fresh on each plane, so
 # the per-slice profiles never leak between H).  All knobs at class defaults,
-# plus the cross-H confirmed shells.
+# plus the cross-H confirmed shells and per-shell amplitude ceilings.
 model = PatchedRadialRingModel(
     plane="0kl", allowed_ring_centers=ring_centers,
-    allowed_ring_halfwidths=ring_halfwidths,
+    allowed_ring_halfwidths=ring_halfwidths, allowed_ring_ceilings=ring_ceilings,
 )
 print(f"model: profile={model.profile_method} n_fourier={model.n_fourier} "
       f"q_step={model.q_step} q_smooth={model.texture_q_smooth} "
       f"baseline={model.baseline_method} adaptive_width={model.adaptive_ring_width} "
-      f"confirmed_shells={'none' if ring_centers is None else ring_centers.size}",
+      f"confirmed_shells={'none' if ring_centers is None else ring_centers.size} "
+      f"amp_cap={amp_cap}",
       flush=True)
 
 res_data = np.empty_like(vol.data)         # data - rings, per voxel

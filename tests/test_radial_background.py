@@ -379,7 +379,7 @@ def _stacked_ring_vol(nh=11, nkl=41, q_real=2.6, q_phantom=1.8,
 
 def test_confirm_ring_shells_keeps_real_ring_rejects_phantom():
     vol, _ = _stacked_ring_vol()
-    centers, fwhm = confirm_ring_shells_across_h(
+    centers, fwhm, amps = confirm_ring_shells_across_h(
         vol, plane="0kl", q_range=(1.2, 3.2), q_step=0.04, min_voxels_per_bin=4,
     )
     # The real ring at |Q|≈2.6 (present on every plane) is confirmed.
@@ -388,6 +388,9 @@ def test_confirm_ring_shells_keeps_real_ring_rejects_phantom():
     # The phantom at |Q|≈1.8 (one plane only) is washed out of the across-H
     # median and NOT confirmed.
     assert np.all(np.abs(centers - 1.8) > 0.15)
+    # The reported amplitude at the real ring is a positive excess.
+    assert amps.shape == centers.shape
+    assert amps[np.argmin(np.abs(centers - 2.6))] > 0.3
 
 
 def test_ring_q_envelope_passes_shells_and_zeros_between():
@@ -412,7 +415,7 @@ def test_confirmed_shells_suppress_phantom_ring_subtraction():
 
     vol, ip = _stacked_ring_vol()
     q_range = (1.2, 3.2)
-    centers, fwhm = confirm_ring_shells_across_h(
+    centers, fwhm, amps = confirm_ring_shells_across_h(
         vol, plane="0kl", q_range=q_range, q_step=0.04, min_voxels_per_bin=4)
 
     sl = dataclasses.replace(
@@ -440,3 +443,65 @@ def test_confirmed_shells_suppress_phantom_ring_subtraction():
     assert np.median(I_guarded[phantom_sel]) < 0.1 * np.median(I_naive[phantom_sel])
     # Both still remove the real ring at |Q|≈2.6.
     assert np.median(I_guarded[real_sel]) > 0.3
+
+
+def test_amplitude_ceiling_caps_bragg_inflated_ring():
+    """A Bragg-like excess landing ON a real ring inflates that ring's per-plane
+    amplitude, over-subtracting elsewhere along the ring; the per-shell ceiling
+    caps the spike (the |Q|-envelope alone cannot — the shell is legitimate)."""
+    import dataclasses
+
+    nh, nkl, ip = 11, 61, 5
+    h = np.linspace(-1.0, 1.0, nh)
+    k = np.linspace(-4.0, 4.0, nkl)
+    l = np.linspace(-4.0, 4.0, nkl)
+    ub = np.eye(3)
+    base = HKLVolume.from_arrays(
+        np.ones((nh, nkl, nkl)), (h[0], h[-1]), (k[0], k[-1]), (l[0], l[-1]),
+        ub_matrix=ub,
+    )
+    q = base.q_magnitude()
+    data = 1.0 + 3.0 * _gaussian(q, 1.0, 2.6, 0.06)            # real ring, all H
+
+    # Inflate the ring at |Q|≈2.6 in a narrow azimuthal wedge on ONE plane
+    # (Bragg landing on a real ring shell).
+    sl0 = dataclasses.replace(
+        base, data=base.data[ip:ip + 1], sigma=base.sigma[ip:ip + 1],
+        mask=base.mask[ip:ip + 1], h_axis=base.h_axis[ip:ip + 1],
+    )
+    q0 = sl0.q_magnitude()[0]
+    phi0 = _azimuthal_angle(sl0, "0kl")[0]
+    wedge = (np.abs(q0 - 2.6) < 0.1) & (np.abs(phi0) < 0.26)
+    data[ip][wedge] += 40.0
+    data += np.random.default_rng(1).normal(0, 0.01, data.shape)
+    vol = HKLVolume.from_arrays(
+        data, (h[0], h[-1]), (k[0], k[-1]), (l[0], l[-1]), ub_matrix=ub,
+    )
+
+    centers, fwhm, amps = confirm_ring_shells_across_h(
+        vol, plane="0kl", q_range=(1.5, 3.2), q_step=0.04, min_voxels_per_bin=4)
+
+    sl = dataclasses.replace(
+        vol, data=vol.data[ip:ip + 1], sigma=vol.sigma[ip:ip + 1],
+        mask=vol.mask[ip:ip + 1], h_axis=vol.h_axis[ip:ip + 1],
+    )
+    common = dict(n_patches=24, plane="0kl", q_step=0.04, ring_width=0.3,
+                  baseline_smooth=0.08, min_voxels_per_patch=40,
+                  allowed_ring_centers=centers, allowed_ring_halfwidths=fwhm)
+
+    no_cap = PatchedRadialRingModel(**common)
+    no_cap.fit(sl, q_range=(1.5, 3.2))
+    out_nocap, _ = no_cap.subtract(sl)
+
+    capped = PatchedRadialRingModel(allowed_ring_ceilings=3.0 * amps, **common)
+    capped.fit(sl, q_range=(1.5, 3.2))
+    out_capped, _ = capped.subtract(sl)
+
+    # The across-H amplitude reflects the NORMAL ring (the one-plane inflation
+    # washes out of the median), so the ceiling sits just above the real ring.
+    j = int(np.argmin(np.abs(centers - 2.6)))
+    assert 2.0 < amps[j] < 6.0
+    # Without the ceiling the inflated amplitude over-subtracts along the ring;
+    # the ceiling makes the residual much less negative.
+    assert out_nocap.data[0].min() < -1.0
+    assert out_capped.data[0].min() > 0.5 * out_nocap.data[0].min()
