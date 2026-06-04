@@ -14,11 +14,16 @@ Run::
 Env overrides:
     DATA_FILE    ring-removed input .h5 (default: data/processed/<22K>_ringremoved.h5)
     OUT_FILE     punched output .h5  (default: <stem>_braggpunched.h5)
-    MODE         "integer" | "search" | "both" (default both — also removes the
-                 off-integer satellites / small-domain Bragg)
+    MODE         "integer" | "auto" | "search" | "both" (default both).
+                 "auto"/"search" detects sharp high-tail outliers above the
+                 robust per-|Q| diffuse level, analogous to the ring-removal
+                 robust profile logic; catches off-integer satellites /
+                 small-domain Bragg.
     R_HKL        per-axis base punch radii "rh,rk,rl"  (default 0.12,0.12,0.45)
     MIN_I        integer-mode detection intensity threshold (default 2.0)
     SEARCH_NMAD  search-mode outlier threshold in MADs (default 6.0)
+    SEARCH_MIN_I search-mode absolute intensity floor (default 2.0)
+    SEARCH_PROM  search-mode local 3x3x3 prominence floor (default 0.0)
     MARGIN       guard band added to every radius (default 0.03)
     MAX_SCALE    max intensity radius multiplier (default 3.0)
     PREVIEW      1 (default) opens the viewer; 0 just saves
@@ -50,6 +55,8 @@ mode = os.environ.get("MODE", "both")
 r_hkl = tuple(float(x) for x in os.environ.get("R_HKL", "0.12,0.12,0.45").split(","))
 min_i = float(os.environ.get("MIN_I", "2.0"))
 search_nmad = float(os.environ.get("SEARCH_NMAD", "6.0"))
+search_min_i = float(os.environ.get("SEARCH_MIN_I", "2.0"))
+search_prom = float(os.environ.get("SEARCH_PROM", "0.0"))
 margin = float(os.environ.get("MARGIN", "0.03"))
 max_scale = float(os.environ.get("MAX_SCALE", "3.0"))
 
@@ -62,9 +69,12 @@ vol = ndiff.load(in_path)
 remover = BraggRemover(
     mode=mode, punch_radii=r_hkl, min_intensity=min_i, min_prominence=1.0,
     intensity_scale=True, max_radius_scale=max_scale, margin=margin,
-    search_n_mad=search_nmad, search_min_intensity=2.0,
+    search_n_mad=search_nmad, search_min_intensity=search_min_i,
+    search_min_prominence=search_prom,
 )
-print(f"mode={mode}  radii={r_hkl}  min_I={min_i}  search_nmad={search_nmad}", flush=True)
+print(f"mode={mode}  radii={r_hkl}  min_I={min_i}  "
+      f"search_nmad={search_nmad}  search_min_I={search_min_i}  "
+      f"search_prom={search_prom}", flush=True)
 t = time.time()
 peaks = remover.detect_peaks(vol)
 keep = remover.build_mask(vol)

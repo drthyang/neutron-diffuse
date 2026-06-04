@@ -177,6 +177,16 @@ Masked voxels (ring-dominated) filled by:
 - Sigmoid-tapered boundary.
 - Backfill via `backfill_bragg` (default `symmetry+tv`).
 
+**2026-06-04 auto-punch update:** `BraggRemover(mode="auto")` is now an alias
+for search mode: robust per-|Q|-shell background (`median + n·MAD`) plus local
+maxima, analogous to the ring-removal high-tail rejection logic.  The real-data
+driver exposes `SEARCH_MIN_I` to catch weak Bragg/satellite peaks and
+`SEARCH_PROM` to require local 3x3x3 sharpness so broad diffuse maxima are not
+punched.  Current visual candidate:
+`MODE=auto R_HKL=0.09,0.12,0.45 MAX_SCALE=2.0 MARGIN=0.02 SEARCH_NMAD=4
+SEARCH_MIN_I=1.0 SEARCH_PROM=1.0`.  Inspect H=0.333/0.666 for diffuse
+preservation and H=2 K=±8/±10 for weak-peak capture before promoting defaults.
+
 **Pending refinements:**
 - Profile subtraction before punch (reduces punch radius needed).
 - Absolute monitor normalisation.

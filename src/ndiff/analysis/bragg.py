@@ -42,7 +42,7 @@ class BraggRemover:
     ----------
     mode:
         ``"integer"`` (default) punches at integer (h,k,l) nodes (symmetry-based).
-        ``"search"`` finds *any* sharp peak as a high-tail outlier above the
+        ``"auto"`` / ``"search"`` finds *any* sharp peak as a high-tail outlier above the
         robust per-|Q|-shell diffuse level — catches off-integer satellites
         (small-domain / superlattice reflections) the integer mode misses, at the
         cost of also removing any sharp *structural* diffuse (acceptable when only
@@ -93,6 +93,7 @@ class BraggRemover:
     search_q_step: float = 0.05
     search_n_mad: float = 8.0
     search_min_intensity: float = 2.0
+    search_min_prominence: float = 0.0
     subtract_profile: bool = False
 
     def _radii(self) -> tuple[float, float, float]:
@@ -123,14 +124,14 @@ class BraggRemover:
 
         - ``"integer"`` — peaks at integer (h,k,l) nodes (symmetry-based; skips
           systematic absences when ``min_intensity`` is set).
-        - ``"search"`` — any sharp peak, found as a high-tail outlier above the
+        - ``"auto"`` / ``"search"`` — any sharp peak, found as a high-tail outlier above the
           robust per-|Q|-shell diffuse level.  Catches off-integer satellites
           (e.g. small-domain / superlattice reflections) the integer mode misses.
         - ``"both"`` — the union of the two (integer centres take precedence).
         """
         if self.mode == "integer":
             return self._detect_integer(vol)
-        if self.mode == "search":
+        if self.mode in {"auto", "search"}:
             return self._detect_search(vol)
         if self.mode == "both":
             # Sequential: punch the integer Bragg first, then search on the
@@ -242,6 +243,21 @@ class BraggRemover:
         scored = np.where(valid, vol.data, -np.inf)
         local_max = ndimage.maximum_filter(scored, size=3, mode="nearest")
         peaks = np.argwhere(cand & (scored >= local_max))
+        if self.search_min_prominence > 0 and peaks.size:
+            keep_peak = []
+            nh, nk, nl = vol.shape
+            for ih, ik, il in peaks:
+                hs, he = max(0, ih - 1), min(nh, ih + 2)
+                ks, ke = max(0, ik - 1), min(nk, ik + 2)
+                ls, le = max(0, il - 1), min(nl, il + 2)
+                w = vol.data[hs:he, ks:ke, ls:le]
+                m = valid[hs:he, ks:ke, ls:le]
+                if int(m.sum()) < 3:
+                    keep_peak.append(False)
+                    continue
+                local_bg = float(np.median(w[m]))
+                keep_peak.append(float(vol.data[ih, ik, il]) - local_bg >= self.search_min_prominence)
+            peaks = peaks[np.asarray(keep_peak, dtype=bool)]
         return [(int(ih), int(ik), int(il), float(vol.data[ih, ik, il]))
                 for ih, ik, il in peaks]
 

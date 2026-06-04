@@ -135,6 +135,45 @@ Driver `examples/punch_bragg_3d.py` (load ring-removed volume → punch → save
 (H slider) reused.  Tests +5 (56/56).  Profile-subtraction punch and the backfill
 of punched holes are the next steps.
 
+### 2026-06-04 — Auto Bragg punch tuning: weak peaks vs diffuse preservation
+
+Added explicit `MODE=auto` as an alias for search mode, matching the user's
+framing: detect Bragg peaks with the same philosophy as ring removal — robust
+background by |Q| shell, then identify sharp high-tail outliers.  The driver
+`examples/punch_bragg_3d.py` now exposes:
+
+- `SEARCH_MIN_I`: absolute floor for search-mode candidates.  Lowering this
+  catches weaker Bragg/satellite peaks, but can mask magnetic diffuse.
+- `SEARCH_PROM`: new local 3x3x3 prominence gate.  A candidate must be an
+  outlier relative to its |Q| shell **and** sharp relative to its local
+  neighborhood, so broad diffuse maxima at H≈0.333/0.666 are less likely to be
+  punched.
+
+Observed trade-off on the 22K ring-removed volume, with middle H radius
+`R_HKL=0.09,0.12,0.45 MAX_SCALE=2.0 MARGIN=0.02 SEARCH_NMAD=4`:
+
+| setting | punched valid voxels | H=0.333 punched | H=0.666 punched | H=2 K=±8 kept max | H=2 K=±10 kept max |
+|---|---:|---:|---:|---:|---:|
+| `SEARCH_MIN_I=1.5` | 3.29% | 2.43% | 0.57% | ~1.43 | ~0.87 |
+| `SEARCH_MIN_I=1.0` | 5.24% | 5.47% | 3.34% | ~0.69 | ~0.51 |
+| `SEARCH_MIN_I=1.0 SEARCH_PROM=1.0` | 4.11% | 3.73% | 1.60% | ~1.03 | ~0.87 |
+
+Current best candidate to inspect visually:
+`data/processed/TbTi3Bi4_22K_mmm_auto_braggpunched_hmid_min1_prom1.h5`, generated
+with:
+
+```
+MODE=auto R_HKL=0.09,0.12,0.45 MAX_SCALE=2.0 MARGIN=0.02 \
+SEARCH_NMAD=4 SEARCH_MIN_I=1.0 SEARCH_PROM=1.0
+```
+
+Use `explore_volume.py` at H=0.333 and H=0.666 to verify diffuse preservation,
+and H=2 around K=±8/±10 to verify weak Bragg removal.  If H=0.333/0.666 still
+loses diffuse, increase `SEARCH_PROM` (e.g. 1.5) or return to
+`SEARCH_MIN_I=1.5`; if weak peaks remain, lower `SEARCH_PROM` or increase the
+K/L radius locally.  The H radius should stay near 0.09: 0.06 missed adjacent-H
+tails, while 0.12 punched too far into diffuse scattering.
+
 ### 2026-06-04 — Promoted ring removal to the full 3D volume (per-slice loop)
 
 New driver `examples/remove_rings_3d.py`: applies the slice-validated

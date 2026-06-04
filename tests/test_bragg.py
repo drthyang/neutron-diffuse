@@ -118,6 +118,42 @@ def test_search_mode_punches_off_integer_satellite():
     assert not search.build_mask(vol)[i1h, i1, i1]
 
 
+def test_auto_mode_aliases_search_mode():
+    vol, _ = _peaky_vol()
+    sh = int(np.argmin(np.abs(vol.h_axis - 0.5)))
+    sk = int(np.argmin(np.abs(vol.k_axis - 0.5)))
+    sl = int(np.argmin(np.abs(vol.l_axis - 1.0)))
+    vol.data[sh, sk, sl] = 60.0
+    auto = BraggRemover(mode="auto", punch_radii=(0.25, 0.25, 0.25),
+                        search_n_mad=6.0, search_min_intensity=10.0,
+                        search_q_step=0.5)
+    assert not auto.build_mask(vol)[sh, sk, sl]
+
+
+def test_search_prominence_rejects_broad_diffuse_bump():
+    vol, _ = _peaky_vol(shape=(31, 31, 31), hkl_range=(-3, 3))
+    H, K, L = vol.hkl_grid()
+    broad = 5.0 * np.exp(-0.5 * (((H - 0.6) / 0.45) ** 2
+                                  + ((K - 0.4) / 0.45) ** 2
+                                  + ((L - 0.2) / 0.45) ** 2))
+    vol.data += broad
+    ih = int(np.argmin(np.abs(vol.h_axis - 0.6)))
+    ik = int(np.argmin(np.abs(vol.k_axis - 0.4)))
+    il = int(np.argmin(np.abs(vol.l_axis - 0.2)))
+
+    sh = int(np.argmin(np.abs(vol.h_axis + 1.4)))
+    sk = int(np.argmin(np.abs(vol.k_axis - 1.2)))
+    sl = int(np.argmin(np.abs(vol.l_axis + 0.8)))
+    vol.data[sh, sk, sl] = 8.0
+
+    auto = BraggRemover(mode="auto", punch_radii=(0.2, 0.2, 0.2),
+                        search_n_mad=3.0, search_min_intensity=1.0,
+                        search_min_prominence=1.0, search_q_step=0.5)
+    keep = auto.build_mask(vol)
+    assert keep[ih, ik, il]           # broad diffuse maximum survives
+    assert not keep[sh, sk, sl]       # sharp satellite is punched
+
+
 def test_both_mode_is_sequential_union():
     """'both' = integer punch, then search on the residual; it removes both an
     integer peak and an off-integer satellite."""
