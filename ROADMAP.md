@@ -182,9 +182,12 @@ rings continuous across H.
 - `mode="auto"` / `mode="search"` detects sharp off-integer satellites as
   robust per-|Q|-shell outliers.
 - Adaptive anisotropic punch radius (scale with intensity).
-- Forced origin punch removes the non-physical `(0,0,0)` direct-beam remnant.
+- Separate incident-beam punch removes the non-Bragg `(0,0,0)` remnant with its
+  own larger radii and margins.
 - Optional `phi_tail_hkl` expands punches tangentially in the K-L plane to catch
-  Bragg tails smeared along the powder-ring direction.
+  Bragg tails smeared along the powder-ring direction.  The tangent is computed
+  from the UB metric as the local constant-|Q| contour direction, not from the
+  naive index-plane `(-L,K)` direction.
 - Backfill via `backfill_bragg` (default `method="local"` shell-median fill).
 
 **2026-06-04 auto-punch update:** `BraggRemover(mode="auto")` is now an alias
@@ -198,13 +201,17 @@ SEARCH_MIN_I=1.0 SEARCH_PROM=1.0`.  Inspect H=0.333/0.666 for diffuse
 preservation and H=2 K=±8/±10 for weak-peak capture before promoting defaults.
 
 **2026-06-04 punch/backfill update:** visual QA showed two remaining punch
-issues: the strong `(0,0,0)` intensity is not real, and Bragg tails persisted
-along φ.  `BraggRemover` now defaults to `force_origin=True` and supports
-`phi_tail_hkl`; the example drivers default to `PHI_TAIL_HKL=0.12`.  The
-interactive QA script `examples/explore_slice.py` now processes all H planes and
-opens an H-slider viewer with four panels: `data`, `Removed ring`, `Punched`,
-and `Backfilled`.  `backfill_bragg` now defaults to local shell-median fill,
-with TV/symmetry retained for comparisons.
+issues: the strong `(0,0,0)` intensity is the incident beam, not a Bragg peak,
+and Bragg tails persisted along φ.  `BraggRemover.detect_peaks()` now excludes
+the origin; `build_mask()` applies a separate incident-beam punch controlled by
+`INCIDENT_R_HKL`, `INCIDENT_MARGIN`, and `INCIDENT_PHI_TAIL_HKL`.  Bragg tails
+are handled by `phi_tail_hkl`; the example drivers default to `PHI_TAIL_HKL=0.12`.
+The tail direction is UB-metric aware: it follows the tangent of the actual
+constant-|Q| ring at the peak.  The interactive QA script
+`examples/explore_slice.py` now processes all H planes and opens an H-slider
+viewer with four panels: `data`, `Removed ring`, `Punched`, and `Backfilled`.
+`backfill_bragg` now defaults to local shell-median fill, with TV/symmetry
+retained for comparisons.
 
 **Pending refinements:**
 - Profile subtraction before punch (reduces punch radius needed).
@@ -236,16 +243,17 @@ with TV/symmetry retained for comparisons.
 > longer a blocker.  (Re-check on the 22K file with `_ring_center_fit.py` if its
 > rings look off-centre there.)  See HANDOFF.md.
 
-**Standard preview tool:** always investigate ring-removal results with the
-interactive viewer `examples/explore_slice.py` (live 3-panel data | removed
-rings | residual slice with vmin/vmax sliders, default slider travel 0.0–1.0).
-Run via the `rmc-discord` env; defaults to the 22K mmm file, H=0.3333.
+**Standard preview tool:** always investigate cleanup results with the
+interactive viewer `examples/explore_slice.py` (live 4-panel data | Removed ring
+| Punched | Backfilled view with H, vmin, and vmax sliders).  Run via the
+`rmc-discord` env; defaults to the 22K mmm file, H=0.3333.
 
 | Task | Status |
 |------|--------|
 | Real-data trial: load and inspect Mantid NeXus volumes | done |
 | Real-data trial: 0kl slice ring-removal validation | done |
-| Real-data trial: full 3D ring remove, Bragg punch, ΔPDF | **next step** |
+| Real-data trial: full 3D ring remove, Bragg punch, local backfill | done |
+| Real-data trial: generate and inspect 3D-ΔPDF candidate | **next step** |
 | Repository health check: syntax/imports/lightweight tests | done 2026-06-03; official pytest/ruff/mypy blocked by missing dev deps |
 | Synthetic benchmark: injected ring + diffuse, evaluate ΔPDF quality | pending |
 | Per-ring T_i(φ) if rank1_variance < 0.90 | pending |

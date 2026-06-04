@@ -183,6 +183,8 @@ PUNCH_PRESETS = {
         "MARGIN": "0.02",
         "MAX_SCALE": "2.0",
         "PHI_TAIL_HKL": "0.12",
+        "INCIDENT_R_HKL": "0.24,0.24,0.90",
+        "INCIDENT_MARGIN": "0.12",
     },
     "cc_on": {
         "MODE": "auto",
@@ -193,6 +195,8 @@ PUNCH_PRESETS = {
         "MARGIN": "0.02",
         "MAX_SCALE": "2.0",
         "PHI_TAIL_HKL": "0.12",
+        "INCIDENT_R_HKL": "0.24,0.24,0.90",
+        "INCIDENT_MARGIN": "0.12",
     },
 }
 
@@ -220,6 +224,11 @@ search_prom = float(punch_default("SEARCH_PROM", "1.0"))
 margin = float(punch_default("MARGIN", "0.02"))
 max_scale = float(punch_default("MAX_SCALE", "2.0"))
 phi_tail_hkl = float(punch_default("PHI_TAIL_HKL", "0.12"))
+incident_r_hkl = tuple(
+    float(x) for x in punch_default("INCIDENT_R_HKL", "0.24,0.24,0.90").split(",")
+)
+incident_margin = float(punch_default("INCIDENT_MARGIN", "0.12"))
+incident_phi_tail = float(punch_default("INCIDENT_PHI_TAIL_HKL", "0.0"))
 
 remover = BraggRemover(
     mode=mode,
@@ -229,7 +238,10 @@ remover = BraggRemover(
     intensity_scale=True,
     max_radius_scale=max_scale,
     margin=margin,
-    force_origin=True,
+    punch_incident_beam=True,
+    incident_beam_radii=incident_r_hkl,
+    incident_beam_margin=incident_margin,
+    incident_beam_phi_tail_hkl=incident_phi_tail,
     phi_tail_hkl=phi_tail_hkl,
     search_n_mad=search_nmad,
     search_min_intensity=search_min_i,
@@ -289,7 +301,7 @@ if n_skipped:
     print(f"ring removal: {n_skipped} sparse/failed H planes left unchanged")
 
 peaks = remover.detect_peaks(residual)
-keep = remover._punch_centers(residual, np.ones(residual.shape, dtype=bool), peaks)
+keep = remover.build_mask(residual)
 punched_mask = residual.mask & keep
 punched_voxels = residual.mask & ~keep
 punched = dataclasses.replace(residual, mask=punched_mask)
@@ -311,8 +323,10 @@ print(f"0kl volume viewer initial H={H_VALUE:.4g}  "
       f"non-parametric radial-background subtraction")
 valid = residual.mask & np.isfinite(residual.data)
 print(f"Bragg punch: preset={punch_preset_name} mode={mode} radii={r_hkl} "
-      f"phi_tail={phi_tail_hkl} "
-      f"peaks={len(peaks)} punched={int(punched_voxels.sum())} voxels "
+      f"phi_tail={phi_tail_hkl} peaks={len(peaks)}")
+print(f"Incident beam punch: radii={incident_r_hkl} margin={incident_margin} "
+      f"phi_tail={incident_phi_tail}")
+print(f"Total punched: {int(punched_voxels.sum())} voxels "
       f"({100 * punched_voxels.sum() / max(int(valid.sum()), 1):.2f}% of valid)")
 print(f"Backfill: method={backfill_method}")
 print("Drag the H slider to scrub planes; drag the vmin/vmax sliders; "

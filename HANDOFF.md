@@ -95,7 +95,7 @@ file.  `pytest -o addopts=` passes **47/47** in the `rmc-discord` environment.
 
 ## Progress log
 
-### 2026-06-04 — Bragg punch/backfill QA: origin punch + phi-tail cleanup
+### 2026-06-04 — Bragg punch/backfill QA: incident-beam punch + phi-tail cleanup
 
 Updated the Bragg cleanup stage after visual QA in `explore_slice.py`:
 
@@ -109,24 +109,36 @@ Updated the Bragg cleanup stage after visual QA in `explore_slice.py`:
   surface through structured diffuse scattering.
 - TV inpainting now seeds masked voxels from the valid-data median before
   iteration, preventing bright punched values from bleeding into the solution.
-- `BraggRemover(force_origin=True)` now always punches the nearest `(0,0,0)`
-  voxel.  This removes the strong direct-beam / elastic-line remnant, which is
-  not a physical Bragg peak and can be missed by search mode because `|Q|=0` is
-  a sparse shell edge case.
+- `BraggRemover` now treats the nearest `(0,0,0)` voxel as a separate
+  **incident-beam** remnant, not as a Bragg peak.  `detect_peaks()` excludes the
+  origin; `build_mask()` applies an independent incident-beam punch afterwards.
+  Tune it with `INCIDENT_R_HKL`, `INCIDENT_MARGIN`, and
+  `INCIDENT_PHI_TAIL_HKL`.  Defaults are intentionally larger than Bragg radii
+  because the incident beam is much more intense and broader.
 - `BraggRemover(phi_tail_hkl=...)` adds tangential punch expansion in the K-L
-  plane, along the local powder-ring φ direction.  This targets Bragg tails that
-  smear along the ring rather than along the H/K/L axes.  The current examples
-  default to `PHI_TAIL_HKL=0.12`; increase to e.g. `0.20` if tails remain.
-- `examples/punch_bragg_3d.py` was updated with the same origin punch and
-  `PHI_TAIL_HKL` preset knob.  New `examples/backfill_bragg_3d.py` saves the
+  plane, along the local powder-ring φ direction.  The direction is
+  **UB-metric aware**: on each fixed-H `0kl` slice it uses the K/L gradient of
+  `|Q|²` and stretches perpendicular to that gradient, so the punch follows the
+  actual constant-|Q| ring tangent rather than the naive `(-L,K)` index-plane
+  tangent.  This targets Bragg tails that smear along the ring rather than along
+  the H/K/L axes.  The current examples default to `PHI_TAIL_HKL=0.12`; increase
+  to e.g. `0.20` if tails remain.
+- `examples/punch_bragg_3d.py` was updated with the same incident-beam punch and
+  `PHI_TAIL_HKL` preset knobs.  New `examples/backfill_bragg_3d.py` saves the
   final backfilled volume and reports filled-value summary statistics.
 
-Focused tests covering Bragg, inpainting, and the pipeline pass **23/23** with:
+Focused tests covering Bragg, inpainting, and the pipeline pass **24/24** with:
 
 ```
 PYTHONPATH=src /Users/tt9/miniforge3/envs/rmc-discord/bin/python -m pytest \
   -o addopts='' tests/test_bragg.py tests/test_pipeline.py tests/test_inpainting.py
 ```
+
+**State for next work:** the real-data cleanup path is now ready to prepare a
+3D-ΔPDF candidate: remove rings in 3D → punch Bragg/satellites plus the
+incident beam → local backfill → run `compute_delta_pdf` / the ΔPDF example and
+inspect real-space artefacts.  Remaining open concern is absolute
+normalisation/monitor scaling, not the cleanup mechanics.
 
 ### 2026-06-04 — Bragg punch: real-data rewrite, two modes (integer + search)
 

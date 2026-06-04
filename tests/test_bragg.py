@@ -20,11 +20,11 @@ def _make_vol(shape=(15, 15, 15), hkl_range=(-2, 2)):
 def test_bragg_mask_removes_integer_positions():
     vol = _make_vol()
     mask = bragg_mask(vol, punch_radius_hkl=0.4)
-    # (0,0,0) should always be punched (legacy punch-all path)
+    # (0,0,0) is punched by the separate incident-beam path.
     ih0 = np.argmin(np.abs(vol.h_axis))
     ik0 = np.argmin(np.abs(vol.k_axis))
     il0 = np.argmin(np.abs(vol.l_axis))
-    assert not mask[ih0, ik0, il0], "Origin (0,0,0) should be punched"
+    assert not mask[ih0, ik0, il0], "Incident beam (0,0,0) should be punched"
 
 
 def test_bragg_mask_preserves_non_integer():
@@ -61,12 +61,12 @@ def test_bragg_detect_skips_absent_nodes():
     vol, present = _peaky_vol()
     remover = BraggRemover(punch_radii=(0.25, 0.25, 0.25), min_intensity=10.0)
     detected = remover.detect_peaks(vol)
-    assert len(detected) == len(present)          # only the real peaks
+    assert len(detected) == len(present) - 1      # real Bragg peaks; origin is separate
     # An empty node, e.g. (2,2,2), is NOT punched (preserve diffuse at absences).
     mask = remover.build_mask(vol)
     ih = int(np.argmin(np.abs(vol.h_axis - 2)))
     assert mask[ih, ih, ih]
-    # ... while a present peak IS punched.
+    # ... while the incident beam IS punched by its separate mask.
     i0 = int(np.argmin(np.abs(vol.h_axis)))
     assert not mask[i0, i0, i0]
 
@@ -84,13 +84,14 @@ def test_bragg_anisotropic_radii_punch_more_along_broad_axis():
 
 def test_bragg_intensity_scaling_enlarges_bright_peaks():
     vol, _ = _peaky_vol()
-    i0 = int(np.argmin(np.abs(vol.h_axis)))
+    ih = int(np.argmin(np.abs(vol.h_axis - 1)))
+    i0 = int(np.argmin(np.abs(vol.k_axis)))
     base = BraggRemover(punch_radii=(0.2, 0.2, 0.2), min_intensity=10.0)
     scaled = BraggRemover(punch_radii=(0.2, 0.2, 0.2), min_intensity=10.0,
                           intensity_scale=True, intensity_ref=30.0)
-    n_base = int((~base.build_mask(vol))[:, i0, i0].sum())
-    n_scaled = int((~scaled.build_mask(vol))[:, i0, i0].sum())
-    assert n_scaled > n_base                          # the bright origin grows
+    n_base = int((~base.build_mask(vol))[ih, :, i0].sum())
+    n_scaled = int((~scaled.build_mask(vol))[ih, :, i0].sum())
+    assert n_scaled > n_base                          # the bright Bragg peak grows
 
 
 def test_search_mode_punches_off_integer_satellite():
@@ -118,12 +119,13 @@ def test_search_mode_punches_off_integer_satellite():
     assert not search.build_mask(vol)[i1h, i1, i1]
 
 
-def test_search_mode_forces_origin_punch():
+def test_search_mode_punches_incident_beam_separately():
     vol, _ = _peaky_vol()
     search = BraggRemover(mode="search", punch_radii=(0.25, 0.25, 0.25),
                           search_n_mad=6.0, search_min_intensity=10.0,
                           search_q_step=0.5)
     i0 = int(np.argmin(np.abs(vol.h_axis)))
+    assert all((p[0], p[1], p[2]) != (i0, i0, i0) for p in search.detect_peaks(vol))
     assert not search.build_mask(vol)[i0, i0, i0]
 
 
@@ -143,6 +145,28 @@ def test_phi_tail_expands_punch_along_ring_tangent():
     base_line = int((~base.build_mask(vol))[ih, ik, :].sum())
     phi_line = int((~phi.build_mask(vol))[ih, ik, :].sum())
     assert phi_line > base_line
+
+
+def test_phi_tail_uses_ub_metric_ring_tangent():
+    vol, _ = _peaky_vol(shape=(41, 41, 41), hkl_range=(-2, 2))
+    vol.ub_matrix = np.array([
+        [1.0, 0.0, 0.0],
+        [0.0, 2.0, 0.8],
+        [0.0, 0.0, 1.0],
+    ])
+    direction = BraggRemover._kl_ring_directions(vol, (0.0, 1.0, 1.0))
+    assert direction is not None
+    krad, lrad, ktan, ltan = direction
+
+    # The metric-aware tangent is perpendicular to grad(|Q|^2), not simply
+    # (-L, K).  For this skewed UB those are measurably different directions.
+    naive = np.array([-1.0, 1.0]) / np.sqrt(2.0)
+    actual = np.array([ktan, ltan])
+    assert abs(float(np.dot(actual, naive))) < 0.98
+
+    metric = vol.ub_matrix @ vol.ub_matrix.T
+    grad_kl = np.array((metric @ np.array([0.0, 1.0, 1.0]))[1:3])
+    assert abs(float(np.dot(grad_kl, actual))) < 1e-12
 
 
 def test_auto_mode_aliases_search_mode():

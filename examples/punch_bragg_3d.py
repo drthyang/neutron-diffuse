@@ -29,6 +29,13 @@ Env overrides:
     SEARCH_PROM  search-mode local 3x3x3 prominence floor (default 0.0)
     MARGIN       guard band added to every radius (default 0.03)
     MAX_SCALE    max intensity radius multiplier (default 3.0)
+    PHI_TAIL_HKL extra Bragg-punch width along the local powder-ring direction
+    INCIDENT_R_HKL
+                 incident-beam punch radii "rh,rk,rl" (default 0.24,0.24,0.90)
+    INCIDENT_MARGIN
+                 guard band for the incident-beam punch (default 0.12)
+    INCIDENT_PHI_TAIL_HKL
+                 optional incident-beam tail width along the local ring direction
     PREVIEW      1 (default) opens the viewer; 0 just saves
     H_VALUE      initial H plane in the viewer (default 0.0)
 """
@@ -60,6 +67,8 @@ PRESETS = {
         "MARGIN": "0.02",
         "MAX_SCALE": "2.0",
         "PHI_TAIL_HKL": "0.12",
+        "INCIDENT_R_HKL": "0.24,0.24,0.90",
+        "INCIDENT_MARGIN": "0.12",
     },
     # Cleaner cc-on data has better-shaped Bragg peaks, so the absolute search
     # floor can be higher.  This preserves more diffuse signal while retaining
@@ -73,6 +82,8 @@ PRESETS = {
         "MARGIN": "0.02",
         "MAX_SCALE": "2.0",
         "PHI_TAIL_HKL": "0.12",
+        "INCIDENT_R_HKL": "0.24,0.24,0.90",
+        "INCIDENT_MARGIN": "0.12",
     },
 }
 
@@ -102,6 +113,11 @@ search_prom = float(env_default("SEARCH_PROM", "0.0"))
 margin = float(env_default("MARGIN", "0.03"))
 max_scale = float(env_default("MAX_SCALE", "3.0"))
 phi_tail_hkl = float(env_default("PHI_TAIL_HKL", "0.12"))
+incident_r_hkl = tuple(
+    float(x) for x in env_default("INCIDENT_R_HKL", "0.24,0.24,0.90").split(",")
+)
+incident_margin = float(env_default("INCIDENT_MARGIN", "0.12"))
+incident_phi_tail = float(env_default("INCIDENT_PHI_TAIL_HKL", "0.0"))
 
 out_file = os.environ.get("OUT_FILE")
 out_path = Path(out_file) if out_file else proc / f"{in_path.stem}_braggpunched.h5"
@@ -112,13 +128,18 @@ vol = ndiff.load(in_path)
 remover = BraggRemover(
     mode=mode, punch_radii=r_hkl, min_intensity=min_i, min_prominence=1.0,
     intensity_scale=True, max_radius_scale=max_scale, margin=margin,
-    force_origin=True, phi_tail_hkl=phi_tail_hkl,
+    punch_incident_beam=True, incident_beam_radii=incident_r_hkl,
+    incident_beam_margin=incident_margin,
+    incident_beam_phi_tail_hkl=incident_phi_tail,
+    phi_tail_hkl=phi_tail_hkl,
     search_n_mad=search_nmad, search_min_intensity=search_min_i,
     search_min_prominence=search_prom,
 )
 print(f"preset={preset_name or 'none'}  mode={mode}  radii={r_hkl}  min_I={min_i}  "
       f"search_nmad={search_nmad}  search_min_I={search_min_i}  "
       f"search_prom={search_prom}  phi_tail={phi_tail_hkl}", flush=True)
+print(f"incident beam: radii={incident_r_hkl} margin={incident_margin} "
+      f"phi_tail={incident_phi_tail}", flush=True)
 t = time.time()
 peaks = remover.detect_peaks(vol)
 keep = remover.build_mask(vol)

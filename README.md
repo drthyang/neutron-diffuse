@@ -134,10 +134,11 @@ After fitting `PatchedRingModel`, inspect:
 
 Real Mantid NeXus loading, full-3D ring removal, Bragg/satellite punching, local
 Bragg backfill, and 3D-DeltaPDF computation are implemented.  The current Bragg
-punch stage includes forced origin removal and optional phi-direction tail
-expansion for peaks smeared along powder rings.  See [HANDOFF.md](HANDOFF.md)
-for current hand-off notes and [ROADMAP.md](ROADMAP.md) for the development
-plan.
+punch stage treats the `(0,0,0)` incident beam separately from Bragg peaks and
+uses UB-aware phi-direction tail expansion for peaks smeared along powder rings.
+The cleanup stack is ready for real-data 3D-DeltaPDF candidate generation and
+inspection.  See [HANDOFF.md](HANDOFF.md) for current hand-off notes and
+[ROADMAP.md](ROADMAP.md) for the development plan.
 
 ## Dependencies
 
