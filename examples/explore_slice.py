@@ -185,6 +185,7 @@ PUNCH_PRESETS = {
         "PHI_TAIL_HKL": "0.12",
         "INCIDENT_R_HKL": "0.24,0.24,0.90",
         "INCIDENT_MARGIN": "0.12",
+        "INCIDENT_SPHERE_R_HKL": "1.20",
     },
     "cc_on": {
         "MODE": "auto",
@@ -197,6 +198,7 @@ PUNCH_PRESETS = {
         "PHI_TAIL_HKL": "0.12",
         "INCIDENT_R_HKL": "0.24,0.24,0.90",
         "INCIDENT_MARGIN": "0.12",
+        "INCIDENT_SPHERE_R_HKL": "1.20",
     },
 }
 
@@ -229,6 +231,10 @@ incident_r_hkl = tuple(
 )
 incident_margin = float(punch_default("INCIDENT_MARGIN", "0.12"))
 incident_phi_tail = float(punch_default("INCIDENT_PHI_TAIL_HKL", "0.0"))
+incident_sphere_env = punch_default("INCIDENT_SPHERE_R_HKL", "1.20")
+incident_sphere_radius = (
+    None if incident_sphere_env == "" else float(incident_sphere_env)
+)
 
 remover = BraggRemover(
     mode=mode,
@@ -242,6 +248,7 @@ remover = BraggRemover(
     incident_beam_radii=incident_r_hkl,
     incident_beam_margin=incident_margin,
     incident_beam_phi_tail_hkl=incident_phi_tail,
+    incident_beam_sphere_radius_hkl=incident_sphere_radius,
     phi_tail_hkl=phi_tail_hkl,
     search_n_mad=search_nmad,
     search_min_intensity=search_min_i,
@@ -325,7 +332,7 @@ valid = residual.mask & np.isfinite(residual.data)
 print(f"Bragg punch: preset={punch_preset_name} mode={mode} radii={r_hkl} "
       f"phi_tail={phi_tail_hkl} peaks={len(peaks)}")
 print(f"Incident beam punch: radii={incident_r_hkl} margin={incident_margin} "
-      f"phi_tail={incident_phi_tail}")
+      f"phi_tail={incident_phi_tail} sphere_r={incident_sphere_radius}")
 print(f"Total punched: {int(punched_voxels.sum())} voxels "
       f"({100 * punched_voxels.sum() / max(int(valid.sum()), 1):.2f}% of valid)")
 print(f"Backfill: method={backfill_method}")

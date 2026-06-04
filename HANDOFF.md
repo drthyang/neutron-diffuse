@@ -115,6 +115,14 @@ Updated the Bragg cleanup stage after visual QA in `explore_slice.py`:
   Tune it with `INCIDENT_R_HKL`, `INCIDENT_MARGIN`, and
   `INCIDENT_PHI_TAIL_HKL`.  Defaults are intentionally larger than Bragg radii
   because the incident beam is much more intense and broader.
+- **Incident-beam sphere option** (`incident_beam_sphere_radius_hkl` /
+  `INCIDENT_SPHERE_R_HKL`, preset default `1.20`): punch the incident beam as an
+  **isotropic HKL sphere** about the origin instead of the anisotropic
+  Bragg-style ellipsoid.  The direct beam is not Bragg-like — it is broad in
+  every direction — so a sphere removes its remnant more cleanly.  Set to empty
+  to fall back to the ellipsoidal incident-beam punch.  Wired through
+  `punch_bragg_3d.py` and `explore_slice.py`; covered by
+  `test_incident_beam_sphere_punches_isotropic_origin_region`.
 - `BraggRemover(phi_tail_hkl=...)` adds tangential punch expansion in the K-L
   plane, along the local powder-ring φ direction.  The direction is
   **UB-metric aware**: on each fixed-H `0kl` slice it uses the K/L gradient of

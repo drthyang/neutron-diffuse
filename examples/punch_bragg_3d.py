@@ -36,6 +36,8 @@ Env overrides:
                  guard band for the incident-beam punch (default 0.12)
     INCIDENT_PHI_TAIL_HKL
                  optional incident-beam tail width along the local ring direction
+    INCIDENT_SPHERE_R_HKL
+                 if set, use this isotropic HKL sphere radius for the incident beam
     PREVIEW      1 (default) opens the viewer; 0 just saves
     H_VALUE      initial H plane in the viewer (default 0.0)
 """
@@ -69,6 +71,7 @@ PRESETS = {
         "PHI_TAIL_HKL": "0.12",
         "INCIDENT_R_HKL": "0.24,0.24,0.90",
         "INCIDENT_MARGIN": "0.12",
+        "INCIDENT_SPHERE_R_HKL": "1.20",
     },
     # Cleaner cc-on data has better-shaped Bragg peaks, so the absolute search
     # floor can be higher.  This preserves more diffuse signal while retaining
@@ -84,6 +87,7 @@ PRESETS = {
         "PHI_TAIL_HKL": "0.12",
         "INCIDENT_R_HKL": "0.24,0.24,0.90",
         "INCIDENT_MARGIN": "0.12",
+        "INCIDENT_SPHERE_R_HKL": "1.20",
     },
 }
 
@@ -118,6 +122,10 @@ incident_r_hkl = tuple(
 )
 incident_margin = float(env_default("INCIDENT_MARGIN", "0.12"))
 incident_phi_tail = float(env_default("INCIDENT_PHI_TAIL_HKL", "0.0"))
+incident_sphere_env = env_default("INCIDENT_SPHERE_R_HKL", "1.20")
+incident_sphere_radius = (
+    None if incident_sphere_env == "" else float(incident_sphere_env)
+)
 
 out_file = os.environ.get("OUT_FILE")
 out_path = Path(out_file) if out_file else proc / f"{in_path.stem}_braggpunched.h5"
@@ -131,6 +139,7 @@ remover = BraggRemover(
     punch_incident_beam=True, incident_beam_radii=incident_r_hkl,
     incident_beam_margin=incident_margin,
     incident_beam_phi_tail_hkl=incident_phi_tail,
+    incident_beam_sphere_radius_hkl=incident_sphere_radius,
     phi_tail_hkl=phi_tail_hkl,
     search_n_mad=search_nmad, search_min_intensity=search_min_i,
     search_min_prominence=search_prom,
@@ -139,7 +148,7 @@ print(f"preset={preset_name or 'none'}  mode={mode}  radii={r_hkl}  min_I={min_i
       f"search_nmad={search_nmad}  search_min_I={search_min_i}  "
       f"search_prom={search_prom}  phi_tail={phi_tail_hkl}", flush=True)
 print(f"incident beam: radii={incident_r_hkl} margin={incident_margin} "
-      f"phi_tail={incident_phi_tail}", flush=True)
+      f"phi_tail={incident_phi_tail} sphere_r={incident_sphere_radius}", flush=True)
 t = time.time()
 peaks = remover.detect_peaks(vol)
 keep = remover.build_mask(vol)

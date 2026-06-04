@@ -129,6 +129,24 @@ def test_search_mode_punches_incident_beam_separately():
     assert not search.build_mask(vol)[i0, i0, i0]
 
 
+def test_incident_beam_sphere_punches_isotropic_origin_region():
+    vol, _ = _peaky_vol(shape=(41, 41, 41), hkl_range=(-2, 2))
+    remover = BraggRemover(
+        mode="search",
+        punch_radii=(0.1, 0.1, 0.1),
+        search_min_intensity=1e6,
+        incident_beam_sphere_radius_hkl=0.8,
+    )
+    keep = remover.build_mask(vol)
+    i0 = int(np.argmin(np.abs(vol.h_axis)))
+    i07 = int(np.argmin(np.abs(vol.h_axis - 0.7)))
+    i10 = int(np.argmin(np.abs(vol.h_axis - 1.0)))
+
+    assert not keep[i0, i0, i0]
+    assert not keep[i07, i0, i0]
+    assert keep[i10, i0, i0]
+
+
 def test_phi_tail_expands_punch_along_ring_tangent():
     vol, _ = _peaky_vol()
     ih = int(np.argmin(np.abs(vol.h_axis - 0)))
