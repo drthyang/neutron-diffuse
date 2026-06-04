@@ -114,7 +114,7 @@ def test_full_pipeline_runs_and_produces_finite_dpdf():
     assert vol_clean.mask.all()
 
     # (4) Bragg punch.
-    b_keep = bragg_mask(vol_clean, punch_radius_hkl=0.35, taper=0.0)
+    b_keep = bragg_mask(vol_clean, punch_radius_hkl=0.35)
     vol_clean.apply_mask(b_keep)
     assert not vol_clean.mask.all()
 

@@ -66,8 +66,11 @@
 > if its rings look off-centre there, re-check with `_ring_center_fit.py`, but on
 > all testable data the centre is correct.)
 
-**Status:** Ring-removal development remains the active focus; do **not** move
-to Bragg punch / backfill / ΔPDF yet.  The class DEFAULTS are now
+**Status (2026-06-04):** Ring removal is **done and validated in full 3D**
+(per-slice loop + cross-H phantom/amplitude fixes — see boxes above).  The
+pipeline has advanced to the **Bragg punch** stage (now implemented, two modes —
+see the progress entry below).  **Next: backfill** the punched holes, then ΔPDF.
+The ring-model class DEFAULTS are now
 `PatchedRadialRingModel(q_step=0.02, texture_model="fourier", n_fourier=8,
 texture_ridge=0.05, texture_q_smooth=0.0, baseline_method="snip",
 adaptive_ring_width=True, profile_percentiles=(10,80), profile_method="median")`.
@@ -90,6 +93,47 @@ file.  `pytest -o addopts=` passes **47/47** in the `rmc-discord` environment.
 ---
 
 ## Progress log
+
+### 2026-06-04 — Bragg punch: real-data rewrite, two modes (integer + search)
+
+The committed `BraggRemover` was a naive design — it punched **every** integer
+node and built a **full 48M-voxel ellipsoid per peak** (16k nodes → never
+finishes), and punching all nodes gouges diffuse at the ~73% that are systematic
+absences.  Rewrote it for real data (analogous to the ring-model rewrite):
+
+- **Data-driven + local-window** masking: detect peaks, punch only small windows
+  around each.  Full-volume punch now runs in **~1 s** (integer) / **~22 s** (both).
+- **Two modes** (the user's framing):
+  - **`mode="integer"`** — symmetry/lattice punch.  Detects a real peak at each
+    integer node (local max above `min_intensity` and above the local background
+    by `min_prominence`); **skips absences**; re-centres on the argmax (peaks
+    drift off-integer by thermal contraction).
+  - **`mode="search"`** — reuses the **ring-removal insight**: a Bragg/satellite
+    is a sharp high-tail outlier above the robust per-|Q|-shell diffuse level
+    (`median + search_n_mad·MAD`).  Finds peak **summits** (local maxima among
+    outlier voxels — *not* one-max-per-connected-component, which missed
+    satellites fused to a residual arc) anywhere in hkl.  Catches the off-integer
+    **satellites** the integer mode misses.  Risk: also removes sharp *structural*
+    diffuse — acceptable here (the user wants **magnetic diffuse only**).
+  - **`mode="both"`** — **sequential**: punch integer Bragg first, then search the
+    *residual* (so the strong Bragg no longer inflate the per-shell MAD and the
+    satellites stand out cleanly).
+- Punch is an **anisotropic, intensity-scaled ellipsoid** (per-axis base radii ×
+  `clip((I/ref)^⅓, 1, max_scale)`).  Measured Bragg FWHM: H 0.067, K 0.060,
+  **L 0.30 rlu** → default radii `(0.12, 0.12, 0.45)`.
+
+**Why the satellites matter:** the ring-removed 22K volume has, besides integer
+Bragg, sharp **off-integer satellite reflections** (L-offset ≈0.4, mmm-symmetric,
+I up to ~84).  The user identified these as **small-domain-crystal Bragg** and
+chose to remove them (magnetic-diffuse focus).  `mode="both"` does:
+**max intensity 387 → (integer) 84 → (both) 19**; punched 4.22% of valid voxels;
+diffuse median preserved (0.20).  The handful of <20 survivors are weak edge
+satellites at K=±12.
+
+Driver `examples/punch_bragg_3d.py` (load ring-removed volume → punch → save
+`*_braggpunched.h5` → H-slider preview, holes grey).  `explore_volume.py`'s viewer
+(H slider) reused.  Tests +5 (56/56).  Profile-subtraction punch and the backfill
+of punched holes are the next steps.
 
 ### 2026-06-04 — Promoted ring removal to the full 3D volume (per-slice loop)
 
