@@ -167,8 +167,14 @@ profile_method = os.environ.get("PROFILE_METHOD", "median")
 # (~0.02) compromises.  Override with TEXTURE_Q_SMOOTH.
 texture_q_smooth = float(os.environ.get("TEXTURE_Q_SMOOTH", "0.0"))
 
+# n_patches: number of overlapping azimuthal wedges the ring profile is fit in.
+# More patches = finer azimuthal resolution of the texture, but each wedge holds
+# fewer voxels so the per-patch robust profile gets noisier (and sparse arcs
+# empty out sooner).  Override with N_PATCHES.
+n_patches = int(os.environ.get("N_PATCHES", "36"))
+
 prm = PatchedRadialRingModel(
-    n_patches=36, plane="0kl", q_step=q_step, ring_width=0.24,
+    n_patches=n_patches, plane="0kl", q_step=q_step, ring_width=0.24,
     baseline_method="snip", baseline_smooth=0.06,
     profile_percentiles=(10.0, 80.0), profile_method=profile_method,
     texture_model="fourier", texture_symmetric=False, texture_q_smooth=texture_q_smooth,
@@ -178,7 +184,7 @@ prm = PatchedRadialRingModel(
 prof = prm.fit(src, q_range=(1.5, 10.5))
 print(f"ring model: texture={prm.texture_model} n_fourier={prm.n_fourier} "
       f"symmetric={prm.texture_symmetric} q_step={q_step} profile={profile_method} "
-      f"q_smooth={texture_q_smooth}")
+      f"q_smooth={texture_q_smooth} n_patches={n_patches}")
 print(f"center offset={center_offset}  H slope={center_offset_h_slope} Å^-1/H")
 res, I_ring = prm.subtract(src, prof)
 removed = dataclasses.replace(src, data=I_ring)               # the fitted rings
