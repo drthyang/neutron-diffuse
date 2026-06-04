@@ -276,12 +276,16 @@ class PatchedRadialRingModel:
         drops Bragg peaks.
     profile_method : {'trimmed_mean', 'winsorized_mean', 'median', 'huber'}
         Robust statistic used after the per-bin signal distribution is
-        collected.  ``'trimmed_mean'`` is the current default: drop values
-        outside ``profile_percentiles`` and average the rest.  ``'winsorized_mean'``
-        clips values to the percentile interval before averaging.  ``'median'``
-        uses the median only.  ``'huber'`` clips values to median ± 3·MAD before
-        averaging, which is a symmetric outlier rejection not tied to fixed
-        percentile cutoffs.
+        collected.  ``'median'`` is the default: the symmetric, unbiased robust
+        centre.  ``'trimmed_mean'`` (drop values outside ``profile_percentiles``
+        and average the rest) is **asymmetric** with the default 10–80 band — it
+        trims 20% off the top to reject Bragg but only 10% off the bottom, so on
+        a right-skewed cell it sits *below* the true ring level and
+        under-subtracts the bright ring arcs; the median avoids that bias (Bragg
+        is a small fraction of each cell so it cannot move the median).
+        ``'winsorized_mean'`` clips values to the percentile interval before
+        averaging.  ``'huber'`` clips values to median ± 3·MAD before averaging,
+        a symmetric outlier rejection not tied to fixed percentile cutoffs.
     min_voxels_per_patch : int
         Patches with fewer valid voxels are skipped (contribute no ring).
     min_voxels_per_bin : int
@@ -329,11 +333,21 @@ class PatchedRadialRingModel:
         arcs so the ring is fully subtracted there.
     texture_q_smooth : float
         σ (Å⁻¹) for pooling the azimuthal texture *shape* across |Q| (default
-        0.06; 0 disables).  The per-|Q|-bin texture fit is noisy because each
-        bin sees only a thin radial slice of voxels, so high harmonics ring on
-        sparsely-sampled azimuths.  Physically, though, a ring's azimuthal
-        texture comes from detector geometry / absorption and is **coherent
-        across the ring's narrow radial width**.  This pools that information:
+        0.0 = disabled; > 0 enables).  Pooling assumes the ring's azimuthal
+        pattern is identical at the peak and the wings, which holds only if the
+        ring's radial WIDTH is azimuthally uniform.  On real data the width
+        varies with φ (strongest at H≠0: the powder ring is broad at some
+        azimuths, narrow at others), and pooling across |Q| then forces one
+        shared pattern → it *homogenises* the width, under-subtracting the broad
+        arcs and over-subtracting the narrow ones.  Disabled by default so each
+        |Q| bin keeps its own azimuthal pattern (the low-order Fourier basis
+        still smooths in φ), which captures the inhomogeneous width.  A small
+        value (~0.02) is a useful compromise only when coverage is one-sided and
+        high harmonics ring into unmeasured azimuths.  When enabled the per-|Q|
+        texture fit is otherwise noisy (each bin sees only a thin radial slice of
+        voxels); physically a ring's azimuthal texture comes from detector
+        geometry / absorption and is coherent across the ring's narrow radial
+        width, and this pools that information:
         each bin's coefficients are split into a radial amplitude ``A(q)`` (the
         constant term — kept sharp so the radial peak is not broadened) and a
         normalized texture shape ``t(q,·) = coeff(q,·)/A(q)``; the shape is
@@ -387,7 +401,7 @@ class PatchedRadialRingModel:
         baseline_smooth: float = 0.06,
         ring_smooth: float = 0.0,
         profile_percentiles: tuple[float, float] = (10.0, 80.0),
-        profile_method: str = "trimmed_mean",
+        profile_method: str = "median",
         min_voxels_per_patch: int = 200,
         min_voxels_per_bin: int = 4,
         texture_model: str = "fourier",
@@ -395,7 +409,7 @@ class PatchedRadialRingModel:
         texture_symmetric: bool = False,
         texture_ridge: float = 0.05,
         texture_min_count_frac: float = 0.15,
-        texture_q_smooth: float = 0.06,
+        texture_q_smooth: float = 0.0,
         texture_smoothness: float = 10.0,
         ring_templates: Optional[object] = None,
         center_offset: tuple[float, float] = (0.0, 0.0),

@@ -81,9 +81,9 @@ if MASK_SPARSE:
     src = dataclasses.replace(src, mask=keep)
     print(f"sparse-azimuth mask: dropped {int((d.mask & ~keep).sum())} voxels")
 
-# Non-parametric per-patch radial background subtraction with a |Q|-pooled
-# azimuthal-texture model (the current reference config — all knobs at their
-# class defaults: SNIP baseline, n_fourier=8, texture_q_smooth=0.06).
+# Non-parametric per-patch radial background subtraction (the current reference
+# config — all knobs at their class defaults: SNIP baseline, n_fourier=8,
+# profile_method='median', texture_q_smooth=0.0 = per-|Q| azimuthal texture).
 #   ring_width        : max ring full-width in |Q| removed as a peak (Å^-1)
 #   q_step            : radial bin width (finer than the ring to resolve peaks)
 #   baseline_method   : 'snip' = slope-aware peak-clipping baseline
@@ -151,7 +151,7 @@ q_step = float(os.environ.get("Q_STEP", "0.02"))
 # a small fraction of each cell so it can't move the median — and cuts the arc
 # under-fill ~10–12% with no extra over-subtraction.  A/B on YOUR 22K H=0.3333
 # slice before adopting.  Override with PROFILE_METHOD.
-profile_method = os.environ.get("PROFILE_METHOD", "trimmed_mean")
+profile_method = os.environ.get("PROFILE_METHOD", "median")
 
 # texture_q_smooth: pools the azimuthal texture SHAPE across the ring's radial
 # width.  It assumes the ring's azimuthal pattern is the same at the peak and the
@@ -165,7 +165,7 @@ profile_method = os.environ.get("PROFILE_METHOD", "trimmed_mean")
 # no diffuse cost.  The trade-off it was added for is ringing into UNMEASURED
 # azimuths (one-sided coverage) — if your slice has sparse arcs, a small value
 # (~0.02) compromises.  Override with TEXTURE_Q_SMOOTH.
-texture_q_smooth = float(os.environ.get("TEXTURE_Q_SMOOTH", "0.06"))
+texture_q_smooth = float(os.environ.get("TEXTURE_Q_SMOOTH", "0.0"))
 
 prm = PatchedRadialRingModel(
     n_patches=36, plane="0kl", q_step=q_step, ring_width=0.24,

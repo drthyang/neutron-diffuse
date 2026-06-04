@@ -67,20 +67,22 @@
 > all testable data the centre is correct.)
 
 **Status:** Ring-removal development remains the active focus; do **not** move
-to Bragg punch / backfill / ΔPDF yet.  The class DEFAULTS are still
+to Bragg punch / backfill / ΔPDF yet.  The class DEFAULTS are now
 `PatchedRadialRingModel(q_step=0.02, texture_model="fourier", n_fourier=8,
-texture_ridge=0.05, texture_q_smooth=0.06, baseline_method="snip",
-adaptive_ring_width=True, profile_percentiles=(10,80), profile_method="trimmed_mean")`.
-This session **root-caused the residual ring leftover** (the "uniform positive
-under-fill") and found **three independent levers**, all exposed as env knobs in
-`explore_slice.py` for A/B on the 22K H=0.3333 slice before any default flip:
-**(1) `TEXTURE_Q_SMOOTH=0`** — the principled one: captures azimuthally-varying
+texture_ridge=0.05, texture_q_smooth=0.0, baseline_method="snip",
+adaptive_ring_width=True, profile_percentiles=(10,80), profile_method="median")`.
+A prior session **root-caused the residual ring leftover** (the "uniform positive
+under-fill") and found **three independent levers**, exposed as env knobs in
+`explore_slice.py`: **(1) `TEXTURE_Q_SMOOTH=0`** — captures azimuthally-varying
 ring WIDTH (the user's insight), cuts both under- and over-fill ~30% at H≠0 with
 no downside on testable slices; **(2) `PROFILE_METHOD=median`** — unbiased robust
 centre, −12% arc under-fill; **(3) `Q_STEP=0.015`** — finer bins, −15% leftover.
-The defaults were NOT changed (the fine-q_step / aggressive settings interact
-with the 22K rich-diffuse slice I can't test here).  Full suite **47/47**.
-The preferred validation input is
+**2026-06-04 — promoted levers (1) and (2) to defaults** (`texture_q_smooth=0.0`,
+`profile_method="median"`) after the user visually A/B'd them on the 22K H=0 and
+H=0.3333 slices via `explore_slice.py` and judged the result clearly better.
+Lever (3) `q_step=0.015` was NOT promoted — left at 0.02 (the fine-q_step setting
+can eat broad diffuse on the rich-diffuse 22K slice and wasn't validated).  Full
+suite **47/47**.  The preferred validation input is
 `data/raw/TbTi3Bi4_22K_mmm_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm.nxs`;
 its `H=0.3333` slice exposes diffuse signal more clearly than the earlier 28K
 file.  `pytest -o addopts=` passes **47/47** in the `rmc-discord` environment.
