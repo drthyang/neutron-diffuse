@@ -16,7 +16,7 @@ literally "carry the slice-validated config to the whole volume".
 Run (headless — writes the residual volume + spot-check PNGs)::
 
     PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
-      /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 \
+      python3 \
       examples/remove_rings_3d.py
 
 Env overrides:

@@ -9,7 +9,7 @@ holes) vs what survives (bright spots — e.g. off-integer satellite reflections
 Run::
 
     PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
-      /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 \
+      python3 \
       examples/punch_bragg_3d.py
 
 Env overrides:
@@ -137,7 +137,7 @@ else:
     if not cands:
         raise FileNotFoundError(
             "No ring-removed input found in data/processed. Run "
-            "`PYTHONPATH=src /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 "
+            "`PYTHONPATH=src python3 "
             "examples/remove_rings_3d.py` first, "
             "or set DATA_FILE=/path/to/*_ringremoved.h5."
         )

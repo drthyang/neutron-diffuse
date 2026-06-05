@@ -21,7 +21,7 @@ See docs/algorithms/delta_pdf.md.
 Run::
 
     PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \\
-      /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 \\
+      python3 \\
       examples/compare_delta_pdf_methods.py
 
 Env overrides:

@@ -38,10 +38,7 @@ data/*.pdf
 
 # macOS
 .DS_Store
-examples/_remove_rings_3d_H+0.000.png
-examples/_remove_rings_3d_H+0.333.png
-examples/_remove_rings_3d_H+0.667.png
-examples/_integer_punch_preview*
-examples/_delta_pdf*.png
-examples/_delta_pdf.h5
-examples/_explore_delta_pdf*.png
+
+# generated example outputs (figures + cached transforms; regenerate via scripts)
+examples/_*.png
+examples/_*.h5

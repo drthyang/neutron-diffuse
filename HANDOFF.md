@@ -24,19 +24,14 @@ correct recipe is `fftshift(fftn(ifftshift(·)))` with symmetric padding. See
 `test_delta_pdf_centring_positive_peak`. After the fix the ΔPDF shows coherent
 single-sign correlation peaks on the expected b/c lattice.
 
-Preferred input on this machine is the Mantid-background-subtracted file:
+Preferred input is the Mantid-background-subtracted file:
 
 ```text
 data/raw/*_cc_sub_bkg.nxs
 ```
 
-Use the bundled conda environment:
-
-```bash
-/Users/tt9/miniforge3/envs/rmc-discord/bin/python3
-```
-
-There is no `rmc-discord` env on this machine.
+Run with a Python ≥3.10 environment that has the dependencies installed
+(`pip install -e ".[dev]"`); the commands below use `python3`.
 
 ## Recommended QA Command
 
@@ -48,7 +43,7 @@ PUNCH_PRESET=cc_on MODE=both MIN_I=0.8 MIN_PROM=0.8 \
 INTEGER_FIT_POSITION=1 INTEGER_FIT_SHAPE=1 INTEGER_H_GUARD=0.12 \
 SEARCH_EXCLUDE_H=-0.6667,-0.3333,0.3333,0.6667 SEARCH_EXCLUDE_H_WIDTH=0.08 \
 BACKFILL_METHOD=q_shell H_VALUE=0.3333 \
-/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/explore_slice.py
+python3 examples/explore_slice.py
 ```
 
 This opens four panels: `data`, `Removed ring`, `Punched`, `Backfilled`.
@@ -78,7 +73,7 @@ still pass through and override the defaults.
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
-/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/run_pipeline.py
+python3 examples/run_pipeline.py
 ```
 
 The individual stages can still be run by hand (the batch commands below).
@@ -89,17 +84,17 @@ Run from the repo root:
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl RING_PRESET=cc_on \
-/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/remove_rings_3d.py
+python3 examples/remove_rings_3d.py
 
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl PUNCH_PRESET=cc_on MODE=both \
 MIN_I=0.8 MIN_PROM=0.8 INTEGER_FIT_POSITION=1 INTEGER_FIT_SHAPE=1 \
 INTEGER_H_GUARD=0.12 \
 SEARCH_EXCLUDE_H=-0.6667,-0.3333,0.3333,0.6667 SEARCH_EXCLUDE_H_WIDTH=0.08 \
 PREVIEW=0 \
-/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/punch_bragg_3d.py
+python3 examples/punch_bragg_3d.py
 
 PYTHONPATH=src METHOD=q_shell \
-/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/backfill_bragg_3d.py
+python3 examples/backfill_bragg_3d.py
 ```
 
 Outputs are written under `data/processed/`:
@@ -177,15 +172,15 @@ Backfill:
 Latest full suite:
 
 ```bash
-PYTHONPATH=src /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 \
+PYTHONPATH=src python3 \
   -m pytest -o addopts=''
 ```
 
 Expected current result: `74 passed` (includes the ΔPDF centring guard
 `test_delta_pdf_centring_positive_peak`).
 
-`ruff` is not installed in the `sci-general` env. Use `git diff --check` plus
-`py_compile` locally, or install/use a dev env for full linting.
+For linting, install the dev extras (`pip install -e ".[dev]"`) to get `ruff`
+and `mypy`; otherwise `git diff --check` plus `py_compile` is a quick local check.
 
 ## Next Step
 

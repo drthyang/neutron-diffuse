@@ -11,7 +11,7 @@ Loading both 689 MB volumes is the only heavy part (~1.4 GB RAM).
 Run::
 
     PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
-      /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 \
+      python3 \
       examples/explore_volume.py
 
 Env overrides:
@@ -60,7 +60,7 @@ if not proc_path.exists():
         f"processed volume not found: {proc_path}\n"
         "Run the 3D ring removal first:\n"
         "  PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \\\n"
-        "    /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 "
+        "    python3 "
         "examples/remove_rings_3d.py"
     )
 

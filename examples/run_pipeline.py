@@ -21,7 +21,7 @@ these defaults.
 Run::
 
     PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
-      /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/run_pipeline.py
+      python3 examples/run_pipeline.py
 
 Env:
     DATA_FILE   raw input .nxs (default: auto-detect 22K mmm cc_sub_bkg in data/raw)

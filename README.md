@@ -14,27 +14,44 @@ satellite peaks, backfills the holes, and prepares the cleaned diffuse volume fo
   (1) Powder-ring subtraction          examples/remove_rings_3d.py
   (2) Bragg/satellite punch            examples/punch_bragg_3d.py
   (3) Bragg-hole backfill              examples/backfill_bragg_3d.py
-  (4) 3D-DeltaPDF Fourier transform    ndiff.analysis.compute_delta_pdf
+  (4) 3D-ΔPDF Fourier transform        ndiff.analysis.compute_delta_pdf
+  (5) cleanup QA viewer                examples/explore_slice.py
+  (6) ΔPDF orthoslice viewer           examples/explore_delta_pdf_ortho.py
 ```
 
-## Current Real-Data Workflow
+## Quick Start
 
-Run from the repository root. The preferred input on this machine is the
-Mantid-background-subtracted `*_cc_sub_bkg.nxs` file in `data/raw/`.
+Install (see [Installation](#installation)), then run the whole pipeline with one
+command — it chains all stages and opens the interactive viewers at the end:
+
+```bash
+DATA_FILE=data/raw/your_volume_cc_sub_bkg.nxs \
+PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
+python3 examples/run_pipeline.py
+```
+
+`run_pipeline.py` skips any stage whose output already exists (resume); use
+`FORCE=1` / `FORCE_FROM=rings|punch|backfill|pdf` to recompute, or `NO_VIEWER=1`
+to stop after the ΔPDF. The preferred input is the Mantid-background-subtracted
+`*_cc_sub_bkg.nxs` file in `data/raw/`.
+
+## Stage-By-Stage Workflow
+
+The same stages can be run individually from the repository root:
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl RING_PRESET=cc_on \
-/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/remove_rings_3d.py
+python3 examples/remove_rings_3d.py
 
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl PUNCH_PRESET=cc_on MODE=both \
 MIN_I=0.8 MIN_PROM=0.8 INTEGER_FIT_POSITION=1 INTEGER_FIT_SHAPE=1 \
 INTEGER_H_GUARD=0.12 \
 SEARCH_EXCLUDE_H=-0.6667,-0.3333,0.3333,0.6667 SEARCH_EXCLUDE_H_WIDTH=0.08 \
 PREVIEW=0 \
-/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/punch_bragg_3d.py
+python3 examples/punch_bragg_3d.py
 
 PYTHONPATH=src METHOD=q_shell \
-/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/backfill_bragg_3d.py
+python3 examples/backfill_bragg_3d.py
 ```
 
 The three scripts write:
@@ -42,6 +59,21 @@ The three scripts write:
 - `data/processed/*_ringremoved.h5`
 - `data/processed/*_braggpunched.h5`
 - `data/processed/*_braggpunched_backfilled.h5`
+
+Transform the cleaned volume to the real-space 3D-ΔPDF (writes
+`examples/_delta_pdf.h5` + central-slice PNGs):
+
+```bash
+PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
+SUBTRACT_BG=0,1.5,1.5 CROP_K=8 CROP_L=15 APODIZE=gaussian \
+python3 examples/delta_pdf.py
+```
+
+`SUBTRACT_BG=0,σ,σ` subtracts a slice-wise (per-H-plane) smooth Gaussian
+background before the FFT — this removes the broad diffuse envelope that would
+otherwise transform into a bright cross on the `y_K=0 / z_L=0` axes, while the
+`σ_H=0` preserves the H-layering. See
+[docs/algorithms/delta_pdf.md](docs/algorithms/delta_pdf.md).
 
 Use the interactive all-H viewer for visual QA:
 
@@ -51,11 +83,21 @@ PUNCH_PRESET=cc_on MODE=both MIN_I=0.8 MIN_PROM=0.8 \
 INTEGER_FIT_POSITION=1 INTEGER_FIT_SHAPE=1 INTEGER_H_GUARD=0.12 \
 SEARCH_EXCLUDE_H=-0.6667,-0.3333,0.3333,0.6667 SEARCH_EXCLUDE_H_WIDTH=0.08 \
 BACKFILL_METHOD=q_shell H_VALUE=0.3333 \
-/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/explore_slice.py
+python3 examples/explore_slice.py
 ```
 
 The viewer shows `data`, `Removed ring`, `Punched`, and `Backfilled`, with an H
 slider for scrubbing the full volume.
+
+Preview the real-space 3D-ΔPDF with the orthoslice viewer (all three planes,
+movable cuts + contrast):
+
+```bash
+PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl RMAX=50 \
+python3 examples/explore_delta_pdf_ortho.py
+```
+
+See [docs/interactive.md](docs/interactive.md) for all viewers.
 
 ## Algorithms
 
@@ -150,7 +192,7 @@ src/ndiff/
 ## Testing
 
 ```bash
-PYTHONPATH=src /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 \
+PYTHONPATH=src python3 \
   -m pytest -o addopts=''
 ```
 
@@ -158,9 +200,11 @@ Current expected result: `74 passed`.
 
 ## Status
 
-The full pipeline runs end to end: ring removal → Bragg cleanup → 3D-ΔPDF. A
-Fourier-centring bug in the ΔPDF transform was found and fixed (see
-[docs/algorithms/delta_pdf.md](docs/algorithms/delta_pdf.md)); the transform now
-yields coherent real-space correlation peaks. Remaining work is artifact
-reduction and physical interpretation. See [HANDOFF.md](HANDOFF.md) for the
-current operational state and [ROADMAP.md](ROADMAP.md) for the phase plan.
+Version 0.1.0 — the full pipeline runs end to end: ring removal → Bragg cleanup
+→ 3D-ΔPDF, with one-command (`run_pipeline.py`) and stage-by-stage entry points,
+plus interactive cleanup and ΔPDF viewers. The ΔPDF transform is centred
+correctly and uses slice-wise smooth-background subtraction to remove the
+diffuse-envelope axis cross (see
+[docs/algorithms/delta_pdf.md](docs/algorithms/delta_pdf.md)). Remaining work is
+artifact reduction and physical interpretation. See [HANDOFF.md](HANDOFF.md) for
+the current operational state and [ROADMAP.md](ROADMAP.md) for the phase plan.

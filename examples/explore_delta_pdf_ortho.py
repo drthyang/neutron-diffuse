@@ -15,7 +15,7 @@ Source: ``examples/_delta_pdf.h5`` (written by ``delta_pdf.py``).
 Run (interactive, on this Mac)::
 
     PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl RMAX=50 \\
-      /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 \\
+      python3 \\
       examples/explore_delta_pdf_ortho.py
 
 Controls:

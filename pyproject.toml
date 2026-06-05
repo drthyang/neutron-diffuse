@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "neutron-diffuse"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "3D diffuse neutron scattering processing: powder ring removal and 3D-ΔPDF"
 readme = "README.md"
 license = { text = "MIT" }
@@ -12,7 +12,7 @@ requires-python = ">=3.10"
 authors = [{ name = "Tsung-Han Yang" }]
 keywords = ["neutron scattering", "diffuse scattering", "crystallography", "inpainting"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Physics",
     "License :: OSI Approved :: MIT License",

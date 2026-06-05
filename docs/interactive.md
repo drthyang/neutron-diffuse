@@ -25,7 +25,7 @@ PUNCH_PRESET=cc_on MODE=both MIN_I=0.8 MIN_PROM=0.8 \
 INTEGER_FIT_POSITION=1 INTEGER_FIT_SHAPE=1 INTEGER_H_GUARD=0.12 \
 SEARCH_EXCLUDE_H=-0.6667,-0.3333,0.3333,0.6667 SEARCH_EXCLUDE_H_WIDTH=0.08 \
 BACKFILL_METHOD=q_shell H_VALUE=0.3333 \
-/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/explore_slice.py
+python3 examples/explore_slice.py
 ```
 
 Panels:
@@ -55,7 +55,7 @@ very different magnitudes stay readable.
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl RMAX=50 \
-/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/explore_delta_pdf_ortho.py
+python3 examples/explore_delta_pdf_ortho.py
 ```
 
 - `RMAX` — display half-window (Å) for all axes (default 50).
@@ -70,7 +70,7 @@ focusing on the b–c correlation plane carried by the diffuse layers.
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl RMAX=25 \
-/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/explore_delta_pdf.py
+python3 examples/explore_delta_pdf.py
 ```
 
 Both use the `macosx` backend and block on `plt.show()` — launch with

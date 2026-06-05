@@ -14,7 +14,7 @@ Saved outputs (in the same directory as this script):
 Run::
 
     PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \\
-      /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 \\
+      python3 \\
       examples/delta_pdf.py
 
 Env overrides:

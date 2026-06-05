@@ -16,7 +16,7 @@ Saved outputs (same directory as this script):
 Run::
 
     PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl H_PLANE=0.3333 \\
-      /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 \\
+      python3 \\
       examples/delta_pdf_plane.py
 
 Env overrides:

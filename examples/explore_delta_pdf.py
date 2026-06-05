@@ -12,7 +12,7 @@ otherwise it is computed on the fly from the backfilled volume and cached.
 Run (interactive, on this Mac)::
 
     PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \\
-      /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 \\
+      python3 \\
       examples/explore_delta_pdf.py
 
 Controls:
