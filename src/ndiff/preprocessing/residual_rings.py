@@ -43,7 +43,7 @@ scope of a simple local algorithm; those cases are handled by the general
 
 from __future__ import annotations
 
-from typing import Optional, Sequence
+from collections.abc import Sequence
 
 import numpy as np
 from numpy.typing import NDArray
@@ -54,7 +54,7 @@ from ndiff.inpainting.symmetry import LAUE_CLASSES
 
 def detect_and_fill_residual(
     vol: HKLVolume,
-    symmetry_ops: Optional[Sequence[NDArray]] = None,
+    symmetry_ops: Sequence[NDArray] | None = None,
     laue_class: str = "m3m",
     mad_threshold: float = 5.0,
     min_clean_equivalents: int = 2,
@@ -104,7 +104,6 @@ def detect_and_fill_residual(
     # Precompute grid of equivalent indices for every voxel
     # Shape: (n_ops, nh, nk, nl, 3) → expensive; we iterate over masked voxels only
     H, K, L = vol.hkl_grid()
-    hkl_stack = np.stack([H, K, L], axis=-1)  # (nh, nk, nl, 3)
 
     # Process every valid voxel
     valid_idx = np.argwhere(vol.mask)

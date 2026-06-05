@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Union
 
 import numpy as np
 
 from ndiff.core import HKLVolume
 
-_PathLike = Union[str, Path]
+_PathLike = str | Path
 
 
 def load(path: _PathLike, **kwargs: object) -> HKLVolume:
@@ -58,8 +57,10 @@ def _load_hdf5(path: Path, entry: str = "/entry") -> HKLVolume:
     with h5py.File(path, "r") as f:
         grp = f[entry]
         data = np.array(grp["data"], dtype=np.float64)
-        sigma = np.array(grp["sigma"], dtype=np.float64) if "sigma" in grp else np.sqrt(np.abs(data))
-        mask = np.array(grp["mask"], dtype=bool) if "mask" in grp else np.ones(data.shape, dtype=bool)
+        sigma = (np.array(grp["sigma"], dtype=np.float64) if "sigma" in grp
+                 else np.sqrt(np.abs(data)))
+        mask = (np.array(grp["mask"], dtype=bool) if "mask" in grp
+                else np.ones(data.shape, dtype=bool))
         h_axis = np.array(grp["h_axis"], dtype=np.float64)
         k_axis = np.array(grp["k_axis"], dtype=np.float64)
         l_axis = np.array(grp["l_axis"], dtype=np.float64)

@@ -4,11 +4,15 @@ import numpy as np
 import pytest
 
 from ndiff.core import HKLVolume
-from ndiff.preprocessing.powder_rings import (
-    detect_ring_shells, mask_ring_shells, radial_profile, line_profile,
-    al_ring_q_positions, RingShell,
-)
 from ndiff.preprocessing.backfill import backfill_ring_shells
+from ndiff.preprocessing.powder_rings import (
+    RingShell,
+    al_ring_q_positions,
+    detect_ring_shells,
+    line_profile,
+    mask_ring_shells,
+    radial_profile,
+)
 
 
 def _make_vol_with_ring(
@@ -140,7 +144,6 @@ def test_backfill_values_near_diffuse_level():
     """Filled values should be near the diffuse level (not ring level)."""
     ring_q, ring_amp = 2.5, 50.0
     vol = _make_vol_with_ring(ring_q=ring_q, ring_amp=ring_amp)
-    q_mag = vol.q_magnitude()
     rings = [RingShell(q_center=ring_q, q_lo=ring_q - 0.15, q_hi=ring_q + 0.15)]
     keep = mask_ring_shells(vol, rings)
     import dataclasses

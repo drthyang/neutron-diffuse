@@ -51,7 +51,12 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "ANN"]
-ignore = ["ANN101"]
+# E741: crystallographic variables l (Miller index) and I (intensity) are conventional
+# E702: compact semicolon-separated statements common in scientific helpers
+ignore = ["E741", "E702"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN"]
 
 [tool.mypy]
 python_version = "3.10"

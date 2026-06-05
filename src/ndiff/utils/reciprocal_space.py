@@ -37,14 +37,16 @@ def ub_from_lattice(
     a_star = b * c * np.sin(alpha_r) / V
     b_star = a * c * np.sin(beta_r) / V
     c_star = a * b * sg / V
-    cos_alpha_star = (cb * cg - ca) / (np.sin(beta_r) * sg)
     cos_beta_star = (ca * cg - cb) / (np.sin(alpha_r) * sg)
     sin_beta_star = np.sqrt(max(1.0 - cos_beta_star**2, 0.0))
 
+    _cos_gamma_star = min(max((cg - ca * cb) / (np.sin(alpha_r) * np.sin(beta_r)), -1), 1)
+    _sin_gamma_star = np.sqrt(max(1 - _cos_gamma_star**2, 0))
+    _c_perp = np.sqrt(max(1 - cos_beta_star**2 - sin_beta_star**2, 0))
     B = np.array([
-        [a_star, b_star * np.cos(np.arccos(min(max((cg - ca*cb)/(np.sin(alpha_r)*np.sin(beta_r)), -1), 1))), c_star * cos_beta_star],
-        [0,      b_star * np.sqrt(max(1 - ((cg - ca*cb)/(np.sin(alpha_r)*np.sin(beta_r)))**2, 0)), c_star * sin_beta_star],
-        [0,      0,                                                                               c_star * np.sqrt(max(1 - cos_beta_star**2 - sin_beta_star**2, 0))],
+        [a_star, b_star * np.cos(np.arccos(_cos_gamma_star)), c_star * cos_beta_star],
+        [0,      b_star * _sin_gamma_star,                    c_star * sin_beta_star],
+        [0,      0,                                           c_star * _c_perp],
     ], dtype=np.float64)
     # Multiply by 2π (physics convention Q = 2π/d)
     return 2 * np.pi * B

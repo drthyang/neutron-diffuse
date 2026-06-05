@@ -16,18 +16,25 @@ or launch IPython with ``--matplotlib=macosx``.  See ``docs/interactive.md``.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from types import SimpleNamespace
-from typing import Optional, Sequence
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import matplotlib.figure
 
 import numpy as np
 
 from ndiff.core import HKLVolume
 from ndiff.visualization.slices import (
-    extract_slice, _imshow_extent, _PLANE, _ALIASES,
+    _ALIASES,
+    _PLANE,
+    _imshow_extent,
+    extract_slice,
 )
 
 
-def _take_plane(vol: HKLVolume, key: str, value: float):
+def _take_plane(vol: HKLVolume, key: str, value: float) -> SimpleNamespace:
     """Cheap nearest-plane extraction (masks only the 2D plane, not the whole
     volume like :func:`extract_slice`) — used while scrubbing the cut slider so
     moving through a 300-plane volume stays responsive."""
@@ -55,13 +62,13 @@ def interactive_slices(
     cmap: str = "inferno",
     log_scale: bool = False,
     interp: bool = False,
-    vmin: Optional[float] = None,
-    vmax: Optional[float] = None,
-    slider_min: Optional[float] = None,
-    slider_max: Optional[float] = None,
+    vmin: float | None = None,
+    vmax: float | None = None,
+    slider_min: float | None = None,
+    slider_max: float | None = None,
     value_slider: bool = False,
     show: bool = True,
-):
+) -> matplotlib.figure.Figure:
     """Open an interactive window comparing slices with live colour controls.
 
     Parameters
@@ -110,7 +117,7 @@ def interactive_slices(
 
     key = _ALIASES.get(plane.lower(), plane.lower())
 
-    def panel_slice(v: HKLVolume, val: float):
+    def panel_slice(v: HKLVolume, val: float) -> SimpleNamespace:
         if value_slider:
             return _take_plane(v, key, val)
         return extract_slice(v, plane=plane, value=val, interp=interp)
@@ -188,13 +195,13 @@ def interactive_slices(
     radio = RadioButtons(ax_mode, ("linear", "log₁₀"),
                          active=1 if state["log"] else 0)
 
-    def apply_clim(_=None):
+    def apply_clim(_: object = None) -> None:
         a, b = s_vmin.val, s_vmax.val
         for im in imgs:
             im.set_clim(min(a, b), max(a, b))
         fig.canvas.draw_idle()
 
-    def on_mode(label):
+    def on_mode(label: str) -> None:
         state["log"] = (label == "log₁₀")
         for im, a in zip(imgs, raw):
             im.set_data(to_display(a))
@@ -226,7 +233,7 @@ def interactive_slices(
                        float(fixed_axis.max()), valinit=float(value),
                        color="#3a6ea5")
 
-        def on_value(val):
+        def on_value(val: float) -> None:
             for i, (_, v) in enumerate(items):
                 s = panel_slice(v, val)
                 slices[i] = s

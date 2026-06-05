@@ -43,7 +43,6 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass, field
-from typing import Optional
 
 import numpy as np
 from numpy.typing import NDArray
@@ -51,7 +50,6 @@ from scipy.ndimage import gaussian_filter1d
 from scipy.optimize import minimize, nnls
 
 from ndiff.core import HKLVolume
-
 
 # ---------------------------------------------------------------------------
 # Fitted result
@@ -435,13 +433,13 @@ class PatchedRadialRingModel:
         texture_min_count_frac: float = 0.15,
         texture_q_smooth: float = 0.0,
         texture_smoothness: float = 10.0,
-        ring_templates: Optional[object] = None,
-        allowed_ring_centers: Optional[NDArray[np.float64]] = None,
-        allowed_ring_halfwidths: Optional[NDArray[np.float64]] = None,
-        allowed_ring_ceilings: Optional[NDArray[np.float64]] = None,
+        ring_templates: object | None = None,
+        allowed_ring_centers: NDArray[np.float64] | None = None,
+        allowed_ring_halfwidths: NDArray[np.float64] | None = None,
+        allowed_ring_ceilings: NDArray[np.float64] | None = None,
         center_offset: tuple[float, float] = (0.0, 0.0),
         center_offset_h_slope: tuple[float, float] = (0.0, 0.0),
-        snr_mask_threshold: Optional[float] = None,
+        snr_mask_threshold: float | None = None,
     ) -> None:
         self.n_patches = n_patches
         self.overlap_frac = overlap_frac
@@ -481,7 +479,7 @@ class PatchedRadialRingModel:
         self.center_offset = center_offset
         self.center_offset_h_slope = center_offset_h_slope
         self.snr_mask_threshold = snr_mask_threshold
-        self._profiles: Optional[RadialRingProfiles] = None
+        self._profiles: RadialRingProfiles | None = None
 
     def _template_gaussians(self, q_grid: NDArray) -> list[NDArray]:
         """Unit-height Gaussians Gᵢ(|Q|) on *q_grid* from ``ring_templates``."""
@@ -496,7 +494,7 @@ class PatchedRadialRingModel:
             gauss.append(np.exp(-0.5 * ((q_grid - float(c)) / float(s)) ** 2))
         return gauss
 
-    def _ring_q_envelope(self, q_grid: NDArray) -> Optional[NDArray[np.float64]]:
+    def _ring_q_envelope(self, q_grid: NDArray) -> NDArray[np.float64] | None:
         """A [0, 1] per-|Q|-bin weight that is 1 inside the confirmed ring shells
         and tapers to 0 between them, or ``None`` when no shells are configured.
 
@@ -524,7 +522,7 @@ class PatchedRadialRingModel:
             env = np.maximum(env, bump)
         return env
 
-    def _ring_q_ceiling(self, q_grid: NDArray) -> Optional[NDArray[np.float64]]:
+    def _ring_q_ceiling(self, q_grid: NDArray) -> NDArray[np.float64] | None:
         """Per-|Q|-bin upper bound on the per-patch ring excess, or ``None``.
 
         Built from ``allowed_ring_centers`` + ``allowed_ring_ceilings``: within
@@ -559,7 +557,7 @@ class PatchedRadialRingModel:
     def fit(
         self,
         vol: HKLVolume,
-        q_range: Optional[tuple[float, float]] = None,
+        q_range: tuple[float, float] | None = None,
     ) -> RadialRingProfiles:
         """Estimate per-patch ring profiles from *vol*."""
         q_mag = _offset_q_magnitude(
@@ -693,7 +691,7 @@ class PatchedRadialRingModel:
     def subtract(
         self,
         vol: HKLVolume,
-        profiles: Optional[RadialRingProfiles] = None,
+        profiles: RadialRingProfiles | None = None,
     ) -> tuple[HKLVolume, NDArray[np.float64]]:
         """Subtract the fitted ring profiles from *vol*.
 
@@ -726,7 +724,7 @@ class PatchedRadialRingModel:
         return vol_sub, I_ring
 
     @property
-    def profiles(self) -> Optional[RadialRingProfiles]:
+    def profiles(self) -> RadialRingProfiles | None:
         return self._profiles
 
 
@@ -1086,7 +1084,7 @@ def _fit_smooth_texture(
     """
     P, n_q = ring.shape
     out = np.zeros_like(ring, dtype=np.float64)
-    prev: Optional[NDArray[np.float64]] = None
+    prev: NDArray[np.float64] | None = None
 
     for b in range(n_q):
         w = counts[:, b].astype(np.float64).copy()
@@ -1173,7 +1171,7 @@ def _detect_rings(
     pooled: NDArray,
     q_step: float,
     base_width: float,
-    counts: Optional[NDArray] = None,
+    counts: NDArray | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Detect powder rings in a pooled radial profile.
 
@@ -1224,7 +1222,7 @@ def _adaptive_ring_width_profile(
     base_width: float,
     scale: float,
     cap_frac: float,
-    counts: Optional[NDArray] = None,
+    counts: NDArray | None = None,
 ) -> NDArray[np.float64]:
     """Per-|Q| baseline window matched to each ring's own thickness.
 
@@ -1263,7 +1261,7 @@ def _adaptive_ring_width_profile(
     return win[nearest]
 
 
-def _snip_baseline(prof: NDArray, n_iter) -> NDArray[np.float64]:
+def _snip_baseline(prof: NDArray, n_iter: int | NDArray) -> NDArray[np.float64]:
     """SNIP: Statistics-sensitive Non-linear Iterative Peak-clipping.
 
     For i = 1 … n_iter, each INTERIOR bin b (i ≤ b < n−i) is clipped to the
@@ -1307,7 +1305,7 @@ def _snip_baseline(prof: NDArray, n_iter) -> NDArray[np.float64]:
 def _estimate_baseline(
     prof: NDArray,
     q_step: float,
-    ring_width,
+    ring_width: float | NDArray,
     smooth: float,
     method: str = "snip",
 ) -> NDArray[np.float64]:

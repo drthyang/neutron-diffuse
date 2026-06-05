@@ -22,7 +22,7 @@ scaled by 2π on read to keep |Q| consistent across the package.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
@@ -32,7 +32,7 @@ from ndiff.core import HKLVolume
 if TYPE_CHECKING:
     import h5py
 
-_PathLike = Union[str, Path]
+_PathLike = str | Path
 
 _HKL_LETTERS = ("H", "K", "L")
 
@@ -112,14 +112,14 @@ def is_mantid_nxs(path: _PathLike) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _require_md_histo(f: "h5py.File") -> "h5py.Group":
+def _require_md_histo(f: h5py.File) -> h5py.Group:
     if "MDHistoWorkspace" not in f:
         raise ValueError(f"{f.filename!r} is not a Mantid MDHistoWorkspace file.")
     return f["MDHistoWorkspace"]  # type: ignore[return-value]
 
 
 def _parse_dim_axes(
-    data_grp: "h5py.Group",
+    data_grp: h5py.Group,
 ) -> dict[str, tuple[int, NDArray[np.float64]]]:
     """Return {hkl_char: (file_array_axis, bin_centers)} for H, K, L.
 
@@ -161,7 +161,7 @@ def _bin_centers(edges: NDArray[np.float64]) -> NDArray[np.float64]:
 
 
 def _resolve_ub(
-    root: "h5py.Group",
+    root: h5py.Group,
     override: NDArray[np.float64] | None,
 ) -> NDArray[np.float64]:
     """Pick the UB matrix: explicit override > file value > identity fallback."""
@@ -172,7 +172,7 @@ def _resolve_ub(
     return np.eye(3, dtype=np.float64)
 
 
-def _read_ub_matrix(lattice_grp: "h5py.Group") -> NDArray[np.float64]:
+def _read_ub_matrix(lattice_grp: h5py.Group) -> NDArray[np.float64]:
     """Read the orientation matrix and scale to the physics (2π) convention."""
     return lattice_grp["orientation_matrix"][:].astype(np.float64) * _TWO_PI
 

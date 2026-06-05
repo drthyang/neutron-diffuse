@@ -19,10 +19,7 @@ factor by minimising the residual in ring-dominated |Q| shells.
 
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
-from numpy.typing import NDArray
 
 from ndiff.core import HKLVolume
 
@@ -46,7 +43,7 @@ class EmptySubtractor:
     def __init__(
         self,
         empty: HKLVolume,
-        scale: Optional[float] = None,
+        scale: float | None = None,
         scale_q_range: tuple[float, float] = (2.0, 3.5),
         clip_percentile: float = 99.0,
     ) -> None:
@@ -71,7 +68,6 @@ class EmptySubtractor:
         disable clipping and recover the plain least-squares estimate).
         """
         q_s = sample.q_magnitude()
-        q_e = self.empty.q_magnitude()
 
         in_range = (
             (q_s >= self.scale_q_range[0]) & (q_s <= self.scale_q_range[1]) &
