@@ -143,6 +143,14 @@ with h5py.File(out_h5, "w") as fh:
     fh.attrs["q_max"]       = dpdf.q_max
     fh.attrs["apodization"] = dpdf.apodization
     fh.attrs["source_file"] = proc_path.name
+    # store direct-lattice constants (Å) so viewers can draw unit-cell gridlines
+    try:
+        _direct = 2 * np.pi * np.linalg.inv(vol.ub_matrix).T
+        fh.attrs["lat_a"] = float(np.linalg.norm(_direct[:, 0]))
+        fh.attrs["lat_b"] = float(np.linalg.norm(_direct[:, 1]))
+        fh.attrs["lat_c"] = float(np.linalg.norm(_direct[:, 2]))
+    except np.linalg.LinAlgError:
+        pass
 print(f"saved {out_h5.name}  ({out_h5.stat().st_size/1e6:.0f} MB)", flush=True)
 
 # Colour scale: set by the p99 of |DeltaPDF| at r>3 Å to avoid the near-origin
