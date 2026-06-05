@@ -24,6 +24,8 @@ Env overrides:
     H_PLANE     reciprocal H value to transform (default: 0.3333)
     APODIZE     hann | gaussian | none  (default: hann)
     ZERO_PAD    0|1  (default: 1)
+    PAD_FACTOR  real-space oversampling multiple (default: 4; higher = finer
+                interpolated grid, not more true resolution)
     RMAX_K/RMAX_L  real-space plot radius in Å (default: 20)
     VMAX        colour-scale half-range (default: auto p99 at r>3 Å)
 """
@@ -53,9 +55,10 @@ else:
         sys.exit("No *_backfilled.h5 found; set PROC_FILE=/path/to/file.h5.")
     proc_path = cands[0]
 
-h_plane  = float(os.environ.get("H_PLANE", "0.3333"))
-apodize  = os.environ.get("APODIZE", "hann")
-zero_pad = bool(int(os.environ.get("ZERO_PAD", "1")))
+h_plane    = float(os.environ.get("H_PLANE", "0.3333"))
+apodize    = os.environ.get("APODIZE", "hann")
+zero_pad   = bool(int(os.environ.get("ZERO_PAD", "1")))
+pad_factor = int(os.environ.get("PAD_FACTOR", "4"))   # real-space oversampling
 rmax_k   = float(os.environ.get("RMAX_K", "20.0"))
 rmax_l   = float(os.environ.get("RMAX_L", "20.0"))
 
@@ -88,7 +91,14 @@ data = plane * (wk * wl)
 data -= data.mean()              # window first, then zero the DC (see delta_pdf.py)
 
 if zero_pad:
-    target = tuple(1 if s == 0 else 2 ** int(np.ceil(np.log2(s))) for s in data.shape)
+    # Oversample by PAD_FACTOR×next-power-of-2.  Zero-padding does NOT add true
+    # resolution (that is fixed by the Q-range and apodization) — it interpolates
+    # the transform onto a finer real-space grid, removing display pixelation and
+    # revealing the underlying continuous ΔPDF shape.
+    target = tuple(
+        1 if s == 0 else pad_factor * 2 ** int(np.ceil(np.log2(s)))
+        for s in data.shape
+    )
     data = np.pad(data, [(0, t - s) for s, t in zip(data.shape, target)])
 
 ft = fftshift(fft2(data))
@@ -156,7 +166,7 @@ fig.tight_layout()
 
 tag = f"{h_actual:+.4f}".replace(".", "p").replace("+", "p").replace("-", "m")
 out = Path(__file__).parent / f"_delta_pdf_plane_H{tag}.png"
-fig.savefig(out, dpi=150, bbox_inches="tight")
+fig.savefig(out, dpi=220, bbox_inches="tight")
 plt.close(fig)
 print(f"saved {out.name}", flush=True)
 print("done.", flush=True)
