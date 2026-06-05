@@ -152,11 +152,28 @@ _stage("backfill", "3/5 Bragg backfill", "backfill_bragg_3d.py", fill_out, "DATA
 
 # ------------------------------------------------------------------
 # stage 4: 3D-ΔPDF  (delta_pdf.py uses PROC_FILE in, fixed output _delta_pdf.h5)
+# The output name is fixed, so guard against a STALE cache from a different
+# dataset: delta_pdf.py stamps source_file into the .h5; recompute unless it
+# matches this run's backfilled input.
 # ------------------------------------------------------------------
-if pdf_out.exists() and not _forced("pdf"):
-    print(f"[skip] 4/5 3D-ΔPDF: {pdf_out.name} exists "
+def _pdf_is_current(pdf_path: Path, expected_src: str) -> bool:
+    if not pdf_path.exists():
+        return False
+    try:
+        import h5py
+        with h5py.File(pdf_path, "r") as fh:
+            return fh.attrs.get("source_file", "") == expected_src
+    except Exception:
+        return False
+
+
+if _pdf_is_current(pdf_out, fill_out.name) and not _forced("pdf"):
+    print(f"[skip] 4/5 3D-ΔPDF: {pdf_out.name} is current for this dataset "
           "(FORCE=1 or FORCE_FROM=pdf to redo)", flush=True)
 else:
+    if pdf_out.exists():
+        print(f"[stale] {pdf_out.name} is from a different dataset — recomputing",
+              flush=True)
     _run("4/5 3D-ΔPDF", "delta_pdf.py", _stage_env("pdf", PROC_FILE=fill_out))
 
 # ------------------------------------------------------------------
