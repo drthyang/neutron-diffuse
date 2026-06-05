@@ -38,7 +38,47 @@ Panels:
 Use this viewer to inspect integer-H Bragg cleanup and fractional-H diffuse
 preservation before running the final 3D-DeltaPDF transform.
 
-## 2. Launching A General Plotting Session
+## 2. ΔPDF Real-Space Viewers (standard preview)
+
+Two interactive viewers preview the **real-space 3D-ΔPDF** (the FFT of the
+cleaned diffuse volume). Both read the cached `examples/_delta_pdf.h5` written by
+`examples/delta_pdf.py`; if it is missing, run that first to generate it.
+**Use these as the standard preview for ΔPDF results — do not build ad-hoc
+plotting scripts.**
+
+### Orthoslice viewer (recommended) — `examples/explore_delta_pdf_ortho.py`
+
+All three orthogonal real-space planes at once — `x_H–y_K` (a–b), `x_H–z_L`
+(a–c), `y_K–z_L` (b–c) — with sliders to move each cut position and a global
+contrast control. Each panel auto-scales to its own robust level, so the three
+very different magnitudes stay readable.
+
+```bash
+PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl RMAX=50 \
+/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/explore_delta_pdf_ortho.py
+```
+
+- `RMAX` — display half-window (Å) for all axes (default 50).
+- `PERCENTILE` — per-panel colour-scale percentile at r>3 Å (default 98).
+- `PDF_FILE` — ΔPDF `.h5` (default `examples/_delta_pdf.h5`).
+- `SMOKE=1` — render one frame to PNG headless (verification, no GUI).
+
+### Single-plane viewer — `examples/explore_delta_pdf.py`
+
+The `y_K–z_L` plane with an `x_H` slider plus a `|scale|` slider. Good for
+focusing on the b–c correlation plane carried by the diffuse layers.
+
+```bash
+PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl RMAX=25 \
+/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/explore_delta_pdf.py
+```
+
+Both use the `macosx` backend and block on `plt.show()` — launch with
+`run_in_background: true`; exit code 0 means the window was closed. For the
+static three-panel contact sheet (central cuts), `examples/delta_pdf.py` also
+writes `_delta_pdf_hk0/h0l/0kl.png`.
+
+## 3. Launching A General Plotting Session
 
 The older exploration preamble (`examples/explore.py`) loads raw/data/background
 volumes when those files are present and pulls the plot helpers into scope. Run
@@ -75,7 +115,7 @@ so it keeps working if you swap in a different dataset.
 
 ---
 
-## 3. The Visualization API
+## 4. The Visualization API
 
 All functions live in `ndiff.visualization` and are re-exported at that level:
 
@@ -169,7 +209,7 @@ fig = plot_overview(data, log_scale=True)
 
 ---
 
-## 4. Recipes
+## 5. Recipes
 
 ```python
 # Compare data vs background on a shared colour treatment.
@@ -190,7 +230,7 @@ import matplotlib; matplotlib.use("Agg")
 
 ---
 
-## 5. Design Notes & Future Directions
+## 6. Design Notes & Future Directions
 
 - **Primitive-first.** Every plot function accepts an `HKLVolume`, draws into a
   caller-supplied `Axes`/`Figure`, and returns it. Composite views
@@ -200,15 +240,16 @@ import matplotlib; matplotlib.use("Agg")
   `plot_slice` (display); profile plots wrap the existing
   `preprocessing.powder_rings` math rather than duplicating it. Keep this split
   as more views are added.
-- **Planned interactive front-ends** (not yet implemented):
-  - slider widgets to scrub the cut `value` and |Q| shell live
-    (`ipywidgets` / Matplotlib `Slider`);
-  - a before/after panel wired to the processing pipeline
-    (`EmptySubtractor` → `PatchedRingModel` → backfill);
-  - linked ΔPDF real-space views.
-
-  Each should consume the `ndiff.visualization` primitives so the core stays
-  free of GUI dependencies.
+- **Implemented interactive front-ends** (see sections 1–2):
+  - cleanup before/after panel wired to the pipeline with an H slider
+    (`examples/explore_slice.py`);
+  - linked ΔPDF real-space views — single-plane `x_H`-slider viewer
+    (`examples/explore_delta_pdf.py`) and the three-plane orthoslice viewer
+    with movable cuts (`examples/explore_delta_pdf_ortho.py`).
+- **Still planned:**
+  - live `|Q|`-shell scrubbing for the azimuthal/ring texture views;
+  - migrating the standalone viewers onto the `ndiff.visualization` primitives
+    so the core stays free of GUI dependencies.
 
 ---
 
