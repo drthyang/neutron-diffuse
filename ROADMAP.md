@@ -182,13 +182,28 @@ rings continuous across H.
 - `mode="auto"` / `mode="search"` detects sharp off-integer satellites as
   robust per-|Q|-shell outliers.
 - Adaptive anisotropic punch radius (scale with intensity).
-- Separate incident-beam punch removes the non-Bragg `(0,0,0)` remnant with its
-  own larger radii and margins.
+- Separate incident-beam punch removes the non-Bragg `(0,0,0)` remnant as an
+  **anisotropic origin ellipsoid** (`incident_beam_ellipsoid_radii_hkl`) sized
+  from H/K/L linecuts through the origin; an isotropic sphere option remains.
 - Optional `phi_tail_hkl` expands punches tangentially in the K-L plane to catch
   Bragg tails smeared along the powder-ring direction.  The tangent is computed
   from the UB metric as the local constant-|Q| contour direction, not from the
   naive index-plane `(-L,K)` direction.
-- Backfill via `backfill_bragg` (default `method="local"` shell-median fill).
+- Backfill via `backfill_bragg` (default `method="local"` shell-median fill); the
+  **direct-beam** hole is filled separately from the diffuse background measured
+  in a thin |Q| shell just outside the beam (`direct_beam_fill`).
+
+**2026-06-04 direct-beam + small-Bragg update:**
+- Incident beam → anisotropic origin ellipsoid `INCIDENT_ELLIPSOID_R_HKL=0.15,0.50,1.00`
+  (from `_direct_beam_linecuts.py`); the old `1.20` sphere was too large.
+- Direct-beam backfill reaches *past* the over-subtraction halo to the
+  just-outside |Q| diffuse level, and fills the unmeasured beam-shadow centre.
+- Small-Bragg capture: search floor/prominence lowered to `cc_on` **0.8/0.8**
+  (`cc_off` 0.6/0.8), validated in 3D — captures ~89% of sharp interior Bragg at
+  H=0 (was ~75%) while preserving the H=0.333/0.667 magnetic diffuse.  A 3D
+  median/MAD local-contrast detector was evaluated and rejected (no extra capture
+  for +90 s).  **Next idea (user):** integer-node Bragg search — enumerate integer
+  (h,k,l) and decide per node (extends the existing `mode="integer"`); see HANDOFF.
 
 **2026-06-04 auto-punch update:** `BraggRemover(mode="auto")` is now an alias
 for search mode: robust per-|Q|-shell background (`median + n·MAD`) plus local

@@ -85,15 +85,103 @@ centre, −12% arc under-fill; **(3) `Q_STEP=0.015`** — finer bins, −15% lef
 `profile_method="median"`) after the user visually A/B'd them on the 22K H=0 and
 H=0.3333 slices via `explore_slice.py` and judged the result clearly better.
 Lever (3) `q_step=0.015` was NOT promoted — left at 0.02 (the fine-q_step setting
-can eat broad diffuse on the rich-diffuse 22K slice and wasn't validated).  Full
-suite **47/47**.  The preferred validation input is
-`data/raw/TbTi3Bi4_22K_mmm_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm.nxs`;
-its `H=0.3333` slice exposes diffuse signal more clearly than the earlier 28K
-file.  `pytest -o addopts=` passes **47/47** in the `rmc-discord` environment.
+can eat broad diffuse on the rich-diffuse 22K slice and wasn't validated).  The
+preferred validation input is now the **`…_cc_sub_bkg.nxs`** file (background
+already subtracted by Mantid; run with `USE_BACKGROUND=False`).
+`PYTHONPATH=src` + the **`sci-general`** conda env passes **67/67**
+(`pytest -o addopts=''`).  Run env note: there is **no `rmc-discord`** env on this
+machine — use `/opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3`.
+
+**Latest (2026-06-04 — direct-beam + small-Bragg session, see top progress entry):**
+the incident-beam punch is now an **anisotropic origin ellipsoid** sized from
+linecuts (`INCIDENT_ELLIPSOID_R_HKL=0.15,0.50,1.00`), the direct-beam hole is
+**backfilled from the |Q|-just-outside diffuse background** (not the generic
+wraparound shell), and the Bragg search floor/prominence were **lowered to
+0.8/0.8** (`cc_on`) to capture ~89% of small interior Bragg while preserving the
+H=0.333/0.667 magnetic diffuse.
 
 ---
 
 ## Progress log
+
+### 2026-06-04 — Direct-beam ellipsoid punch, |Q|-outside backfill, small-Bragg capture
+
+Three connected cleanup improvements this session, all validated on the
+**`…_cc_sub_bkg.nxs`** 22K file and covered by tests (**67/67**).
+
+**1. Incident-beam punch is now an anisotropic origin ellipsoid.**  The old
+isotropic sphere (`INCIDENT_SPHERE_R_HKL=1.20`) was far too big.  Three Bragg-free
+linecuts through `(0,0,0)` along H, K, L (`examples/_direct_beam_linecuts.py`)
+measured the direct-beam footprint: half-widths ≈ **H 0.15, K 0.50, L 1.00 rlu**
+(these map to a roughly isotropic |Q| ball ≈0.25–0.30 Å⁻¹ because the lattice is
+very anisotropic — a≈5.5, c≈24.8 Å).  New
+`BraggRemover(incident_beam_ellipsoid_radii_hkl=(rh,rk,rl))` punches an
+origin-centred ellipsoid (generalises `_punch_origin_sphere` →
+`_punch_origin_ellipsoid`; the sphere is now the isotropic special case and the
+ellipsoid takes precedence).  Presets set `INCIDENT_ELLIPSOID_R_HKL=0.15,0.50,1.00`
+and disable the sphere.  Tests: `test_incident_beam_ellipsoid_*` (+2).
+
+**2. Direct-beam backfill from the |Q|-just-outside background.**  The generic
+`local` fill wraps a 2-voxel shell around each hole; for the large elongated beam
+ellipsoid that shell **straddles the cc-subtraction over-subtraction halo** that
+hugs the beam (the L-linecut dips to ≈−7 next to the origin), and the genuinely
+**unmeasured detector shadow** at |Q|≲0.11 (the beam blocks the detector) was left
+as a 0-valued pit.  New `_fill_direct_beam` (in `analysis/bragg_fill.py`,
+parameters `direct_beam_fill=True`, `direct_beam_q_gap=0.05`,
+`direct_beam_q_width=0.15`): it finds the origin-connected blob of *punched holes ∪
+unmeasured shadow*, caps it at the **first |Q| gap** in the blob's voxels (so a
+punch bridged toward `(0,0,2)` doesn't drag that node in — gap threshold adapts to
+the local |Q| sampling), and replaces the **whole beam ball** with the median
+diffuse level in a thin |Q| shell just outside the beam edge.  `explore_slice.py`
+reveals the filled ball (`DIRECT_BEAM_SHOW_Q=0.40`) instead of re-masking it.
+Result: the direct-beam spot is one clean patch of the just-outside background — no
+pit, no negative rim.  Test: `test_direct_beam_fill_uses_background_outside_not_adjacent_halo`
+(discriminates: the fill reaches past a −2 halo to the true background; the old
+generic fill goes negative).  **User verdict: acceptable, improve later.**
+
+**3. Small-Bragg capture: lowered the search floor/prominence.**  The user noticed
+many small Bragg peaks survived the punch.  Diagnosed in **true 3D** (cache the
+ring-removed volume once, then sweep detection configs — 2D slices mislead because
+a real Bragg is sharp in *all three* axes while the high-|K| sparse-sampling band
+is a 2-D ridge).  Root cause: the `auto`/search path's **absolute floor was too
+high** (`SEARCH_MIN_I=1.5`), so small Bragg (I≈0.5–1.5, median 0.81) never passed.
+Using a robust truth-set of sharp interior Bragg-like maxima (106 at H=0; **0 at
+H=0.333/0.667** — those planes are pure diffuse), lowering to
+**`SEARCH_MIN_I=0.8`, `SEARCH_PROM=0.8`** (`cc_on`) raised capture **75% → 89%**
+(survivors 26 → 12) with only ~0.7% collateral on the H=0.333 diffuse (scattered
+single voxels; the checkerboard is visually unchanged).  `cc_off` → 0.6/0.8.
+Tunable per-run via `SEARCH_MIN_I` / `SEARCH_PROM`.
+
+> **Evaluated and REJECTED — 3D robust local-contrast detector.**  A median/MAD
+> z-score sharpness detector (catch small sharp peaks scale-relatively, spare broad
+> diffuse) preserved diffuse beautifully but (a) cost **+90 s** (`median_filter`
+> 5³ on the 48 M-voxel volume) and (b) at matched diffuse-cleanliness captured **no
+> more** interior Bragg than simply lowering the floor.  Not worth the complexity —
+> no new code path added.  A *fast* separable mean-based variant was much worse
+> (punched 10–20× more diffuse — the mean is not robust to the peak/diffuse).
+
+> ## 💡 IDEA (next, user's) — integer-point Bragg search
+>
+> The user's proposed alternative: **Bragg peaks live on integer (h,k,l) nodes, so
+> enumerate all integer points and decide per-node whether to punch/backfill.**
+> This is a targeted, lattice-aware complement to the current hkl-agnostic |Q|-shell
+> `search`/`auto` mode.  Note `BraggRemover` **already has `mode="integer"`**
+> (`_detect_integer`): with `min_intensity` set it visits each integer node in a
+> local window, keeps it only if a real peak is present (local max above the floor
+> *and* above the local background by `min_prominence`), re-centres on the argmax
+> (peaks drift off-integer by thermal contraction), and **skips systematic
+> absences** (this crystal has ~3/4 extinct nodes — punching them all would gouge
+> diffuse).  `mode="both"` already runs integer first, then searches the residual.
+> **To pursue the user's idea:** (a) make the per-node *decision* richer than a flat
+> floor — e.g. compare the node's local-window peak to the **per-|Q|-shell** diffuse
+> level (so weak-but-real nodes at high |Q| are kept and absences stay skipped),
+> reusing the small-Bragg tuning above; (b) since integer nodes are a known, sparse
+> set, this can afford a more careful per-node fit/backfill (profile subtraction,
+> anisotropic radius from the local peak shape) than the global search; (c) consider
+> making `mode="both"` (or a new `integer+auto`) the default once validated, so
+> integer Bragg are caught lattice-aware and only off-integer satellites rely on the
+> |Q|-shell outlier search.  Validate the same way: 3D cache + survivor/diffuse-cost
+> metrics on the H=0 (Bragg) vs H=0.333/0.667 (diffuse) planes.
 
 ### 2026-06-04 — Bragg punch/backfill QA: incident-beam punch + phi-tail cleanup
 

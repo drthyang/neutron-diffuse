@@ -147,6 +147,49 @@ def test_incident_beam_sphere_punches_isotropic_origin_region():
     assert keep[i10, i0, i0]
 
 
+def test_incident_beam_ellipsoid_punches_anisotropic_origin_region():
+    vol, _ = _peaky_vol(shape=(41, 41, 41), hkl_range=(-2, 2))
+    # rh=0.3, rk=0.8, rl=1.5 — deliberately different so we can verify each axis
+    remover = BraggRemover(
+        mode="search",
+        punch_radii=(0.1, 0.1, 0.1),
+        search_min_intensity=1e6,
+        incident_beam_ellipsoid_radii_hkl=(0.3, 0.8, 1.5),
+    )
+    keep = remover.build_mask(vol)
+    i0 = int(np.argmin(np.abs(vol.h_axis)))
+    # Inside ellipsoid in all three axes → punched
+    assert not keep[i0, i0, i0]
+    # H=0.25 < rh=0.3 → inside → punched
+    ih025 = int(np.argmin(np.abs(vol.h_axis - 0.25)))
+    assert not keep[ih025, i0, i0]
+    # H=0.35 > rh=0.3 → outside → kept
+    ih035 = int(np.argmin(np.abs(vol.h_axis - 0.35)))
+    assert keep[ih035, i0, i0]
+    # K=0.7 < rk=0.8 → inside → punched
+    ik07 = int(np.argmin(np.abs(vol.k_axis - 0.7)))
+    assert not keep[i0, ik07, i0]
+    # K=0.9 > rk=0.8 → outside → kept
+    ik09 = int(np.argmin(np.abs(vol.k_axis - 0.9)))
+    assert keep[i0, ik09, i0]
+
+
+def test_incident_beam_ellipsoid_takes_precedence_over_sphere():
+    vol, _ = _peaky_vol(shape=(41, 41, 41), hkl_range=(-2, 2))
+    # sphere r=0.1 would keep H=0.5; ellipsoid rh=0.6 would punch it
+    remover = BraggRemover(
+        mode="search",
+        punch_radii=(0.1, 0.1, 0.1),
+        search_min_intensity=1e6,
+        incident_beam_ellipsoid_radii_hkl=(0.6, 0.6, 0.6),
+        incident_beam_sphere_radius_hkl=0.1,
+    )
+    keep = remover.build_mask(vol)
+    i0 = int(np.argmin(np.abs(vol.h_axis)))
+    ih05 = int(np.argmin(np.abs(vol.h_axis - 0.5)))
+    assert not keep[ih05, i0, i0]
+
+
 def test_phi_tail_expands_punch_along_ring_tangent():
     vol, _ = _peaky_vol()
     ih = int(np.argmin(np.abs(vol.h_axis - 0)))

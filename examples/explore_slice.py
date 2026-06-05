@@ -178,27 +178,35 @@ PUNCH_PRESETS = {
         "MODE": "auto",
         "R_HKL": "0.09,0.12,0.45",
         "SEARCH_NMAD": "4.0",
-        "SEARCH_MIN_I": "1.0",
-        "SEARCH_PROM": "1.0",
+        # Lower floor + prominence to catch the small Bragg the old 1.0/1.0 missed
+        # (validated in 3D: captures ~90% of sharp interior Bragg while the
+        # H=0.333/0.667 magnetic diffuse is preserved — see SEARCH_MIN_I note).
+        "SEARCH_MIN_I": "0.6",
+        "SEARCH_PROM": "0.8",
         "MARGIN": "0.02",
         "MAX_SCALE": "2.0",
         "PHI_TAIL_HKL": "0.12",
         "INCIDENT_R_HKL": "0.24,0.24,0.90",
         "INCIDENT_MARGIN": "0.12",
-        "INCIDENT_SPHERE_R_HKL": "1.20",
+        "INCIDENT_ELLIPSOID_R_HKL": "0.15,0.50,1.00",
+        "INCIDENT_SPHERE_R_HKL": "",
     },
     "cc_on": {
         "MODE": "auto",
         "R_HKL": "0.09,0.12,0.45",
         "SEARCH_NMAD": "4.0",
-        "SEARCH_MIN_I": "1.5",
-        "SEARCH_PROM": "1.0",
+        # Was 1.5/1.0 — too conservative, left ~25% of small Bragg unpunched.
+        # 0.8/0.8 captures ~89% of sharp interior Bragg at H=0 with only ~0.7%
+        # collateral on the H=0.333 diffuse (which has no real sharp peaks).
+        "SEARCH_MIN_I": "0.8",
+        "SEARCH_PROM": "0.8",
         "MARGIN": "0.02",
         "MAX_SCALE": "2.0",
         "PHI_TAIL_HKL": "0.12",
         "INCIDENT_R_HKL": "0.24,0.24,0.90",
         "INCIDENT_MARGIN": "0.12",
-        "INCIDENT_SPHERE_R_HKL": "1.20",
+        "INCIDENT_ELLIPSOID_R_HKL": "0.15,0.50,1.00",
+        "INCIDENT_SPHERE_R_HKL": "",
     },
 }
 
@@ -231,7 +239,12 @@ incident_r_hkl = tuple(
 )
 incident_margin = float(punch_default("INCIDENT_MARGIN", "0.12"))
 incident_phi_tail = float(punch_default("INCIDENT_PHI_TAIL_HKL", "0.0"))
-incident_sphere_env = punch_default("INCIDENT_SPHERE_R_HKL", "1.20")
+incident_ellipsoid_env = punch_default("INCIDENT_ELLIPSOID_R_HKL", "")
+incident_ellipsoid_radii = (
+    tuple(float(x) for x in incident_ellipsoid_env.split(","))
+    if incident_ellipsoid_env else None
+)
+incident_sphere_env = punch_default("INCIDENT_SPHERE_R_HKL", "")
 incident_sphere_radius = (
     None if incident_sphere_env == "" else float(incident_sphere_env)
 )
@@ -248,6 +261,7 @@ remover = BraggRemover(
     incident_beam_radii=incident_r_hkl,
     incident_beam_margin=incident_margin,
     incident_beam_phi_tail_hkl=incident_phi_tail,
+    incident_beam_ellipsoid_radii_hkl=incident_ellipsoid_radii,
     incident_beam_sphere_radius_hkl=incident_sphere_radius,
     phi_tail_hkl=phi_tail_hkl,
     search_n_mad=search_nmad,
@@ -323,7 +337,13 @@ backfilled = backfill_bragg(
     local_radius=int(os.environ.get("LOCAL_RADIUS", "2")),
     local_min_count=int(os.environ.get("LOCAL_MIN_COUNT", "8")),
 )
-backfilled = dataclasses.replace(backfilled, mask=residual.mask)
+# Keep the original mask for display, but reveal the direct-beam ball: those
+# voxels (punched holes + the unmeasured central shadow) were deliberately filled
+# with the just-outside diffuse background, so they should show as valid rather
+# than being re-hidden by residual.mask.
+direct_beam_show_q = float(os.environ.get("DIRECT_BEAM_SHOW_Q", "0.40"))
+beam_ball = residual.q_magnitude() <= direct_beam_show_q
+backfilled = dataclasses.replace(backfilled, mask=residual.mask | beam_ball)
 
 print(f"0kl volume viewer initial H={H_VALUE:.4g}  "
       f"background={'on' if USE_BACKGROUND else 'OFF'}  "
@@ -332,7 +352,8 @@ valid = residual.mask & np.isfinite(residual.data)
 print(f"Bragg punch: preset={punch_preset_name} mode={mode} radii={r_hkl} "
       f"phi_tail={phi_tail_hkl} peaks={len(peaks)}")
 print(f"Incident beam punch: radii={incident_r_hkl} margin={incident_margin} "
-      f"phi_tail={incident_phi_tail} sphere_r={incident_sphere_radius}")
+      f"phi_tail={incident_phi_tail} "
+      f"ellipsoid={incident_ellipsoid_radii} sphere_r={incident_sphere_radius}")
 print(f"Total punched: {int(punched_voxels.sum())} voxels "
       f"({100 * punched_voxels.sum() / max(int(valid.sum()), 1):.2f}% of valid)")
 print(f"Backfill: method={backfill_method}")

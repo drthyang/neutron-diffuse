@@ -139,3 +139,32 @@ def test_bragg_local_backfill_uses_nearby_background_level():
 
     assert filled.mask.all()
     assert abs(float(filled.data[4, 4, 4]) - 0.5) < 1e-12
+
+
+def test_direct_beam_fill_uses_background_outside_not_adjacent_halo():
+    # Background 0.3 everywhere, a punched/unmeasured beam ball at the origin
+    # (|Q|<=0.25) wrapped in a negative over-subtraction halo (|Q| 0.25–0.40)
+    # that hugs the beam.  The direct-beam fill should reach *past* the halo to
+    # the true background, whereas the generic dilated-shell fill is pulled into
+    # the halo.
+    n = 41
+    data = np.full((n, n, n), 0.3, dtype=float)
+    vol = HKLVolume.from_arrays(data, (-1, 1), (-1, 1), (-1, 1))
+    q = vol.q_magnitude()
+    holes = q <= 0.25
+    halo = (q > 0.25) & (q <= 0.40)
+    vol.data[holes] = -9.0
+    vol.mask[holes] = False
+    vol.data[halo] = -2.0
+    i0 = n // 2
+
+    new = backfill_bragg(vol, method="local", direct_beam_fill=True,
+                         direct_beam_q_gap=0.2, direct_beam_q_width=0.15)
+    old = backfill_bragg(vol, method="local", direct_beam_fill=False)
+
+    assert np.isfinite(new.data).all()
+    # NEW: whole beam ball replaced with the ~0.3 background sampled outside.
+    assert abs(float(new.data[i0, i0, i0]) - 0.3) < 0.05
+    assert np.allclose(new.data[holes], new.data[i0, i0, i0])
+    # OLD: generic fill samples the adjacent −2 halo, so it goes negative.
+    assert float(old.data[i0, i0, i0]) < 0.0

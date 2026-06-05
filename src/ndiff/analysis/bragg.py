@@ -86,10 +86,15 @@ class BraggRemover:
         Extra margin for the incident-beam punch.
     incident_beam_phi_tail_hkl:
         Extra K-L tangential half-width for the incident-beam remnant.
+    incident_beam_ellipsoid_radii_hkl:
+        If set, punch the incident beam as an origin-centred **anisotropic
+        ellipsoid** ``(rh, rk, rl)`` in fractional HKL units.  Takes precedence
+        over ``incident_beam_sphere_radius_hkl``.  Use this when the direct-beam
+        footprint differs substantially along H, K, and L (size from linecuts
+        through the origin).
     incident_beam_sphere_radius_hkl:
-        If set, punch the incident beam as an isotropic HKL sphere around the
-        origin.  This is useful for the direct beam, which is not Bragg-like and
-        can be broad in every direction.
+        If set (and ``incident_beam_ellipsoid_radii_hkl`` is *not* set), punch
+        the incident beam as an isotropic HKL sphere around the origin.
     force_origin:
         Deprecated alias for ``punch_incident_beam``.
     phi_tail_hkl:
@@ -114,6 +119,7 @@ class BraggRemover:
     incident_beam_radii: Optional[tuple[float, float, float]] = None
     incident_beam_margin: float = 0.08
     incident_beam_phi_tail_hkl: float = 0.0
+    incident_beam_ellipsoid_radii_hkl: Optional[tuple[float, float, float]] = None
     incident_beam_sphere_radius_hkl: Optional[float] = None
     force_origin: Optional[bool] = None
     phi_tail_hkl: float = 0.0
@@ -355,10 +361,13 @@ class BraggRemover:
     def _punch_incident_beam(self, vol: HKLVolume, keep: NDArray[np.bool_]) -> NDArray[np.bool_]:
         if not self._punches_incident_beam():
             return keep
+        if self.incident_beam_ellipsoid_radii_hkl is not None:
+            rh, rk, rl = (max(0.0, float(r))
+                          for r in self.incident_beam_ellipsoid_radii_hkl)
+            return self._punch_origin_ellipsoid(vol, keep, rh, rk, rl)
         if self.incident_beam_sphere_radius_hkl is not None:
-            return self._punch_origin_sphere(
-                vol, keep, max(0.0, float(self.incident_beam_sphere_radius_hkl))
-            )
+            r = max(0.0, float(self.incident_beam_sphere_radius_hkl))
+            return self._punch_origin_ellipsoid(vol, keep, r, r, r)
         center = self._incident_beam_center(vol)
         if center is None:
             return keep
@@ -377,32 +386,32 @@ class BraggRemover:
             max(0.0, float(self.incident_beam_phi_tail_hkl)),
         )
 
-    def _punch_origin_sphere(
+    def _punch_origin_ellipsoid(
         self,
         vol: HKLVolume,
         keep: NDArray[np.bool_],
-        radius: float,
+        rh: float,
+        rk: float,
+        rl: float,
     ) -> NDArray[np.bool_]:
-        """Punch an isotropic HKL sphere centred at the origin."""
-        if radius <= 0:
+        """Punch an anisotropic HKL ellipsoid centred exactly at the origin."""
+        if rh <= 0 or rk <= 0 or rl <= 0:
             return keep
         dh, dk, dl = self._steps(vol)
         nh, nk, nl = vol.shape
         ih = int(np.argmin(np.abs(vol.h_axis)))
         ik = int(np.argmin(np.abs(vol.k_axis)))
         il = int(np.argmin(np.abs(vol.l_axis)))
-        wh, wk, wl = (
-            int(np.ceil(radius / abs(dh))),
-            int(np.ceil(radius / abs(dk))),
-            int(np.ceil(radius / abs(dl))),
-        )
+        wh = int(np.ceil(rh / abs(dh)))
+        wk = int(np.ceil(rk / abs(dk)))
+        wl = int(np.ceil(rl / abs(dl)))
         hs, he = max(0, ih - wh), min(nh, ih + wh + 1)
         ks, ke = max(0, ik - wk), min(nk, ik + wk + 1)
         ls, le = max(0, il - wl), min(nl, il + wl + 1)
         HH, KK, LL = np.meshgrid(vol.h_axis[hs:he], vol.k_axis[ks:ke],
-                                 vol.l_axis[ls:le], indexing="ij")
-        sphere = HH ** 2 + KK ** 2 + LL ** 2 <= radius ** 2
-        keep[hs:he, ks:ke, ls:le] &= ~sphere
+                                  vol.l_axis[ls:le], indexing="ij")
+        ellipsoid = (HH / rh) ** 2 + (KK / rk) ** 2 + (LL / rl) ** 2 <= 1.0
+        keep[hs:he, ks:ke, ls:le] &= ~ellipsoid
         return keep
 
     def _punch_one(
@@ -496,6 +505,7 @@ def bragg_mask(
     incident_beam_radii: Optional[tuple[float, float, float]] = None,
     incident_beam_margin: float = 0.08,
     incident_beam_phi_tail_hkl: float = 0.0,
+    incident_beam_ellipsoid_radii_hkl: Optional[tuple[float, float, float]] = None,
     incident_beam_sphere_radius_hkl: Optional[float] = None,
     force_origin: Optional[bool] = None,
     phi_tail_hkl: float = 0.0,
@@ -511,6 +521,7 @@ def bragg_mask(
         incident_beam_radii=incident_beam_radii,
         incident_beam_margin=incident_beam_margin,
         incident_beam_phi_tail_hkl=incident_beam_phi_tail_hkl,
+        incident_beam_ellipsoid_radii_hkl=incident_beam_ellipsoid_radii_hkl,
         incident_beam_sphere_radius_hkl=incident_beam_sphere_radius_hkl,
         force_origin=force_origin,
         phi_tail_hkl=phi_tail_hkl,

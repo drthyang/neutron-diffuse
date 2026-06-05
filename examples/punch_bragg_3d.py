@@ -64,30 +64,34 @@ PRESETS = {
         "MODE": "auto",
         "R_HKL": "0.09,0.12,0.45",
         "SEARCH_NMAD": "4.0",
-        "SEARCH_MIN_I": "1.0",
-        "SEARCH_PROM": "1.0",
+        # Lowered floor/prominence to capture small Bragg (validated in 3D to
+        # preserve the H=0.333/0.667 magnetic diffuse).
+        "SEARCH_MIN_I": "0.6",
+        "SEARCH_PROM": "0.8",
         "MARGIN": "0.02",
         "MAX_SCALE": "2.0",
         "PHI_TAIL_HKL": "0.12",
         "INCIDENT_R_HKL": "0.24,0.24,0.90",
         "INCIDENT_MARGIN": "0.12",
-        "INCIDENT_SPHERE_R_HKL": "1.20",
+        "INCIDENT_ELLIPSOID_R_HKL": "0.15,0.50,1.00",
+        "INCIDENT_SPHERE_R_HKL": "",
     },
-    # Cleaner cc-on data has better-shaped Bragg peaks, so the absolute search
-    # floor can be higher.  This preserves more diffuse signal while retaining
-    # the same local-sharpness gate.
+    # Cleaner cc-on data has better-shaped Bragg peaks.  Floor 0.8 / prominence
+    # 0.8 captures ~89% of sharp interior Bragg at H=0 while leaving the diffuse
+    # planes essentially untouched (~0.7% collateral, no real peaks there).
     "cc_on": {
         "MODE": "auto",
         "R_HKL": "0.09,0.12,0.45",
         "SEARCH_NMAD": "4.0",
-        "SEARCH_MIN_I": "1.5",
-        "SEARCH_PROM": "1.0",
+        "SEARCH_MIN_I": "0.8",
+        "SEARCH_PROM": "0.8",
         "MARGIN": "0.02",
         "MAX_SCALE": "2.0",
         "PHI_TAIL_HKL": "0.12",
         "INCIDENT_R_HKL": "0.24,0.24,0.90",
         "INCIDENT_MARGIN": "0.12",
-        "INCIDENT_SPHERE_R_HKL": "1.20",
+        "INCIDENT_ELLIPSOID_R_HKL": "0.15,0.50,1.00",
+        "INCIDENT_SPHERE_R_HKL": "",
     },
 }
 
@@ -122,7 +126,12 @@ incident_r_hkl = tuple(
 )
 incident_margin = float(env_default("INCIDENT_MARGIN", "0.12"))
 incident_phi_tail = float(env_default("INCIDENT_PHI_TAIL_HKL", "0.0"))
-incident_sphere_env = env_default("INCIDENT_SPHERE_R_HKL", "1.20")
+incident_ellipsoid_env = env_default("INCIDENT_ELLIPSOID_R_HKL", "")
+incident_ellipsoid_radii = (
+    tuple(float(x) for x in incident_ellipsoid_env.split(","))
+    if incident_ellipsoid_env else None
+)
+incident_sphere_env = env_default("INCIDENT_SPHERE_R_HKL", "")
 incident_sphere_radius = (
     None if incident_sphere_env == "" else float(incident_sphere_env)
 )
@@ -139,6 +148,7 @@ remover = BraggRemover(
     punch_incident_beam=True, incident_beam_radii=incident_r_hkl,
     incident_beam_margin=incident_margin,
     incident_beam_phi_tail_hkl=incident_phi_tail,
+    incident_beam_ellipsoid_radii_hkl=incident_ellipsoid_radii,
     incident_beam_sphere_radius_hkl=incident_sphere_radius,
     phi_tail_hkl=phi_tail_hkl,
     search_n_mad=search_nmad, search_min_intensity=search_min_i,
@@ -148,7 +158,8 @@ print(f"preset={preset_name or 'none'}  mode={mode}  radii={r_hkl}  min_I={min_i
       f"search_nmad={search_nmad}  search_min_I={search_min_i}  "
       f"search_prom={search_prom}  phi_tail={phi_tail_hkl}", flush=True)
 print(f"incident beam: radii={incident_r_hkl} margin={incident_margin} "
-      f"phi_tail={incident_phi_tail} sphere_r={incident_sphere_radius}", flush=True)
+      f"phi_tail={incident_phi_tail} "
+      f"ellipsoid={incident_ellipsoid_radii} sphere_r={incident_sphere_radius}", flush=True)
 t = time.time()
 peaks = remover.detect_peaks(vol)
 keep = remover.build_mask(vol)
