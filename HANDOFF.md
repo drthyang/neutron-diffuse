@@ -126,10 +126,17 @@ Bragg punch:
   and anisotropic shape.
 - `MODE=both` runs integer detection first, then search on the integer-punched
   residual.
-- `SEARCH_EXCLUDE_H` protects known fractional-H diffuse planes from the
-  hkl-agnostic search stage.
+- `SEARCH_EXCLUDE_H` protects explicit fractional-H diffuse planes from the
+  hkl-agnostic search stage. `SEARCH_EXCLUDE_H_FRACTIONS=0.3333,0.6667`
+  (cc_on default) protects the whole q=1/3 family *periodically* — every
+  integer±1/3 plane (±1/3, ±2/3, ±4/3, ±5/3 …), not just a fixed list.
 - `INTEGER_H_GUARD` prevents integer-H Bragg punch ellipsoids from extending
   into fractional-H diffuse planes.
+- `INTEGER_LOCAL_NMAD=8` (cc_on default) catches small-but-sharp weak Bragg at
+  integer nodes via local-MAD prominence (below the absolute floors). It is
+  position-locked to integer nodes, so it never touches the q=1/3 diffuse.
+  Validated on 45K: catches ~372k extra Bragg voxels and spares ~178k on the
+  higher-order thirds planes, with thirds-plane diffuse punching unchanged.
 
 Backfill:
 

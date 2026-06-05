@@ -41,13 +41,25 @@ Env overrides:
                  optional max fitted radii "rh,rk,rl"
     INTEGER_H_GUARD
                  optional H half-width around source integer-H plane
+    INTEGER_LOCAL_NMAD
+                 catch *small but sharp* Bragg at integer nodes: keep a node when
+                 its prominence ≥ this many local MADs (in the detection window),
+                 even below MIN_I / shell floors.  Position-locked to integer
+                 nodes, so it never touches fractional-H diffuse.  Try ~8.
+    INTEGER_LOCAL_MIN_PROM
+                 small absolute prominence floor for INTEGER_LOCAL_NMAD (guards
+                 against pure noise in flat regions; default 0.0)
     SEARCH_NMAD  search-mode outlier threshold in MADs (default 6.0)
     SEARCH_MIN_I search-mode absolute intensity floor (default 2.0)
     SEARCH_PROM  search-mode local 3x3x3 prominence floor (default 0.0)
     SEARCH_EXCLUDE_H
                  comma-separated H planes excluded from search mode
     SEARCH_EXCLUDE_H_WIDTH
-                 H half-width around SEARCH_EXCLUDE_H planes
+                 H half-width around SEARCH_EXCLUDE_H (and _FRACTIONS) planes
+    SEARCH_EXCLUDE_H_FRACTIONS
+                 fractional parts mod 1 to protect periodically across the whole
+                 H range, e.g. "0.3333,0.6667" shields every integer±1/3 plane
+                 (the q=1/3 satellite family) from search punching
     MARGIN       guard band added to every radius (default 0.03)
     MAX_SCALE    max intensity radius multiplier (default 3.0)
     PHI_TAIL_HKL extra Bragg-punch width along the local powder-ring direction
@@ -97,15 +109,25 @@ PRESETS = {
         "INCIDENT_ELLIPSOID_R_HKL": "0.15,0.50,1.00",
         "INCIDENT_SPHERE_R_HKL": "",
     },
-    # Cleaner cc-on data has better-shaped Bragg peaks.  Floor 0.8 / prominence
-    # 0.8 captures ~89% of sharp interior Bragg at H=0 while leaving the diffuse
-    # planes essentially untouched (~0.7% collateral, no real peaks there).
+    # Cleaner cc-on data has better-shaped Bragg peaks.  MODE=both runs integer
+    # detection (with the H guard so it never bleeds into fractional planes) then
+    # search.  INTEGER_LOCAL_NMAD=8 catches small-but-sharp weak Bragg at integer
+    # nodes (prominent in local MADs) that the 0.8 floors miss.  The thirds
+    # family (integer±1/3) is protected periodically so the q=1/3 diffuse is
+    # never punched.
     "cc_on": {
-        "MODE": "auto",
+        "MODE": "both",
         "R_HKL": "0.09,0.12,0.45",
+        "MIN_I": "0.8",
+        "INTEGER_FIT_POSITION": "1",
+        "INTEGER_FIT_SHAPE": "1",
+        "INTEGER_H_GUARD": "0.12",
+        "INTEGER_LOCAL_NMAD": "8",
         "SEARCH_NMAD": "4.0",
         "SEARCH_MIN_I": "0.8",
         "SEARCH_PROM": "0.8",
+        "SEARCH_EXCLUDE_H_FRACTIONS": "0.3333,0.6667",
+        "SEARCH_EXCLUDE_H_WIDTH": "0.08",
         "MARGIN": "0.02",
         "MAX_SCALE": "2.0",
         "PHI_TAIL_HKL": "0.12",
@@ -171,6 +193,16 @@ search_exclude_h = (
     if search_exclude_env else None
 )
 search_exclude_h_width = float(env_default("SEARCH_EXCLUDE_H_WIDTH", "0.0"))
+search_exclude_frac_env = env_default("SEARCH_EXCLUDE_H_FRACTIONS", "")
+search_exclude_h_fractions = (
+    tuple(float(x) for x in search_exclude_frac_env.split(",") if x.strip())
+    if search_exclude_frac_env else None
+)
+integer_local_nmad_env = env_default("INTEGER_LOCAL_NMAD", "")
+integer_local_nmad = (
+    None if integer_local_nmad_env == "" else float(integer_local_nmad_env)
+)
+integer_local_min_prom = float(env_default("INTEGER_LOCAL_MIN_PROM", "0.0"))
 margin = float(env_default("MARGIN", "0.03"))
 max_scale = float(env_default("MAX_SCALE", "3.0"))
 phi_tail_hkl = float(env_default("PHI_TAIL_HKL", "0.12"))
@@ -204,6 +236,8 @@ remover = BraggRemover(
     integer_fit_radius_n_sigma=integer_fit_nsigma,
     integer_fit_max_radius_hkl=integer_fit_max,
     integer_h_guard_hkl=integer_h_guard,
+    integer_local_prominence_n_mad=integer_local_nmad,
+    integer_local_min_prominence=integer_local_min_prom,
     intensity_scale=True, max_radius_scale=max_scale, margin=margin,
     punch_incident_beam=True, incident_beam_radii=incident_r_hkl,
     incident_beam_margin=incident_margin,
@@ -215,14 +249,17 @@ remover = BraggRemover(
     search_min_prominence=search_prom,
     search_exclude_h_centers=search_exclude_h,
     search_exclude_h_half_width=search_exclude_h_width,
+    search_exclude_h_fractions=search_exclude_h_fractions,
 )
 print(f"preset={preset_name or 'none'}  mode={mode}  radii={r_hkl}  min_I={min_i}  "
       f"integer_nmad={integer_nmad}  integer_q_step={integer_q_step}  "
       f"integer_fit_position={integer_fit_position}  "
       f"integer_fit_shape={integer_fit_shape}  "
       f"integer_h_guard={integer_h_guard}  "
+      f"integer_local_nmad={integer_local_nmad}  "
       f"search_nmad={search_nmad}  search_min_I={search_min_i}  "
       f"search_prom={search_prom}  search_exclude_h={search_exclude_h}  "
+      f"search_exclude_fractions={search_exclude_h_fractions}  "
       f"search_exclude_width={search_exclude_h_width}  phi_tail={phi_tail_hkl}",
       flush=True)
 print(f"incident beam: radii={incident_r_hkl} margin={incident_margin} "

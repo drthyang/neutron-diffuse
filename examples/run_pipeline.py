@@ -54,7 +54,10 @@ STAGE_DEFAULTS = {
         "MIN_I": "0.8", "MIN_PROM": "0.8",
         "INTEGER_FIT_POSITION": "1", "INTEGER_FIT_SHAPE": "1",
         "INTEGER_H_GUARD": "0.12",
-        "SEARCH_EXCLUDE_H": "-0.6667,-0.3333,0.3333,0.6667",
+        # catch small-but-sharp weak Bragg at integer nodes (local-MAD prominence)
+        "INTEGER_LOCAL_NMAD": "8",
+        # protect the whole q=1/3 satellite family (integer±1/3) periodically
+        "SEARCH_EXCLUDE_H_FRACTIONS": "0.3333,0.6667",
         "SEARCH_EXCLUDE_H_WIDTH": "0.08", "PREVIEW": "0",
     },
     "backfill": {"METHOD": "q_shell"},

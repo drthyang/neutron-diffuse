@@ -174,6 +174,14 @@ class BraggRemover:
     integer_n_mad: Optional[float] = None
     integer_q_step: Optional[float] = None
     integer_min_shell_size: int = 20
+    # Local relative-prominence catch for *small but sharp* Bragg at integer
+    # nodes: keep a node when (peak - local_bg) >= integer_local_prominence_n_mad
+    # * (1.4826 * local MAD), measured in the detection window — even if it is
+    # below the absolute min_intensity / min_prominence floors and the per-|Q|
+    # shell threshold.  Position-locked to integer nodes (never a thirds plane),
+    # so it is inherently safe for the fractional-H diffuse.  ``None`` disables.
+    integer_local_prominence_n_mad: Optional[float] = None
+    integer_local_min_prominence: float = 0.0
     integer_optimize_position: bool = False
     integer_optimize_shape: bool = False
     integer_fit_threshold_frac: float = 0.35
@@ -200,6 +208,11 @@ class BraggRemover:
     search_min_prominence: float = 0.0
     search_exclude_h_centers: Optional[tuple[float, ...]] = None
     search_exclude_h_half_width: float = 0.0
+    # Periodic H protection: fractional parts (mod 1, in [0,1)) of H to protect
+    # across the WHOLE range, e.g. (1/3, 2/3) shields every integer±1/3 plane
+    # (the q=1/3 satellite family) — not just a fixed centre list.  Uses the same
+    # search_exclude_h_half_width.  ``None`` disables.
+    search_exclude_h_fractions: Optional[tuple[float, ...]] = None
     subtract_profile: bool = False
 
     def _radii(self) -> tuple[float, float, float]:
@@ -342,17 +355,35 @@ class BraggRemover:
             peak = float(np.nanmax(wv))
             if not np.isfinite(peak):
                 continue
-            if self.min_intensity is not None and peak < self.min_intensity:
-                continue
             local_bg = float(np.nanmedian(wv))
-            if peak - local_bg < self.min_prominence:
-                continue
+            prom = peak - local_bg
             # re-centre on the true peak (thermal/lattice drift off the integer)
             off = np.unravel_index(int(np.nanargmax(wv)), wv.shape)
             ph, pk, pl = hs + off[0], ks + off[1], ls + off[2]
-            if shell_thr is not None and shell_bins is not None:
+
+            # Relative path: small-but-sharp peak, prominent in LOCAL-MAD units.
+            # Catches weak Bragg at nodes that the absolute floors miss.
+            ok_rel = False
+            if self.integer_local_prominence_n_mad is not None and prom > 0:
+                local_mad = float(np.nanmedian(np.abs(wv - local_bg))) * 1.4826
+                ok_rel = (
+                    local_mad > 0
+                    and prom >= self.integer_local_prominence_n_mad * local_mad
+                    and prom >= self.integer_local_min_prominence
+                )
+
+            # Absolute path: clears the configured floors and per-|Q| shell threshold.
+            ok_abs = True
+            if self.min_intensity is not None and peak < self.min_intensity:
+                ok_abs = False
+            if prom < self.min_prominence:
+                ok_abs = False
+            if ok_abs and shell_thr is not None and shell_bins is not None:
                 if peak < float(shell_thr[shell_bins[ph, pk, pl]]):
-                    continue
+                    ok_abs = False
+
+            if not (ok_abs or ok_rel):
+                continue
             center_hkl = (
                 float(vol.h_axis[ph]),
                 float(vol.k_axis[pk]),
@@ -557,14 +588,31 @@ class BraggRemover:
         ]
 
     def _search_excluded_h_mask(self, vol: HKLVolume) -> NDArray[np.bool_]:
-        """Return True for voxels protected from hkl-agnostic search punching."""
-        centers = self.search_exclude_h_centers
+        """Return True for voxels protected from hkl-agnostic search punching.
+
+        Two complementary mechanisms (combined), both using
+        ``search_exclude_h_half_width``:
+        - ``search_exclude_h_centers``: explicit H-plane centres.
+        - ``search_exclude_h_fractions``: fractional parts mod 1 protected
+          periodically across the whole range — e.g. ``(1/3, 2/3)`` shields
+          every integer±1/3 plane (the q=1/3 satellite family).
+        """
         half_width = max(float(self.search_exclude_h_half_width), 0.0)
-        if not centers or half_width <= 0:
+        centers = self.search_exclude_h_centers
+        fractions = self.search_exclude_h_fractions
+        if half_width <= 0 or (not centers and not fractions):
             return np.zeros(vol.shape, dtype=bool)
         h_excluded = np.zeros(vol.h_axis.shape, dtype=bool)
-        for h0 in centers:
+        for h0 in centers or ():
             h_excluded |= np.abs(vol.h_axis - float(h0)) <= half_width
+        if fractions:
+            frac = np.mod(vol.h_axis, 1.0)  # [0,1); handles negative H naturally
+            for f in fractions:
+                f0 = float(f) % 1.0
+                # circular distance on the unit interval
+                d = np.abs(frac - f0)
+                d = np.minimum(d, 1.0 - d)
+                h_excluded |= d <= half_width
         return h_excluded[:, None, None]
 
     def _scale_factor(self, peak: float, ref: float) -> float:

@@ -19,10 +19,11 @@ htmlcov/
 # type checkers
 .mypy_cache/
 
-# editors
+# editors / local agent state
 .vscode/
 .idea/
 *.swp
+.claude/
 
 # notebooks
 .ipynb_checkpoints/

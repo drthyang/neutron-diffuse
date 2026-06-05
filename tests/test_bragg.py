@@ -418,6 +418,47 @@ def test_search_exclude_h_protects_fractional_diffuse_plane():
     assert not keep[free_h, free_k, free_l]
 
 
+def test_integer_local_prominence_catches_small_sharp_bragg():
+    """A small but sharp peak at an integer node, below the absolute intensity
+    floor, is caught only when the local relative-prominence criterion is on."""
+    vol, _ = _peaky_vol(shape=(31, 31, 31), hkl_range=(-3, 3))
+    ih = int(np.argmin(np.abs(vol.h_axis - 2)))
+    ik = int(np.argmin(np.abs(vol.k_axis)))
+    il = int(np.argmin(np.abs(vol.l_axis)))
+    vol.data[ih, ik, il] = 4.0   # sharp, but well below an absolute floor of 10
+
+    common = dict(mode="integer", punch_radii=(0.2, 0.2, 0.2),
+                  min_intensity=10.0, force_origin=False)
+    # absolute floor alone misses the small peak ...
+    assert BraggRemover(**common).build_mask(vol)[ih, ik, il]
+    # ... the local relative-prominence catch removes it.
+    sharp = BraggRemover(**common, integer_local_prominence_n_mad=4.0)
+    assert not sharp.build_mask(vol)[ih, ik, il]
+
+
+def test_search_exclude_h_fractions_protects_thirds_family():
+    """Periodic fractional protection shields every integer±1/3 plane (e.g.
+    H=4/3), which a fixed (±1/3, ±2/3) centre list would not cover."""
+    vol, _ = _peaky_vol(shape=(31, 31, 31), hkl_range=(-3, 3))
+    prot_h = int(np.argmin(np.abs(vol.h_axis - 4.0 / 3.0)))   # grid 1.4, frac≈1/3
+    free_h = int(np.argmin(np.abs(vol.h_axis - 1.8)))          # frac 0.8, not a third
+    ik = int(np.argmin(np.abs(vol.k_axis - 0.5)))
+    il = int(np.argmin(np.abs(vol.l_axis - 1.0)))
+    assert prot_h != free_h
+    vol.data[prot_h, ik, il] = 60.0
+    vol.data[free_h, ik, il] = 60.0
+
+    remover = BraggRemover(
+        mode="search", punch_radii=(0.25, 0.25, 0.25),
+        search_n_mad=4.0, search_min_intensity=10.0, search_q_step=0.5,
+        search_exclude_h_fractions=(1.0 / 3.0, 2.0 / 3.0),
+        search_exclude_h_half_width=0.08, force_origin=False,
+    )
+    keep = remover.build_mask(vol)
+    assert keep[prot_h, ik, il]        # H=4/3 thirds-family plane protected
+    assert not keep[free_h, ik, il]    # H=1.8 punched
+
+
 def test_both_mode_is_sequential_union():
     """'both' = integer punch, then search on the residual; it removes both an
     integer peak and an off-integer satellite."""

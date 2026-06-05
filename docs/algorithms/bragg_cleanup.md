@@ -52,6 +52,25 @@ Useful guards:
   fractional-H diffuse planes such as `H=±1/3` or `H=±2/3`.
 - `integer_fit_max_radius_hkl`: caps fitted per-peak radii.
 
+### Small but sharp weak Bragg (`integer_local_prominence_n_mad`)
+
+Weak Bragg peaks at integer nodes can sit below the absolute `min_intensity` /
+`min_prominence` floors yet still be sharp, local outliers. A purely
+sharpness-based catch over the whole volume just finds noise (a small spike in a
+flat region looks "sharp"); the reliable discriminator is **position** — Bragg
+sits at integer nodes, which are 4–5× more likely to carry a residual sharp peak
+than random control positions. So the catch is applied **only at integer nodes**:
+
+- `integer_local_prominence_n_mad`: keep a node when its prominence
+  `(peak − local_bg)` is at least this many **local** MADs (measured in the
+  detection window), regardless of the absolute floors and the `|Q|`-shell
+  threshold. `integer_local_min_prominence` adds an optional small absolute floor
+  to reject pure noise in flat regions.
+
+Because it is locked to integer nodes (never a fractional-H plane) and obeys
+`integer_h_guard_hkl`, it cannot touch the q=1/3 diffuse. Default `cc_on` value
+is `8` (~+0.4 % extra punched on test data, all at lattice nodes).
+
 ## Search Path
 
 Search mode is hkl-agnostic. At each `|Q|`, it estimates a robust background
@@ -59,15 +78,23 @@ Search mode is hkl-agnostic. At each `|Q|`, it estimates a robust background
 floor.
 
 Because search does not know the lattice or magnetic diffuse planes, protect
-known fractional-H diffuse planes with:
+known fractional-H diffuse planes. Either an explicit centre list or — preferred
+for a modulation that repeats at every integer — a **periodic** fractional rule
+that shields the whole family across the full H range:
 
 ```text
+# explicit centres (fixed planes only):
 SEARCH_EXCLUDE_H=-0.6667,-0.3333,0.3333,0.6667
+# OR periodic: protect every integer±1/3 plane (q=1/3 family: ±1/3, ±2/3,
+# ±4/3, ±5/3, ±7/3 …):
+SEARCH_EXCLUDE_H_FRACTIONS=0.3333,0.6667
 SEARCH_EXCLUDE_H_WIDTH=0.08
 ```
 
-This allows `mode="both"` to keep useful off-integer satellite detection without
-allowing search to punch structured diffuse features on those planes.
+`search_exclude_h_fractions` matches H by its fractional part mod 1, so a single
+setting covers the higher-order satellites (`±4/3`, `±5/3`, …) that a fixed
+centre list misses. This allows `mode="both"` to keep useful off-integer
+satellite detection without punching structured diffuse on any thirds plane.
 
 ## Direct Beam
 
