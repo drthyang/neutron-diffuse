@@ -14,7 +14,7 @@ Saved outputs (in the same directory as this script):
 Run::
 
     PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \\
-      /opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 \\
+      /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 \\
       examples/delta_pdf.py
 
 Env overrides:
@@ -23,6 +23,15 @@ Env overrides:
     GAUSSIAN_SIGMA  fraction of Q_max for gaussian window (default: 0.5)
     ZERO_PAD        0|1  (default: 1)
     SUBTRACT_MEAN   0|1  (default: 1)
+    CROP_H          max |H| in r.l.u. to include in FFT (default: full range)
+    CROP_K          max |K| in r.l.u. to include in FFT (default: full range)
+    CROP_L          max |L| in r.l.u. to include in FFT (default: full range)
+    SUBTRACT_BG     Gaussian-blur sigma in r.l.u. to subtract the smooth diffuse
+                    background before windowing; kills the axis cross (default:
+                    off; try ~1.5).  One value = isotropic 3D blur; three
+                    comma-separated values = per-axis (σ_H,σ_K,σ_L).  Use
+                    σ_H=0, e.g. SUBTRACT_BG=0,1.5,1.5, for a slice-wise (per-H-
+                    plane) background that preserves the H-layering.
     VMAX            colour scale half-range  (default: auto 99th-percentile)
     RMAX_H          real-space plot radius along H-axis in Å (default: 20)
     RMAX_K          real-space plot radius along K-axis in Å (default: 20)
@@ -79,13 +88,32 @@ gaussian_sigma = float(os.environ.get("GAUSSIAN_SIGMA", "0.5"))
 zero_pad       = bool(int(os.environ.get("ZERO_PAD", "1")))
 subtract_mean  = bool(int(os.environ.get("SUBTRACT_MEAN", "1")))
 
+_crop_h = os.environ.get("CROP_H")
+_crop_k = os.environ.get("CROP_K")
+_crop_l = os.environ.get("CROP_L")
+if _crop_h or _crop_k or _crop_l:
+    _def_h = str(np.abs(vol.h_axis).max()) if not _crop_h else _crop_h
+    _def_k = str(np.abs(vol.k_axis).max()) if not _crop_k else _crop_k
+    _def_l = str(np.abs(vol.l_axis).max()) if not _crop_l else _crop_l
+    crop_hkl = (float(_def_h), float(_def_k), float(_def_l))
+else:
+    crop_hkl = None
+
+_sbg = os.environ.get("SUBTRACT_BG", "0")
+if "," in _sbg:
+    subtract_bg = tuple(float(x) for x in _sbg.split(","))   # (σ_H, σ_K, σ_L)
+else:
+    subtract_bg = float(_sbg) or None
+
 rmax_h = float(os.environ.get("RMAX_H", "20.0"))
 rmax_k = float(os.environ.get("RMAX_K", "20.0"))
 rmax_l = float(os.environ.get("RMAX_L", "20.0"))
 
+crop_str = f"  crop_hkl={crop_hkl}" if crop_hkl else ""
+bg_str = f"  subtract_bg={subtract_bg} rlu" if subtract_bg else ""
 print(
     f"computing 3D-ΔPDF  apodize={apodize}  zero_pad={zero_pad}"
-    f"  subtract_mean={subtract_mean}",
+    f"  subtract_mean={subtract_mean}{crop_str}{bg_str}",
     flush=True,
 )
 dpdf = compute_delta_pdf(
@@ -95,6 +123,8 @@ dpdf = compute_delta_pdf(
     zero_pad=zero_pad,
     subtract_mean=subtract_mean,
     real_space_angstrom=True,
+    crop_hkl=crop_hkl,
+    subtract_smooth_bg=subtract_bg,
 )
 print(f"  output shape: {dpdf.data.shape}", flush=True)
 print(f"  |Q|_max = {dpdf.q_max:.2f} Å⁻¹", flush=True)

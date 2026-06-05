@@ -22,6 +22,7 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 from scipy.fft import fftn, fftshift, ifftshift, fftfreq
+from scipy.ndimage import gaussian_filter
 
 
 Window = Literal["hann", "gaussian", "none"]
@@ -74,6 +75,8 @@ def compute_delta_pdf(
     zero_pad: bool = True,
     subtract_mean: bool = True,
     real_space_angstrom: bool = True,
+    crop_hkl: tuple[float, float, float] | None = None,
+    subtract_smooth_bg: float | tuple[float, float, float] | None = None,
 ) -> DeltaPDF:
     """Compute the 3D-ΔPDF from a diffuse scattering volume.
 
@@ -99,6 +102,32 @@ def compute_delta_pdf(
     real_space_angstrom:
         If True, compute real-space axes in Å using the UB matrix.
         If False, axes are in fractional units (1/HKL step).
+    crop_hkl:
+        Optional ``(h_max, k_max, l_max)`` in r.l.u.  When given, the
+        volume is symmetrically cropped to ``|H| ≤ h_max``,
+        ``|K| ≤ k_max``, ``|L| ≤ l_max`` before the FFT.  Cropping to a
+        smaller, more uniform region of Q-space suppresses edge artifacts
+        that arise from incomplete coverage or detector gaps at high Q.
+    subtract_smooth_bg:
+        Optional Gaussian-blur sigma in r.l.u.  When set, a smooth
+        Gaussian-blurred background is subtracted from the (filled) volume
+        *before* windowing so that only the oscillatory diffuse modulation
+        transforms.  The broad diffuse envelope that survives ring removal /
+        Bragg punch / backfill is approximately separable; its FT would
+        otherwise concentrate on the principal axes as a bright cross through
+        the origin (see ``docs/algorithms/delta_pdf.md``).  Typical value
+        ``~1.5``.  Trade-off: also removes genuine very-long-period / low-``r``
+        correlations, which live at the same scale as the background.
+
+        Pass a scalar for an isotropic-in-r.l.u. 3D blur, or a tuple
+        ``(sigma_h, sigma_k, sigma_l)`` for per-axis control.  Use
+        ``sigma_h = 0`` (e.g. ``(0, 1.5, 1.5)``) to estimate the background
+        **slice-wise** — independently on each H plane — which is the right
+        choice for H-layered/modulated data (an isotropic H-blur would smear
+        the H=0/±1/3/±2/3 layers into each other's background).  This is
+        mathematically identical to doing the 2D per-plane background
+        subtraction and then a single 3D FFT (subtraction is linear and
+        commutes with the transform).
 
     Returns
     -------
@@ -107,8 +136,47 @@ def compute_delta_pdf(
     from ndiff.core import HKLVolume  # local import to avoid circular
 
     data = vol.masked_data()  # NaN at masked voxels
+
+    # Crop Q-space symmetrically to ±(h_max, k_max, l_max) in r.l.u.
+    h_axis = vol.h_axis.copy()
+    k_axis = vol.k_axis.copy()
+    l_axis = vol.l_axis.copy()
+    if crop_hkl is not None:
+        h_max, k_max, l_max = crop_hkl
+        ih = np.where(np.abs(h_axis) <= h_max)[0]
+        ik = np.where(np.abs(k_axis) <= k_max)[0]
+        il = np.where(np.abs(l_axis) <= l_max)[0]
+        data    = data[ih[0]:ih[-1]+1, ik[0]:ik[-1]+1, il[0]:il[-1]+1]
+        h_axis  = h_axis[ih[0]:ih[-1]+1]
+        k_axis  = k_axis[ik[0]:ik[-1]+1]
+        l_axis  = l_axis[il[0]:il[-1]+1]
+
     # Replace NaN with zero (filled volume should have no NaN)
     data = np.where(np.isfinite(data), data, 0.0)
+
+    # Subtract a smooth (Gaussian-blurred) background BEFORE windowing so that
+    # only the oscillatory diffuse modulation transforms.  Without this, the
+    # broad ~separable diffuse envelope that survives ring removal / punch /
+    # backfill FTs into a bright cross on the y_K=0 / z_L=0 axes (the scalar
+    # subtract_mean below only removes the DC term, not the envelope shape).
+    # sigma is in r.l.u.  See docs/algorithms/delta_pdf.md.
+    #
+    # A scalar sigma blurs all three axes equally.  A per-axis (sigma_h, sigma_k,
+    # sigma_l) lets you set sigma_h=0 to estimate the background INDEPENDENTLY on
+    # each H plane (slice-wise) — identical to running the 2D per-plane bg, then
+    # one 3D FFT.  This is the right model for H-layered/modulated data, where an
+    # isotropic H-blur (e.g. 1.5 r.l.u. ≈ 45 px on a 0.033-step H axis) would
+    # smear the H=0/±1/3/±2/3 layers into each other's background.
+    if subtract_smooth_bg:
+        if np.isscalar(subtract_smooth_bg):
+            sig_h = sig_k = sig_l = float(subtract_smooth_bg)
+        else:
+            sig_h, sig_k, sig_l = (float(s) for s in subtract_smooth_bg)
+        dh0 = (h_axis[-1] - h_axis[0]) / max(len(h_axis) - 1, 1)
+        dk0 = (k_axis[-1] - k_axis[0]) / max(len(k_axis) - 1, 1)
+        dl0 = (l_axis[-1] - l_axis[0]) / max(len(l_axis) - 1, 1)
+        sigma_px = (sig_h / dh0, sig_k / dk0, sig_l / dl0)
+        data = data - gaussian_filter(data, sigma=sigma_px, mode="nearest")
 
     # Apply apodization window first, then subtract mean of the windowed
     # data so that the DC component (sum) is exactly zero and the r=0
@@ -143,11 +211,11 @@ def compute_delta_pdf(
     ft = fftshift(fftn(ifftshift(data)))
     delta_pdf = np.real(ft)  # take real part (valid for centrosymmetric I(Q))
 
-    # Build real-space axes
+    # Build real-space axes (use possibly-cropped local axes)
     nh, nk, nl = padded_shape
-    dh = (vol.h_axis[-1] - vol.h_axis[0]) / max(len(vol.h_axis) - 1, 1)
-    dk = (vol.k_axis[-1] - vol.k_axis[0]) / max(len(vol.k_axis) - 1, 1)
-    dl = (vol.l_axis[-1] - vol.l_axis[0]) / max(len(vol.l_axis) - 1, 1)
+    dh = (h_axis[-1] - h_axis[0]) / max(len(h_axis) - 1, 1)
+    dk = (k_axis[-1] - k_axis[0]) / max(len(k_axis) - 1, 1)
+    dl = (l_axis[-1] - l_axis[0]) / max(len(l_axis) - 1, 1)
 
     # FFT frequency grid (in reciprocal of HKL step → direct lattice units)
     x_frac = fftshift(fftfreq(nh, d=dh))

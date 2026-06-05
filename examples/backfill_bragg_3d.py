@@ -7,7 +7,7 @@ new all-valid volume for DeltaPDF.
 Run::
 
     PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
-      /opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 \
+      /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 \
       examples/backfill_bragg_3d.py
 
 Env overrides:
@@ -42,8 +42,8 @@ else:
     if not cands:
         raise FileNotFoundError(
             "No Bragg-punched input found in data/processed. Run "
-            "`PYTHONPATH=src /opt/homebrew/Caskroom/miniforge/base/envs/"
-            "sci-general/bin/python3 examples/punch_bragg_3d.py` first, "
+            "`PYTHONPATH=src /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 "
+            "examples/punch_bragg_3d.py` first, "
             "or set DATA_FILE=/path/to/*_braggpunched.h5."
         )
     in_path = next((p for p in cands if "hmid_min1_prom1" in p.stem), cands[-1])

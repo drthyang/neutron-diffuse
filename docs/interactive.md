@@ -25,7 +25,7 @@ PUNCH_PRESET=cc_on MODE=both MIN_I=0.8 MIN_PROM=0.8 \
 INTEGER_FIT_POSITION=1 INTEGER_FIT_SHAPE=1 INTEGER_H_GUARD=0.12 \
 SEARCH_EXCLUDE_H=-0.6667,-0.3333,0.3333,0.6667 SEARCH_EXCLUDE_H_WIDTH=0.08 \
 BACKFILL_METHOD=q_shell H_VALUE=0.3333 \
-/opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 examples/explore_slice.py
+/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/explore_slice.py
 ```
 
 Panels:

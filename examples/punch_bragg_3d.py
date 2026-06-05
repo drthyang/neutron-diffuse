@@ -9,7 +9,7 @@ holes) vs what survives (bright spots — e.g. off-integer satellite reflections
 Run::
 
     PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
-      /opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 \
+      /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 \
       examples/punch_bragg_3d.py
 
 Env overrides:
@@ -137,8 +137,8 @@ else:
     if not cands:
         raise FileNotFoundError(
             "No ring-removed input found in data/processed. Run "
-            "`PYTHONPATH=src /opt/homebrew/Caskroom/miniforge/base/envs/"
-            "sci-general/bin/python3 examples/remove_rings_3d.py` first, "
+            "`PYTHONPATH=src /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 "
+            "examples/remove_rings_3d.py` first, "
             "or set DATA_FILE=/path/to/*_ringremoved.h5."
         )
     in_path = next((p for p in cands if "22K_mmm" in p.stem), cands[0])

@@ -33,7 +33,7 @@ data/raw/*_cc_sub_bkg.nxs
 Use the bundled conda environment:
 
 ```bash
-/opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3
+/Users/tt9/miniforge3/envs/rmc-discord/bin/python3
 ```
 
 There is no `rmc-discord` env on this machine.
@@ -48,7 +48,7 @@ PUNCH_PRESET=cc_on MODE=both MIN_I=0.8 MIN_PROM=0.8 \
 INTEGER_FIT_POSITION=1 INTEGER_FIT_SHAPE=1 INTEGER_H_GUARD=0.12 \
 SEARCH_EXCLUDE_H=-0.6667,-0.3333,0.3333,0.6667 SEARCH_EXCLUDE_H_WIDTH=0.08 \
 BACKFILL_METHOD=q_shell H_VALUE=0.3333 \
-/opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 examples/explore_slice.py
+/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/explore_slice.py
 ```
 
 This opens four panels: `data`, `Removed ring`, `Punched`, `Backfilled`.
@@ -68,17 +68,17 @@ Run from the repo root:
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl RING_PRESET=cc_on \
-/opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 examples/remove_rings_3d.py
+/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/remove_rings_3d.py
 
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl PUNCH_PRESET=cc_on MODE=both \
 MIN_I=0.8 MIN_PROM=0.8 INTEGER_FIT_POSITION=1 INTEGER_FIT_SHAPE=1 \
 INTEGER_H_GUARD=0.12 \
 SEARCH_EXCLUDE_H=-0.6667,-0.3333,0.3333,0.6667 SEARCH_EXCLUDE_H_WIDTH=0.08 \
 PREVIEW=0 \
-/opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 examples/punch_bragg_3d.py
+/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/punch_bragg_3d.py
 
 PYTHONPATH=src METHOD=q_shell \
-/opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 examples/backfill_bragg_3d.py
+/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/backfill_bragg_3d.py
 ```
 
 Outputs are written under `data/processed/`:
@@ -136,13 +136,27 @@ Backfill:
 - The 3D-ΔPDF Fourier-centring bug (missing `ifftshift`, one-sided padding) is
   fixed. Symptom was each atom-like feature splitting into mixed +/- lobes and a
   scrambled `x_H=0` plane. See `docs/algorithms/delta_pdf.md`.
+- The axis **cross** along `y_K=0` / `z_L=0` is diagnosed (2026-06-05): it is
+  the FT of the **residual smooth diffuse envelope** that survives ring removal
+  + Bragg punch + backfill — NOT Bragg leakage or masking. It appears even on
+  Bragg-free planes (`H=1/3`), with 0 % masking on the axis lines. The envelope
+  is ≈ separable, so its FT lands on the axes; `subtract_mean` only removes the
+  scalar DC term, not the envelope shape. Fix (implemented): subtract a smooth
+  background (Gaussian blur `σ≈1.5 r.l.u.`) before windowing — shipped as
+  `subtract_smooth_bg` in `compute_delta_pdf` and `SUBTRACT_BG=<σ rlu>` in the
+  `delta_pdf.py` / `delta_pdf_plane.py` drivers. A threshold-clip alternative
+  (`I_new=max(I−c,0)`) was tested and rejected: it sparsifies the input but does
+  NOT remove the cross (the bright central envelope survives any threshold) and
+  adds hard-edge ripple. See `docs/algorithms/delta_pdf.md` → "The axis cross is
+  the residual diffuse background" / "Methods compared", and the side-by-side
+  driver `examples/compare_delta_pdf_methods.py`.
 
 ## Tests
 
 Latest full suite:
 
 ```bash
-PYTHONPATH=src /opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 \
+PYTHONPATH=src /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 \
   -m pytest -o addopts=''
 ```
 
@@ -160,8 +174,11 @@ correlation peaks). Remaining tuning / inspection:
 - Reduce the near-origin artifact: residual high-`|Q|` Bragg leakage, backfill
   discontinuities at punch boundaries, and the direct-beam punch all feed it.
   Consider tapered punch boundaries or a softer high-`|Q|` window.
-- The faint cross along the `y_K=0` / `z_L=0` axes is a sampling artifact along
-  the punched principal directions — decide whether it needs masking.
+- The cross along the `y_K=0` / `z_L=0` axes is diagnosed and fixed: it is the
+  FT of the residual smooth diffuse background, removed by `SUBTRACT_BG=<σ rlu>`
+  (smooth-bg subtraction; threshold-clip was tested and rejected — see Resolved
+  Issues). Remaining: re-interpret the cleaned H=1/3 / H=2/3 K–L correlation
+  lattice against the TbTi3Bi4 structure, and pick a default `σ` for batch runs.
 - Compare `apodization` (`hann` vs `gaussian` vs `none`) for peak sharpness vs
   termination ripple.
 - Interpret the K-L correlation lattice against the TbTi3Bi4 structure and the

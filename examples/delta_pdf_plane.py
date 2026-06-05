@@ -16,7 +16,7 @@ Saved outputs (same directory as this script):
 Run::
 
     PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl H_PLANE=0.3333 \\
-      /opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 \\
+      /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 \\
       examples/delta_pdf_plane.py
 
 Env overrides:
@@ -26,6 +26,11 @@ Env overrides:
     ZERO_PAD    0|1  (default: 1)
     PAD_FACTOR  real-space oversampling multiple (default: 4; higher = finer
                 interpolated grid, not more true resolution)
+    CROP_K      max |K| in r.l.u. included in FFT (default: full range)
+    CROP_L      max |L| in r.l.u. included in FFT (default: full range)
+    SUBTRACT_BG Gaussian-blur sigma in r.l.u. to subtract the smooth diffuse
+                background before windowing; kills the axis cross (default: off;
+                try ~1.5)
     RMAX_K/RMAX_L  real-space plot radius in Å (default: 20)
     VMAX        colour-scale half-range (default: auto p99 at r>3 Å)
 """
@@ -40,6 +45,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.fft import fft2, fftshift, ifftshift, fftfreq
+from scipy.ndimage import gaussian_filter
 
 import ndiff
 
@@ -59,8 +65,11 @@ h_plane    = float(os.environ.get("H_PLANE", "0.3333"))
 apodize    = os.environ.get("APODIZE", "hann")
 zero_pad   = bool(int(os.environ.get("ZERO_PAD", "1")))
 pad_factor = int(os.environ.get("PAD_FACTOR", "4"))   # real-space oversampling
-rmax_k   = float(os.environ.get("RMAX_K", "20.0"))
-rmax_l   = float(os.environ.get("RMAX_L", "20.0"))
+crop_k     = float(os.environ.get("CROP_K", "0")) or None
+crop_l     = float(os.environ.get("CROP_L", "0")) or None
+subtract_bg = float(os.environ.get("SUBTRACT_BG", "0")) or None
+rmax_k     = float(os.environ.get("RMAX_K", "20.0"))
+rmax_l     = float(os.environ.get("RMAX_L", "20.0"))
 
 print(f"loading {proc_path.name} ...", flush=True)
 vol = ndiff.load(proc_path)
@@ -69,10 +78,40 @@ ih = int(np.argmin(np.abs(vol.h_axis - h_plane)))
 h_actual = float(vol.h_axis[ih])
 print(f"  H={h_plane} → index {ih} (h_axis={h_actual:.5f})", flush=True)
 
-plane = vol.data[ih, :, :].astype(np.float64)   # (nK, nL)
+plane  = vol.data[ih, :, :].astype(np.float64)   # (nK, nL)
+k_axis = vol.k_axis.copy()
+l_axis = vol.l_axis.copy()
+
+# Crop to ±CROP_K / ±CROP_L in r.l.u. before FFT
+if crop_k is not None:
+    ik = np.where(np.abs(k_axis) <= crop_k)[0]
+    plane  = plane[ik[0]:ik[-1]+1, :]
+    k_axis = k_axis[ik[0]:ik[-1]+1]
+if crop_l is not None:
+    il = np.where(np.abs(l_axis) <= crop_l)[0]
+    plane  = plane[:, il[0]:il[-1]+1]
+    l_axis = l_axis[il[0]:il[-1]+1]
+
 plane = np.where(np.isfinite(plane), plane, 0.0)
 print(f"  plane shape (K,L): {plane.shape}  "
-      f"mean={plane.mean():.4g}  std={plane.std():.4g}", flush=True)
+      f"mean={plane.mean():.4g}  std={plane.std():.4g}"
+      + (f"  crop K=±{crop_k} L=±{crop_l}" if crop_k or crop_l else ""),
+      flush=True)
+
+# Subtract a smooth (Gaussian-blurred) background BEFORE windowing so only the
+# oscillatory diffuse modulation transforms.  Without this, the broad ~separable
+# diffuse envelope FTs into a bright cross on the y_K=0 / z_L=0 axes.  sigma is
+# in r.l.u.  `plane` (the displayed input) is left untouched; only the
+# transform input `plane_ft` has the background removed.
+plane_ft = plane
+if subtract_bg:
+    _dk = (k_axis[-1] - k_axis[0]) / max(len(k_axis) - 1, 1)
+    _dl = (l_axis[-1] - l_axis[0]) / max(len(l_axis) - 1, 1)
+    bg = gaussian_filter(plane, sigma=(subtract_bg / _dk, subtract_bg / _dl),
+                         mode="nearest")
+    plane_ft = plane - bg
+    print(f"  subtracted smooth bg: sigma={subtract_bg} rlu "
+          f"({subtract_bg/_dk:.1f}×{subtract_bg/_dl:.1f} px)", flush=True)
 
 # ------------------------------------------------------------------
 # 2D windowed transform
@@ -85,9 +124,9 @@ def _win1d(n: int) -> np.ndarray:
         return np.exp(-0.5 * (x / 0.5) ** 2)
     return np.ones(n)
 
-wk = _win1d(plane.shape[0])[:, None]
-wl = _win1d(plane.shape[1])[None, :]
-data = plane * (wk * wl)
+wk = _win1d(plane_ft.shape[0])[:, None]
+wl = _win1d(plane_ft.shape[1])[None, :]
+data = plane_ft * (wk * wl)
 data -= data.mean()              # window first, then zero the DC (see delta_pdf.py)
 
 if zero_pad:
@@ -115,8 +154,8 @@ print(f"  output shape: {pdf2d.shape}", flush=True)
 # ------------------------------------------------------------------
 # real-space axes in Å (K, L directions)
 # ------------------------------------------------------------------
-dk = (vol.k_axis[-1] - vol.k_axis[0]) / max(len(vol.k_axis) - 1, 1)
-dl = (vol.l_axis[-1] - vol.l_axis[0]) / max(len(vol.l_axis) - 1, 1)
+dk = (k_axis[-1] - k_axis[0]) / max(len(k_axis) - 1, 1)
+dl = (l_axis[-1] - l_axis[0]) / max(len(l_axis) - 1, 1)
 nk, nl = pdf2d.shape
 y_frac = fftshift(fftfreq(nk, d=dk))
 z_frac = fftshift(fftfreq(nl, d=dl))
@@ -143,7 +182,7 @@ fig, (axL, axR) = plt.subplots(1, 2, figsize=(13, 6))
 # input diffuse plane
 imL = axL.imshow(
     plane.T, origin="lower", aspect="auto",
-    extent=[vol.k_axis[0], vol.k_axis[-1], vol.l_axis[0], vol.l_axis[-1]],
+    extent=[k_axis[0], k_axis[-1], l_axis[0], l_axis[-1]],
     cmap="viridis", vmin=0, vmax=np.percentile(plane, 99),
 )
 axL.set_title(f"input: cleaned diffuse plane H={h_actual:.4f}")
@@ -168,7 +207,11 @@ for sign in (-1, 1):
     axR.axhline(sign * c_len, color="r", lw=0.7, ls=":", alpha=0.6)
 plt.colorbar(imR, ax=axR, label="ΔPDF (arb.)")
 
-fig.suptitle(f"Single-plane 2D-ΔPDF  (H={h_actual:.4f}, apodize={apodize})", y=1.02)
+_bg_note = f", bg σ={subtract_bg} rlu" if subtract_bg else ""
+fig.suptitle(
+    f"Single-plane 2D-ΔPDF  (H={h_actual:.4f}, apodize={apodize}{_bg_note})",
+    y=1.02,
+)
 fig.tight_layout()
 
 tag = f"{h_actual:+.4f}".replace(".", "p").replace("+", "p").replace("-", "m")

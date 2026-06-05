@@ -69,10 +69,66 @@ already correct. Zero-padding is sinc-interpolation only — it gives a finer
 display grid, not more intrinsic resolution (that is fixed by the `|Q|` range
 and the apodization window).
 
-## Near-origin artifact (expected, not the bug)
+## Near-origin spike (expected, not the bug)
 
-A strong feature at `r < ~3 Å` and a faint cross along the principal axes remain
-after the fix. These come from residual high-`|Q|` Bragg leakage, the backfill
-discontinuities at punch boundaries, and the direct-beam punch — not from the
-transform itself. Plot colour scales are set from the `p99` of `|ΔPDF|` at
+A strong feature at `r < ~3 Å` remains after the fix. It comes from residual
+high-`|Q|` Bragg leakage, the backfill discontinuities at punch boundaries, and
+the direct-beam punch. Plot colour scales are set from the `p99` of `|ΔPDF|` at
 `r > 3 Å` so this near-origin spike does not dominate the display.
+
+## The axis cross is the residual diffuse background (diagnosed 2026-06-05)
+
+A bright **cross** along the `y_K=0` and `z_L=0` axes appears in the real-space
+map. It is **not** a Bragg/punch/masking artifact: it is present even on planes
+with no Bragg peaks (e.g. `H=1/3`), the input has **0 % masked voxels** along
+the axis lines, and replacing the exact `K=0`/`L=0` input lines with neighbour
+averages changes nothing.
+
+**Root cause.** Ring removal, Bragg punching, and backfill remove rings
+(azimuthal), sharp local peaks, and holes — but **none of them removes the
+broad, slowly-varying diffuse *envelope***: a smooth positive hump centred near
+`K=L=0` that decays toward the edges, with ridges along the principal axes.
+`subtract_mean` only removes the scalar DC term (killing the `r=0` spike); it
+leaves the shape of the envelope untouched. That envelope is approximately
+**separable** (`≈ f(K) + g(L)`), and the FT of a separable function concentrates
+its energy *on the two axes* → a cross at `y_K=0` / `z_L=0`. The Hann window,
+itself a centred separable hump, multiplies in and sharpens the cross.
+Directionally: the horizontal arm (`z_L=0`) is the FT of the L-averaged
+K-profile; the vertical arm (`y_K=0`) is the FT of the K-averaged L-profile.
+
+Why `apodize="none"` *looks* like it has a smaller cross: hard truncation
+sprays termination ripple everywhere, raising the off-axis floor, so the cross
+ratio drops — the window does not *create* the cross, it cleans everything
+*except* the cross (which is real low-frequency signal).
+
+**Fix.** Subtract a smooth background **before** windowing so only the
+oscillatory modulation transforms. A Gaussian blur (`σ ≈ 1.5 r.l.u.`) collapses
+the cross while preserving the off-axis correlation lattice and the genuine
+correlation peaks that happen to sit on the axes. Trade-off (standard for
+ΔPDF): this also removes genuine very-long-period / low-`r` correlations — but
+those live at the same scale as the un-subtractable background, so they cannot
+be cleanly separated from it anyway. Subtracting the exact separable marginals
+(`per-row + per-col means`) removes the artifact slightly more completely but is
+cruder than a smooth blur.
+
+### Methods compared (smooth-bg wins)
+
+`examples/compare_delta_pdf_methods.py` puts three background-removal methods
+side by side on a shared colour scale for H=0, 1/3, 2/3:
+
+| method | what it does | effect on the cross |
+| --- | --- | --- |
+| **baseline** | subtract scalar mean only | cross present |
+| **threshold-clip** | `I_new = max(I − c, 0)`, `c` = a percentile | **cross remains ≈ baseline** |
+| **smooth-bg** | `I_new = I − GaussianBlur(I, σ≈1.5 rlu)` | **cross removed, lattice clean** |
+
+Threshold-clip *sparsifies the input* (looks cleaner) but barely changes the
+transform: on H=1/3 even keeping only 10 % of voxels drops the cross ratio from
+~36 to ~11, versus ~6 for smooth-bg. It targets the wrong component — it removes
+the dim background tails, but the cross is made by the **bright central
+envelope**, which is the highest-intensity region and so survives any threshold.
+It also adds hard-edge termination ripple and discards the negative excursions
+of `I_diffuse` (regions with *fewer* pairs than average), which a ΔPDF needs.
+
+**Use smooth-bg subtraction** (`subtract_smooth_bg` in `compute_delta_pdf`;
+`SUBTRACT_BG=<σ rlu>` in `examples/delta_pdf_plane.py` / `examples/delta_pdf.py`).

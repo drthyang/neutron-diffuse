@@ -24,17 +24,17 @@ Mantid-background-subtracted `*_cc_sub_bkg.nxs` file in `data/raw/`.
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl RING_PRESET=cc_on \
-/opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 examples/remove_rings_3d.py
+/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/remove_rings_3d.py
 
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl PUNCH_PRESET=cc_on MODE=both \
 MIN_I=0.8 MIN_PROM=0.8 INTEGER_FIT_POSITION=1 INTEGER_FIT_SHAPE=1 \
 INTEGER_H_GUARD=0.12 \
 SEARCH_EXCLUDE_H=-0.6667,-0.3333,0.3333,0.6667 SEARCH_EXCLUDE_H_WIDTH=0.08 \
 PREVIEW=0 \
-/opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 examples/punch_bragg_3d.py
+/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/punch_bragg_3d.py
 
 PYTHONPATH=src METHOD=q_shell \
-/opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 examples/backfill_bragg_3d.py
+/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/backfill_bragg_3d.py
 ```
 
 The three scripts write:
@@ -51,7 +51,7 @@ PUNCH_PRESET=cc_on MODE=both MIN_I=0.8 MIN_PROM=0.8 \
 INTEGER_FIT_POSITION=1 INTEGER_FIT_SHAPE=1 INTEGER_H_GUARD=0.12 \
 SEARCH_EXCLUDE_H=-0.6667,-0.3333,0.3333,0.6667 SEARCH_EXCLUDE_H_WIDTH=0.08 \
 BACKFILL_METHOD=q_shell H_VALUE=0.3333 \
-/opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 examples/explore_slice.py
+/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/explore_slice.py
 ```
 
 The viewer shows `data`, `Removed ring`, `Punched`, and `Backfilled`, with an H
@@ -150,7 +150,7 @@ src/ndiff/
 ## Testing
 
 ```bash
-PYTHONPATH=src /opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 \
+PYTHONPATH=src /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 \
   -m pytest -o addopts=''
 ```
 

@@ -302,76 +302,101 @@ remover = BraggRemover(
     search_exclude_h_half_width=search_exclude_h_width,
 )
 
-# Compute ring removal for every H plane so the viewer can scrub H.  This keeps
-# the slice-validated fit independent on each plane, matching remove_rings_3d.py.
-MASK_SPARSE = True
-residual_data = np.empty_like(data.data)
-residual_mask = data.mask.copy()
-sparse_dropped = 0
-n_skipped = 0
+# ------------------------------------------------------------------
+# Step 1: ring removal — compute or load from RING_FILE
+# ------------------------------------------------------------------
+ring_file = os.environ.get("RING_FILE")
+if ring_file:
+    print(f"loading ring-removed volume from {ring_file} ...", flush=True)
+    residual = ndiff.load(Path(ring_file))
+else:
+    # Compute ring removal for every H plane so the viewer can scrub H.
+    MASK_SPARSE = True
+    residual_data = np.empty_like(data.data)
+    residual_mask = data.mask.copy()
+    sparse_dropped = 0
+    n_skipped = 0
 
-print(f"processing {data.shape[0]} H planes for the slider...", flush=True)
-for ih in range(data.shape[0]):
-    d = _hslice(data, ih)
-    if USE_BACKGROUND:
-        sub = EmptySubtractor(_hslice(bkg, ih), scale_q_range=(2.4, 3.3))
-        src = sub.subtract(d)
-    else:
-        src = d
+    print(f"processing {data.shape[0]} H planes for the slider...", flush=True)
+    for ih in range(data.shape[0]):
+        d = _hslice(data, ih)
+        if USE_BACKGROUND:
+            sub = EmptySubtractor(_hslice(bkg, ih), scale_q_range=(2.4, 3.3))
+            src = sub.subtract(d)
+        else:
+            src = d
 
-    if MASK_SPARSE:
-        keep_sparse = azimuthal_sampling_mask(
-            src, plane="0kl", min_count_frac=0.25, q_range=q_range
-        )
-        sparse_dropped += int((src.mask & ~keep_sparse).sum())
-        src = dataclasses.replace(src, mask=keep_sparse)
+        if MASK_SPARSE:
+            keep_sparse = azimuthal_sampling_mask(
+                src, plane="0kl", min_count_frac=0.25, q_range=q_range
+            )
+            sparse_dropped += int((src.mask & ~keep_sparse).sum())
+            src = dataclasses.replace(src, mask=keep_sparse)
 
-    valid = src.mask & np.isfinite(src.data)
-    if int(valid.sum()) < prm.min_voxels_per_patch:
-        residual_data[ih] = src.data[0]
+        valid = src.mask & np.isfinite(src.data)
+        if int(valid.sum()) < prm.min_voxels_per_patch:
+            residual_data[ih] = src.data[0]
+            residual_mask[ih] = src.mask[0]
+            n_skipped += 1
+            continue
+
+        try:
+            prof = prm.fit(src, q_range=q_range)
+            _, I_ring = prm.subtract(src, prof)
+        except Exception as exc:
+            print(f"  H[{ih}]={data.h_axis[ih]:+.3f}: fit failed ({exc}); left as-is",
+                  flush=True)
+            residual_data[ih] = src.data[0]
+            residual_mask[ih] = src.mask[0]
+            n_skipped += 1
+            continue
+
+        residual_data[ih] = src.data[0] - I_ring[0]
         residual_mask[ih] = src.mask[0]
-        n_skipped += 1
-        continue
+        if ih % 30 == 0 or ih == data.shape[0] - 1:
+            print(f"  H[{ih:3d}]={data.h_axis[ih]:+.3f}", flush=True)
 
-    try:
-        prof = prm.fit(src, q_range=q_range)
-        _, I_ring = prm.subtract(src, prof)
-    except Exception as exc:
-        print(f"  H[{ih}]={data.h_axis[ih]:+.3f}: fit failed ({exc}); left as-is",
-              flush=True)
-        residual_data[ih] = src.data[0]
-        residual_mask[ih] = src.mask[0]
-        n_skipped += 1
-        continue
+    residual = dataclasses.replace(data, data=residual_data, mask=residual_mask)
+    print(f"sparse-azimuth mask: dropped {sparse_dropped} voxels across H")
+    if n_skipped:
+        print(f"ring removal: {n_skipped} sparse/failed H planes left unchanged")
 
-    residual_data[ih] = src.data[0] - I_ring[0]
-    residual_mask[ih] = src.mask[0]
-    if ih % 30 == 0 or ih == data.shape[0] - 1:
-        print(f"  H[{ih:3d}]={data.h_axis[ih]:+.3f}", flush=True)
+# ------------------------------------------------------------------
+# Step 2: Bragg punch — compute or load from PUNCH_FILE
+# ------------------------------------------------------------------
+punch_file = os.environ.get("PUNCH_FILE")
+if punch_file:
+    print(f"loading punched volume from {punch_file} ...", flush=True)
+    punched = ndiff.load(Path(punch_file))
+    punched_voxels = residual.mask & ~punched.mask
+else:
+    peaks = remover.detect_peaks(residual)
+    keep = remover.build_mask(residual)
+    punched_mask = residual.mask & keep
+    punched_voxels = residual.mask & ~keep
+    punched = dataclasses.replace(residual, mask=punched_mask)
 
-residual = dataclasses.replace(data, data=residual_data, mask=residual_mask)
-print(f"sparse-azimuth mask: dropped {sparse_dropped} voxels across H")
-if n_skipped:
-    print(f"ring removal: {n_skipped} sparse/failed H planes left unchanged")
+# ------------------------------------------------------------------
+# Step 3: backfill — compute or load from BACKFILL_FILE
+# ------------------------------------------------------------------
+backfill_file = os.environ.get("BACKFILL_FILE")
+if backfill_file:
+    print(f"loading backfilled volume from {backfill_file} ...", flush=True)
+    backfilled = ndiff.load(Path(backfill_file))
+else:
+    punch_only = dataclasses.replace(residual, mask=~punched_voxels)
+    backfill_method = os.environ.get("BACKFILL_METHOD", "local")
+    backfilled = backfill_bragg(
+        punch_only,
+        method=backfill_method,
+        tv_lam=float(os.environ.get("TV_LAM", "0.2")),
+        tv_iter=int(os.environ.get("TV_ITER", "300")),
+        local_radius=int(os.environ.get("LOCAL_RADIUS", "2")),
+        local_min_count=int(os.environ.get("LOCAL_MIN_COUNT", "8")),
+        q_shell_step=float(os.environ.get("Q_SHELL_STEP", "0.05")),
+        q_shell_min_count=int(os.environ.get("Q_SHELL_MIN_COUNT", "20")),
+    )
 
-peaks = remover.detect_peaks(residual)
-keep = remover.build_mask(residual)
-punched_mask = residual.mask & keep
-punched_voxels = residual.mask & ~keep
-punched = dataclasses.replace(residual, mask=punched_mask)
-punch_only = dataclasses.replace(residual, mask=~punched_voxels)
-
-backfill_method = os.environ.get("BACKFILL_METHOD", "local")
-backfilled = backfill_bragg(
-    punch_only,
-    method=backfill_method,
-    tv_lam=float(os.environ.get("TV_LAM", "0.2")),
-    tv_iter=int(os.environ.get("TV_ITER", "300")),
-    local_radius=int(os.environ.get("LOCAL_RADIUS", "2")),
-    local_min_count=int(os.environ.get("LOCAL_MIN_COUNT", "8")),
-    q_shell_step=float(os.environ.get("Q_SHELL_STEP", "0.05")),
-    q_shell_min_count=int(os.environ.get("Q_SHELL_MIN_COUNT", "20")),
-)
 # Keep the original mask for display, but reveal the small unmeasured direct-beam
 # shadow at the very origin (|Q|≈0): those voxels were deliberately filled with the
 # just-outside diffuse background, so they should show rather than being re-hidden
@@ -381,20 +406,21 @@ backfilled = backfill_bragg(
 # H=0.333 diffuse), since |Q| is isotropic but H steps are coarse.
 direct_beam_show_q = float(os.environ.get("DIRECT_BEAM_SHOW_Q", "0.15"))
 beam_ball = residual.q_magnitude() <= direct_beam_show_q
-backfilled = dataclasses.replace(backfilled, mask=residual.mask | beam_ball)
+backfilled = dataclasses.replace(backfilled, mask=backfilled.mask | beam_ball)
 
 print(f"0kl volume viewer initial H={H_VALUE:.4g}  "
       f"background={'on' if USE_BACKGROUND else 'OFF'}  "
-      f"non-parametric radial-background subtraction")
+      f"ring={'loaded' if ring_file else 'computed'}  "
+      f"punch={'loaded' if punch_file else 'computed'}  "
+      f"backfill={'loaded' if backfill_file else 'computed'}")
 valid = residual.mask & np.isfinite(residual.data)
-print(f"Bragg punch: preset={punch_preset_name} mode={mode} radii={r_hkl} "
-      f"phi_tail={phi_tail_hkl} peaks={len(peaks)}")
-print(f"Incident beam punch: radii={incident_r_hkl} margin={incident_margin} "
-      f"phi_tail={incident_phi_tail} "
-      f"ellipsoid={incident_ellipsoid_radii} sphere_r={incident_sphere_radius}")
+if not punch_file:
+    print(f"Bragg punch: preset={punch_preset_name} mode={mode} radii={r_hkl} "
+          f"phi_tail={phi_tail_hkl} peaks={len(peaks)}")
 print(f"Total punched: {int(punched_voxels.sum())} voxels "
       f"({100 * punched_voxels.sum() / max(int(valid.sum()), 1):.2f}% of valid)")
-print(f"Backfill: method={backfill_method}")
+if not backfill_file:
+    print(f"Backfill: method={os.environ.get('BACKFILL_METHOD', 'local')}")
 print("Drag the H slider to scrub planes; drag the vmin/vmax sliders; "
       "toggle linear/log₁₀ (bottom-left). "
       "Close the window to exit.")
