@@ -154,11 +154,13 @@ PYTHONPATH=src /opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python
   -m pytest -o addopts=''
 ```
 
-Current expected result: `73 passed`.
+Current expected result: `74 passed`.
 
 ## Status
 
-Ring removal and Bragg cleanup are in active real-data QA. The next development
-stage is the final 3D-DeltaPDF Fourier transform inspection and tuning. See
-[HANDOFF.md](HANDOFF.md) for the current operational state and
-[ROADMAP.md](ROADMAP.md) for the phase plan.
+The full pipeline runs end to end: ring removal → Bragg cleanup → 3D-ΔPDF. A
+Fourier-centring bug in the ΔPDF transform was found and fixed (see
+[docs/algorithms/delta_pdf.md](docs/algorithms/delta_pdf.md)); the transform now
+yields coherent real-space correlation peaks. Remaining work is artifact
+reduction and physical interpretation. See [HANDOFF.md](HANDOFF.md) for the
+current operational state and [ROADMAP.md](ROADMAP.md) for the phase plan.

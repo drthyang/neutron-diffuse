@@ -39,7 +39,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.fft import fft2, fftshift, fftfreq
+from scipy.fft import fft2, fftshift, ifftshift, fftfreq
 
 import ndiff
 
@@ -94,14 +94,21 @@ if zero_pad:
     # Oversample by PAD_FACTOR×next-power-of-2.  Zero-padding does NOT add true
     # resolution (that is fixed by the Q-range and apodization) — it interpolates
     # the transform onto a finer real-space grid, removing display pixelation and
-    # revealing the underlying continuous ΔPDF shape.
+    # revealing the underlying continuous ΔPDF shape.  Pad SYMMETRICALLY so the
+    # Q=0 origin stays at the centre (one-sided padding shifts it and breaks the
+    # ifftshift centring below).
     target = tuple(
         1 if s == 0 else pad_factor * 2 ** int(np.ceil(np.log2(s)))
         for s in data.shape
     )
-    data = np.pad(data, [(0, t - s) for s, t in zip(data.shape, target)])
+    pad = [(t // 2 - s // 2, t - s - (t // 2 - s // 2))
+           for s, t in zip(data.shape, target)]
+    data = np.pad(data, pad)
 
-ft = fftshift(fft2(data))
+# ifftshift moves the centre Q=0 origin to index [0,0] (fftn's assumed origin);
+# without it the transform gains a (-1)^k phase ramp that flips real-space peak
+# signs by pixel parity.  See src/ndiff/analysis/delta_pdf.py.
+ft = fftshift(fft2(ifftshift(data)))
 pdf2d = np.real(ft)
 print(f"  output shape: {pdf2d.shape}", flush=True)
 

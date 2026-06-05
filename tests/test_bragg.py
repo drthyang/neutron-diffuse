@@ -462,3 +462,32 @@ def test_delta_pdf_hk0_slice():
     dpdf = compute_delta_pdf(vol, apodization="none", zero_pad=False)
     sl = dpdf.slice_hk0()
     assert sl.shape == (8, 8)
+
+
+def test_delta_pdf_centring_positive_peak():
+    """A single positive cosine correlation must give POSITIVE real-space peaks.
+
+    Regression guard for the FFT origin-centring bug: the input has Q=0 at the
+    array centre, so the transform needs ifftshift before fftn.  Without it the
+    output picks up a (-1)^k phase ramp that flips peak signs by pixel parity
+    (each correlation splits into mixed +/- lobes).  With I(Q)=1+cos(2π·3·(i-c)/N)
+    — even about the Q=0 centre — the buggy transform produced -2048 where the
+    correct one produces +2048.
+    """
+    N, c = 16, 8
+    idx = np.arange(N)
+    line = 1.0 + np.cos(2 * np.pi * 3 * (idx - c) / N)  # even about Q=0
+    data = np.broadcast_to(line[:, None, None], (N, N, N)).astype(float).copy()
+    ub = 2 * np.pi * np.eye(3) / 4.0
+    vol = HKLVolume.from_arrays(data, (-2, 2), (-2, 2), (-2, 2), ub_matrix=ub)
+
+    dpdf = compute_delta_pdf(
+        vol, apodization="none", zero_pad=False,
+        subtract_mean=True, real_space_angstrom=False,
+    )
+    hline = dpdf.data[:, c, c]
+    peaks = np.where(np.abs(hline) > 0.5 * np.abs(hline).max())[0]
+
+    assert list(peaks) == [c - 3, c + 3]           # peaks at the right distance
+    assert (hline[peaks] > 0).all()                # correct sign (was negative)
+    assert np.isclose(hline[c - 3], hline[c + 3])  # centrosymmetric

@@ -21,7 +21,7 @@ from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.fft import fftn, fftshift, fftfreq
+from scipy.fft import fftn, fftshift, ifftshift, fftfreq
 
 
 Window = Literal["hann", "gaussian", "none"]
@@ -121,16 +121,26 @@ def compute_delta_pdf(
     if subtract_mean:
         data -= data.mean()
 
-    # Zero-pad to next power-of-2 for efficiency
+    # Zero-pad to next power-of-2 for efficiency.  Pad SYMMETRICALLY so the
+    # Q=0 origin (at index s//2 of each axis) stays at the centre of the
+    # padded array — one-sided padding would shift the origin and reintroduce
+    # the phase ramp that ifftshift (below) removes.
     if zero_pad:
         padded_shape = tuple(_next_power_of_2(s) for s in data.shape)
-        pad_width = [(0, ps - s) for s, ps in zip(data.shape, padded_shape)]
-        data = np.pad(data, pad_width, mode="constant")
     else:
         padded_shape = data.shape
+    pad_width = []
+    for s, ps in zip(data.shape, padded_shape):
+        lo = ps // 2 - s // 2          # land the origin on the new centre ps//2
+        pad_width.append((lo, ps - s - lo))
+    data = np.pad(data, pad_width, mode="constant")
 
-    # 3D FFT → shift origin to centre
-    ft = fftshift(fftn(data))
+    # The input has its Q=0 origin at the array centre, but fftn treats index
+    # [0,0,0] as the origin.  Without ifftshift the transform picks up a linear
+    # phase ramp e^{-iπk} → (-1)^k, which flips the sign of real-space features
+    # by pixel parity and splits each correlation peak into mixed +/- lobes.
+    # The correct centred transform is fftshift(fftn(ifftshift(·))).
+    ft = fftshift(fftn(ifftshift(data)))
     delta_pdf = np.real(ft)  # take real part (valid for centrosymmetric I(Q))
 
     # Build real-space axes

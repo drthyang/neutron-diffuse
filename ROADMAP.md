@@ -9,7 +9,7 @@
   1. Powder-ring subtraction        implemented, real-data QA active
   2. Bragg/satellite punch          implemented, real-data QA active
   3. Bragg-hole backfill            implemented, real-data QA active
-  4. 3D-DeltaPDF Fourier transform  implemented, next tuning stage
+  4. 3D-DeltaPDF Fourier transform  implemented, centring bug fixed
 ```
 
 The current development goal is to enter the final 3D-DeltaPDF stage with a
@@ -98,25 +98,37 @@ Open validation:
 - Decide whether search exclusions should be derived from known magnetic diffuse
   planes rather than passed manually.
 
-## Phase 4 — 3D-DeltaPDF  Next Stage
+## Phase 4 — 3D-DeltaPDF  Implemented
 
-Implemented API:
+Implemented API and drivers:
 
-- `ndiff.analysis.compute_delta_pdf`
-- apodization: `hann`, `gaussian`, `none`
-- optional mean subtraction
-- optional zero padding
-- real-space axes from UB matrix
+- `ndiff.analysis.compute_delta_pdf` (algorithm: `docs/algorithms/delta_pdf.md`)
+- apodization: `hann`, `gaussian`, `none`; optional mean subtraction; symmetric
+  zero padding; real-space axes from the UB matrix
+- `examples/delta_pdf.py` — full 3D transform; slice/line-cut/radial PNGs and a
+  `_delta_pdf.h5` cache
+- `examples/delta_pdf_plane.py` — single reciprocal H-plane 2D-ΔPDF
+- `examples/explore_delta_pdf.py` — interactive y_K–z_L viewer with x_H slider
 
-Next work:
+Correct transform recipe `fftshift(fftn(ifftshift(·)))` with symmetric padding;
+the real part is valid for the centrosymmetric (`mmm`) data.
 
-- Run the transform on the current backfilled volume.
-- Inspect real-space artifacts from ring residuals, Bragg holes, direct beam, and
-  q-shell backfill.
-- Tune apodization and mean subtraction.
-- Add a real-data DeltaPDF driver script if the manual API path becomes
-  repetitive.
-- Document the chosen transform settings and expected outputs.
+Resolved issues:
+
+- **Fourier-centring bug fixed (2026-06-05).** The transform lacked `ifftshift`
+  on the centre-origin input and used one-sided padding, flipping real-space
+  peak signs by pixel parity (mixed +/- lobes per feature; scrambled `x_H=0`).
+  Guarded by `test_delta_pdf_centring_positive_peak`.
+- DC handling: subtract the mean *after* windowing so `Σ I = 0` and the `r=0`
+  self-correlation spike is suppressed.
+
+Next work / open validation:
+
+- Reduce the near-origin artifact (residual Bragg leakage, backfill
+  discontinuities, direct-beam punch); consider tapered punch boundaries.
+- Decide whether the principal-axis cross artifact needs masking.
+- Compare apodization choices for peak sharpness vs termination ripple.
+- Interpret the correlation lattice against the structure / H=±1/3 modulation.
 
 ## Phase 5 — Release Hygiene  In Progress
 

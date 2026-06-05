@@ -6,12 +6,23 @@
 
 ## Current State
 
-The cleanup pipeline is ready for final real-space testing:
+The full pipeline now runs end to end through the 3D-ΔPDF:
 
 1. Full-3D powder-ring subtraction via `examples/remove_rings_3d.py`.
 2. Guarded Bragg/satellite punch via `examples/punch_bragg_3d.py`.
 3. Bragg-hole backfill via `examples/backfill_bragg_3d.py`.
-4. Next stage: inspect and tune the 3D-DeltaPDF Fourier transform.
+4. 3D-ΔPDF transform via `examples/delta_pdf.py` (full 3D),
+   `examples/delta_pdf_plane.py` (single reciprocal H-plane 2D), and
+   `examples/explore_delta_pdf.py` (interactive y_K–z_L viewer, x_H slider).
+
+A **Fourier-centring bug** in `compute_delta_pdf` was found and fixed
+(2026-06-05): the transform was missing `ifftshift` on the centred input and
+used one-sided zero-padding, which flipped real-space peak signs by pixel
+parity (each correlation split into +/- lobes; `x_H=0` looked scrambled). The
+correct recipe is `fftshift(fftn(ifftshift(·)))` with symmetric padding. See
+`docs/algorithms/delta_pdf.md` and regression test
+`test_delta_pdf_centring_positive_peak`. After the fix the ΔPDF shows coherent
+single-sign correlation peaks on the expected b/c lattice.
 
 Preferred input on this machine is the Mantid-background-subtracted file:
 
@@ -122,6 +133,9 @@ Backfill:
 - The direct-beam fill originally bled into neighbouring H planes when using a
   solid `|Q|` ball. It now fills only the connected beam footprint and enclosed
   shadow.
+- The 3D-ΔPDF Fourier-centring bug (missing `ifftshift`, one-sided padding) is
+  fixed. Symptom was each atom-like feature splitting into mixed +/- lobes and a
+  scrambled `x_H=0` plane. See `docs/algorithms/delta_pdf.md`.
 
 ## Tests
 
@@ -132,17 +146,23 @@ PYTHONPATH=src /opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python
   -m pytest -o addopts=''
 ```
 
-Expected current result: `73 passed`.
+Expected current result: `74 passed` (includes the ΔPDF centring guard
+`test_delta_pdf_centring_positive_peak`).
 
 `ruff` is not installed in the `sci-general` env. Use `git diff --check` plus
 `py_compile` locally, or install/use a dev env for full linting.
 
 ## Next Step
 
-Start the final Fourier/3D-DeltaPDF stage from the backfilled `.h5` output.
-Before tuning the transform, inspect:
+The 3D-ΔPDF now produces a physically sensible map (coherent single-sign
+correlation peaks). Remaining tuning / inspection:
 
-- whether `MODE=both` with protected fractional-H planes leaves any obvious
-  small Bragg peaks,
-- whether `q_shell` backfill creates radial steps around large Bragg holes,
-- whether the direct-beam patch is acceptable in low-|Q| DeltaPDF artifacts.
+- Reduce the near-origin artifact: residual high-`|Q|` Bragg leakage, backfill
+  discontinuities at punch boundaries, and the direct-beam punch all feed it.
+  Consider tapered punch boundaries or a softer high-`|Q|` window.
+- The faint cross along the `y_K=0` / `z_L=0` axes is a sampling artifact along
+  the punched principal directions — decide whether it needs masking.
+- Compare `apodization` (`hann` vs `gaussian` vs `none`) for peak sharpness vs
+  termination ripple.
+- Interpret the K-L correlation lattice against the TbTi3Bi4 structure and the
+  H=±1/3 modulation.
