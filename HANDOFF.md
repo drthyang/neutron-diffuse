@@ -131,13 +131,23 @@ parameters `direct_beam_fill=True`, `direct_beam_q_gap=0.05`,
 `direct_beam_q_width=0.15`): it finds the origin-connected blob of *punched holes ∪
 unmeasured shadow*, caps it at the **first |Q| gap** in the blob's voxels (so a
 punch bridged toward `(0,0,2)` doesn't drag that node in — gap threshold adapts to
-the local |Q| sampling), and replaces the **whole beam ball** with the median
-diffuse level in a thin |Q| shell just outside the beam edge.  `explore_slice.py`
-reveals the filled ball (`DIRECT_BEAM_SHOW_Q=0.40`) instead of re-masking it.
-Result: the direct-beam spot is one clean patch of the just-outside background — no
-pit, no negative rim.  Test: `test_direct_beam_fill_uses_background_outside_not_adjacent_halo`
+the local |Q| sampling), and replaces it with the median diffuse level in a thin
+|Q| shell just outside the beam edge.  **The fill region is the connected
+component itself (`binary_fill_holes` adds only its enclosed central shadow), NOT
+the solid |Q| ball `q≤q_beam`** — a |Q| ball is isotropic in Å⁻¹ but, because the
+lattice is very anisotropic, it bleeds many rlu along the fine H axis and across H
+into the *origin column of neighbouring planes* (it was over-writing the H=0.333
+diffuse — fixed 2026-06-04 by restricting to the component, which is confined to
+|H|≲0.2; verified 0 filled voxels at H=0.333).  `explore_slice.py`
+reveals only the small unmeasured shadow at the very origin
+(`DIRECT_BEAM_SHOW_Q=0.15`, was 0.40 — a larger ball un-masked the origin column of
+other H planes) instead of re-masking it.  Result: the direct-beam spot is one
+clean patch of the just-outside background — no pit, no negative rim, confined to
+H≈0.  Test: `test_direct_beam_fill_uses_background_outside_not_adjacent_halo`
 (discriminates: the fill reaches past a −2 halo to the true background; the old
-generic fill goes negative).  **User verdict: acceptable, improve later.**
+generic fill goes negative).  **User verdict: acceptable, improve later** (small
+over-subtraction specks just outside the punch at L≈±1 remain — intentionally not
+over-written).
 
 **3. Small-Bragg capture: lowered the search floor/prominence.**  The user noticed
 many small Bragg peaks survived the punch.  Diagnosed in **true 3D** (cache the

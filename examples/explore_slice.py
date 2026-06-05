@@ -337,11 +337,14 @@ backfilled = backfill_bragg(
     local_radius=int(os.environ.get("LOCAL_RADIUS", "2")),
     local_min_count=int(os.environ.get("LOCAL_MIN_COUNT", "8")),
 )
-# Keep the original mask for display, but reveal the direct-beam ball: those
-# voxels (punched holes + the unmeasured central shadow) were deliberately filled
-# with the just-outside diffuse background, so they should show as valid rather
-# than being re-hidden by residual.mask.
-direct_beam_show_q = float(os.environ.get("DIRECT_BEAM_SHOW_Q", "0.40"))
+# Keep the original mask for display, but reveal the small unmeasured direct-beam
+# shadow at the very origin (|Q|≈0): those voxels were deliberately filled with the
+# just-outside diffuse background, so they should show rather than being re-hidden
+# by residual.mask.  The punched-hole part of the beam was already valid pre-punch
+# (residual.mask True), so it shows without a reveal.  Keep this radius small — a
+# large |Q| ball would un-mask the origin column of *other* H planes (e.g. the
+# H=0.333 diffuse), since |Q| is isotropic but H steps are coarse.
+direct_beam_show_q = float(os.environ.get("DIRECT_BEAM_SHOW_Q", "0.15"))
 beam_ball = residual.q_magnitude() <= direct_beam_show_q
 backfilled = dataclasses.replace(backfilled, mask=residual.mask | beam_ball)
 

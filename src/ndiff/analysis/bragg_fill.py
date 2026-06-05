@@ -235,11 +235,17 @@ def _fill_direct_beam(
         brk = np.where(dqs > max(q_gap, 5.0 * step))[0]
         if brk.size:
             q_beam = float(qc[brk[0]])
-    # Replace the whole beam ball — punched holes, the unmeasured central shadow,
-    # *and* the over-subtracted halo voxels that survived the punch — so the
-    # direct-beam spot becomes one clean patch of the just-outside background
-    # rather than a flat disk pitted by a masked centre and a negative rim.
-    solid_box = q_box <= q_beam
+    # Fill ONLY the actual beam footprint — the connected punched holes plus the
+    # unmeasured central shadow they enclose — capped at the |Q| gap.
+    # ``binary_fill_holes`` adds the enclosed interior (the central detector
+    # shadow, which ``punch_only`` flips to a "valid" 0 so it is neither a hole nor
+    # in the component); capping by ``q_beam`` drops a bridged Bragg node.
+    # NB: do NOT fill the whole |Q| ball ``q_box <= q_beam`` — the lattice is very
+    # anisotropic, so a ball isotropic in Å⁻¹ bleeds many rlu along the fine axis
+    # and across H into the origin column of neighbouring planes (e.g. the H=0.333
+    # diffuse).  The component is confined to small |H| (~0.15 rlu punch), so this
+    # cannot reach other H planes.
+    solid_box = ndimage.binary_fill_holes(comp_box) & (q_box <= q_beam)
 
     valid_box = valid[region]
     shell = valid_box & (q_box > q_beam + q_gap) & (q_box <= q_beam + q_gap + q_width)
