@@ -62,6 +62,22 @@ Latest visual QA preference:
 - The last guarded `MODE=both` viewer punched about `6.02%` of valid voxels
   versus `7.02%` for unrestricted `MODE=both` and `2.27%` for integer-only.
 
+## One-Command Workflow
+
+`examples/run_pipeline.py` chains every stage end-to-end — raw `.nxs` → ring
+removal → Bragg punch → backfill → 3D-ΔPDF → the interactive orthoslice viewer —
+using the validated `cc_on` / clean-ΔPDF presets below.  Each stage is **skipped
+if its output already exists** (resume); pass `FORCE=1` or `FORCE_FROM=rings|
+punch|backfill|pdf` to recompute, `NO_VIEWER=1` to stop after the ΔPDF.  Every
+individual stage's env vars still pass through and override the defaults.
+
+```bash
+PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
+/Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/run_pipeline.py
+```
+
+The individual stages can still be run by hand (the batch commands below).
+
 ## Batch Pipeline
 
 Run from the repo root:
