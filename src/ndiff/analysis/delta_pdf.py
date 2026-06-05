@@ -110,12 +110,16 @@ def compute_delta_pdf(
     # Replace NaN with zero (filled volume should have no NaN)
     data = np.where(np.isfinite(data), data, 0.0)
 
-    if subtract_mean:
-        data -= data.mean()
-
-    # Apply apodization window
+    # Apply apodization window first, then subtract mean of the windowed
+    # data so that the DC component (sum) is exactly zero and the r=0
+    # DeltaPDF peak is suppressed. Subtracting before windowing leaves a
+    # nonzero sum = ∫(data−mean)·w dQ, producing a spurious 10^5-amplitude
+    # spike at r=0 that overwhelms near-origin structure.
     win = _build_window(data.shape, apodization, gaussian_sigma)
     data = data * win
+
+    if subtract_mean:
+        data -= data.mean()
 
     # Zero-pad to next power-of-2 for efficiency
     if zero_pad:
