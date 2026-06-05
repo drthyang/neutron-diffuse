@@ -100,6 +100,26 @@ wraparound shell), and the Bragg search floor/prominence were **lowered to
 0.8/0.8** (`cc_on`) to capture ~89% of small interior Bragg while preserving the
 H=0.333/0.667 magnetic diffuse.
 
+**Latest (2026-06-05 — integer-node Bragg workflow built):** implemented the
+user's lattice-aware integer-node strategy as an opt-in path.  `BraggRemover`
+still enumerates all integer `(h,k,l)` nodes, but with thresholds enabled it
+decides per node whether a nearby real peak exists (`min_intensity`,
+`min_prominence`, optional `integer_n_mad` per-|Q|-shell threshold), recentres on
+the nearby maximum, and can now fit the local peak position/shape with
+`integer_optimize_position=True` / `integer_optimize_shape=True`.  The fitted
+centre is a weighted HKL centroid; the fitted anisotropic radii come from local
+second moments and are used by the punch mask as continuous-HKL ellipsoids.  The
+3D punch script and slice viewer expose these as `INTEGER_FIT_POSITION`,
+`INTEGER_FIT_SHAPE`, `INTEGER_FIT_FRAC`, `INTEGER_FIT_NSIGMA`, and
+`INTEGER_FIT_MAX_R_HKL`.  Ordinary Bragg backfill now also has
+`method="q_shell"` / `METHOD=q_shell`, which fills punched components from the
+robust radial background level at the same `|Q|` (direct beam keeps its special
+just-outside-`|Q|` fill).  Tests cover shell-relative integer capture,
+extinct-node preservation, fitted off-grid centre/anisotropic shape, and q-shell
+backfill; full suite:
+`PYTHONPATH=src /opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 -m pytest -o addopts=''`
+→ **71/71 passed**.
+
 ---
 
 ## Progress log

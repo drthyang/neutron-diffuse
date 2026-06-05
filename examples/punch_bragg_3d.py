@@ -24,9 +24,28 @@ Env overrides:
                  small-domain Bragg.
     R_HKL        per-axis base punch radii "rh,rk,rl"  (default 0.12,0.12,0.45)
     MIN_I        integer-mode detection intensity threshold (default 2.0)
+    INTEGER_NMAD optional integer-node per-|Q|-shell threshold in MADs
+    INTEGER_Q_STEP
+                 |Q| shell width for INTEGER_NMAD (default: SEARCH_Q_STEP)
+    INTEGER_FIT_POSITION
+                 1 to refine integer-node peaks to a weighted HKL centre
+    INTEGER_FIT_SHAPE
+                 1 to fit per-peak anisotropic radii from local moments
+    INTEGER_FIT_FRAC
+                 fraction of peak excess used by integer fit (default 0.35)
+    INTEGER_FIT_NSIGMA
+                 convert fitted widths to radii by this factor (default 2.5)
+    INTEGER_FIT_MAX_R_HKL
+                 optional max fitted radii "rh,rk,rl"
+    INTEGER_H_GUARD
+                 optional H half-width around source integer-H plane
     SEARCH_NMAD  search-mode outlier threshold in MADs (default 6.0)
     SEARCH_MIN_I search-mode absolute intensity floor (default 2.0)
     SEARCH_PROM  search-mode local 3x3x3 prominence floor (default 0.0)
+    SEARCH_EXCLUDE_H
+                 comma-separated H planes excluded from search mode
+    SEARCH_EXCLUDE_H_WIDTH
+                 H half-width around SEARCH_EXCLUDE_H planes
     MARGIN       guard band added to every radius (default 0.03)
     MAX_SCALE    max intensity radius multiplier (default 3.0)
     PHI_TAIL_HKL extra Bragg-punch width along the local powder-ring direction
@@ -105,19 +124,51 @@ def env_default(name: str, default: str) -> str:
     return os.environ.get(name, preset.get(name, default))
 
 
+def env_bool(name: str, default: str = "0") -> bool:
+    return env_default(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
 data_file = os.environ.get("DATA_FILE")
 if data_file:
     in_path = Path(data_file)
 else:
     cands = sorted(proc.glob("*_ringremoved.h5"))
+    if not cands:
+        raise FileNotFoundError(
+            "No ring-removed input found in data/processed. Run "
+            "`PYTHONPATH=src /opt/homebrew/Caskroom/miniforge/base/envs/"
+            "sci-general/bin/python3 examples/remove_rings_3d.py` first, "
+            "or set DATA_FILE=/path/to/*_ringremoved.h5."
+        )
     in_path = next((p for p in cands if "22K_mmm" in p.stem), cands[0])
 
 mode = env_default("MODE", "both")
 r_hkl = tuple(float(x) for x in env_default("R_HKL", "0.12,0.12,0.45").split(","))
 min_i = float(env_default("MIN_I", "2.0"))
+integer_nmad_env = env_default("INTEGER_NMAD", "")
+integer_nmad = None if integer_nmad_env == "" else float(integer_nmad_env)
+integer_q_step_env = env_default("INTEGER_Q_STEP", "")
+integer_q_step = None if integer_q_step_env == "" else float(integer_q_step_env)
+integer_fit_position = env_bool("INTEGER_FIT_POSITION")
+integer_fit_shape = env_bool("INTEGER_FIT_SHAPE")
+integer_fit_frac = float(env_default("INTEGER_FIT_FRAC", "0.35"))
+integer_fit_nsigma = float(env_default("INTEGER_FIT_NSIGMA", "2.5"))
+integer_fit_max_env = env_default("INTEGER_FIT_MAX_R_HKL", "")
+integer_fit_max = (
+    tuple(float(x) for x in integer_fit_max_env.split(","))
+    if integer_fit_max_env else None
+)
+integer_h_guard_env = env_default("INTEGER_H_GUARD", "")
+integer_h_guard = None if integer_h_guard_env == "" else float(integer_h_guard_env)
 search_nmad = float(env_default("SEARCH_NMAD", "6.0"))
 search_min_i = float(env_default("SEARCH_MIN_I", "2.0"))
 search_prom = float(env_default("SEARCH_PROM", "0.0"))
+search_exclude_env = env_default("SEARCH_EXCLUDE_H", "")
+search_exclude_h = (
+    tuple(float(x) for x in search_exclude_env.split(",") if x.strip())
+    if search_exclude_env else None
+)
+search_exclude_h_width = float(env_default("SEARCH_EXCLUDE_H_WIDTH", "0.0"))
 margin = float(env_default("MARGIN", "0.03"))
 max_scale = float(env_default("MAX_SCALE", "3.0"))
 phi_tail_hkl = float(env_default("PHI_TAIL_HKL", "0.12"))
@@ -144,6 +195,13 @@ vol = ndiff.load(in_path)
 
 remover = BraggRemover(
     mode=mode, punch_radii=r_hkl, min_intensity=min_i, min_prominence=1.0,
+    integer_n_mad=integer_nmad, integer_q_step=integer_q_step,
+    integer_optimize_position=integer_fit_position,
+    integer_optimize_shape=integer_fit_shape,
+    integer_fit_threshold_frac=integer_fit_frac,
+    integer_fit_radius_n_sigma=integer_fit_nsigma,
+    integer_fit_max_radius_hkl=integer_fit_max,
+    integer_h_guard_hkl=integer_h_guard,
     intensity_scale=True, max_radius_scale=max_scale, margin=margin,
     punch_incident_beam=True, incident_beam_radii=incident_r_hkl,
     incident_beam_margin=incident_margin,
@@ -153,10 +211,18 @@ remover = BraggRemover(
     phi_tail_hkl=phi_tail_hkl,
     search_n_mad=search_nmad, search_min_intensity=search_min_i,
     search_min_prominence=search_prom,
+    search_exclude_h_centers=search_exclude_h,
+    search_exclude_h_half_width=search_exclude_h_width,
 )
 print(f"preset={preset_name or 'none'}  mode={mode}  radii={r_hkl}  min_I={min_i}  "
+      f"integer_nmad={integer_nmad}  integer_q_step={integer_q_step}  "
+      f"integer_fit_position={integer_fit_position}  "
+      f"integer_fit_shape={integer_fit_shape}  "
+      f"integer_h_guard={integer_h_guard}  "
       f"search_nmad={search_nmad}  search_min_I={search_min_i}  "
-      f"search_prom={search_prom}  phi_tail={phi_tail_hkl}", flush=True)
+      f"search_prom={search_prom}  search_exclude_h={search_exclude_h}  "
+      f"search_exclude_width={search_exclude_h_width}  phi_tail={phi_tail_hkl}",
+      flush=True)
 print(f"incident beam: radii={incident_r_hkl} margin={incident_margin} "
       f"phi_tail={incident_phi_tail} "
       f"ellipsoid={incident_ellipsoid_radii} sphere_r={incident_sphere_radius}", flush=True)

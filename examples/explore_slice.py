@@ -37,23 +37,42 @@ raw = Path("data/raw")
 # Default to the preferred 22K mmm validation file; the alphabetically-first
 # .nxs is the older 28K file, so select the 22K one explicitly unless DATA_FILE
 # overrides.  H_VALUE picks the initial H plane in the viewer.
+USE_BACKGROUND = os.environ.get("USE_BACKGROUND", "0") not in {"0", "false", "False", ""}
 data_file = os.environ.get("DATA_FILE")
 if data_file:
     data = ndiff.load(Path(data_file))
 else:
-    cands = [p for p in sorted(raw.glob("*.nxs"))
-             if not p.stem.endswith(("_bkg", "_sub_bkg"))]
-    data = ndiff.load(next((p for p in cands if "22K_mmm" in p.stem), cands[0]))
+    def is_empty_background(path: Path) -> bool:
+        return (
+            path.stem.endswith("_bkg")
+            and not path.stem.endswith(("_sub_bkg", "_cc_sub_bkg"))
+        )
+
+    cands = [p for p in sorted(raw.glob("*.nxs")) if not is_empty_background(p)]
+    if not cands:
+        raise FileNotFoundError(
+            "No input .nxs files found in data/raw. Set DATA_FILE=/path/to/input.nxs."
+        )
+    data = ndiff.load(next(
+        (p for p in cands if "22K_mmm" in p.stem and "cc_sub_bkg" in p.stem),
+        next((p for p in cands if "22K_mmm" in p.stem), cands[0]),
+    ))
 H_VALUE = float(os.environ.get("H_VALUE", "0.3333"))
-bkg = ndiff.load_mantid_nxs(
-    [p for p in sorted(raw.glob("*.nxs")) if p.stem.endswith("_bkg")][0],
-    ub_matrix=data.ub_matrix,
-)
 
 # Validate the ring model in isolation: skip the empty/background subtraction
 # (it over-subtracts and imprints the background detector gap).  Fit and remove
 # rings straight from the data:  residual = data - rings.
-USE_BACKGROUND = False
+bkg = None
+if USE_BACKGROUND:
+    bkg_cands = [
+        p for p in sorted(raw.glob("*.nxs"))
+        if p.stem.endswith("_bkg") and not p.stem.endswith(("_sub_bkg", "_cc_sub_bkg"))
+    ]
+    if not bkg_cands:
+        raise FileNotFoundError(
+            "USE_BACKGROUND=1 but no empty/background *_bkg.nxs file was found in data/raw."
+        )
+    bkg = ndiff.load_mantid_nxs(bkg_cands[0], ub_matrix=data.ub_matrix)
 
 q_range = (float(os.environ.get("Q_MIN", "1.5")),
            float(os.environ.get("Q_MAX", "10.5")))
@@ -223,14 +242,39 @@ def punch_default(name: str, default: str) -> str:
     return os.environ.get(name, punch_preset.get(name, default))
 
 
+def punch_bool(name: str, default: str = "0") -> bool:
+    return punch_default(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
 mode = punch_default("MODE", "auto")
 r_hkl = tuple(float(x) for x in punch_default("R_HKL", "0.09,0.12,0.45").split(","))
 min_i_env = punch_default("MIN_I", "")
 min_i = None if min_i_env == "" else float(min_i_env)
 min_prom = float(punch_default("MIN_PROM", "1.0"))
+integer_nmad_env = punch_default("INTEGER_NMAD", "")
+integer_nmad = None if integer_nmad_env == "" else float(integer_nmad_env)
+integer_q_step_env = punch_default("INTEGER_Q_STEP", "")
+integer_q_step = None if integer_q_step_env == "" else float(integer_q_step_env)
+integer_fit_position = punch_bool("INTEGER_FIT_POSITION")
+integer_fit_shape = punch_bool("INTEGER_FIT_SHAPE")
+integer_fit_frac = float(punch_default("INTEGER_FIT_FRAC", "0.35"))
+integer_fit_nsigma = float(punch_default("INTEGER_FIT_NSIGMA", "2.5"))
+integer_fit_max_env = punch_default("INTEGER_FIT_MAX_R_HKL", "")
+integer_fit_max = (
+    tuple(float(x) for x in integer_fit_max_env.split(","))
+    if integer_fit_max_env else None
+)
+integer_h_guard_env = punch_default("INTEGER_H_GUARD", "")
+integer_h_guard = None if integer_h_guard_env == "" else float(integer_h_guard_env)
 search_nmad = float(punch_default("SEARCH_NMAD", "4.0"))
 search_min_i = float(punch_default("SEARCH_MIN_I", "1.5"))
 search_prom = float(punch_default("SEARCH_PROM", "1.0"))
+search_exclude_env = punch_default("SEARCH_EXCLUDE_H", "")
+search_exclude_h = (
+    tuple(float(x) for x in search_exclude_env.split(",") if x.strip())
+    if search_exclude_env else None
+)
+search_exclude_h_width = float(punch_default("SEARCH_EXCLUDE_H_WIDTH", "0.0"))
 margin = float(punch_default("MARGIN", "0.02"))
 max_scale = float(punch_default("MAX_SCALE", "2.0"))
 phi_tail_hkl = float(punch_default("PHI_TAIL_HKL", "0.12"))
@@ -254,6 +298,14 @@ remover = BraggRemover(
     punch_radii=r_hkl,
     min_intensity=min_i,
     min_prominence=min_prom,
+    integer_n_mad=integer_nmad,
+    integer_q_step=integer_q_step,
+    integer_optimize_position=integer_fit_position,
+    integer_optimize_shape=integer_fit_shape,
+    integer_fit_threshold_frac=integer_fit_frac,
+    integer_fit_radius_n_sigma=integer_fit_nsigma,
+    integer_fit_max_radius_hkl=integer_fit_max,
+    integer_h_guard_hkl=integer_h_guard,
     intensity_scale=True,
     max_radius_scale=max_scale,
     margin=margin,
@@ -267,6 +319,8 @@ remover = BraggRemover(
     search_n_mad=search_nmad,
     search_min_intensity=search_min_i,
     search_min_prominence=search_prom,
+    search_exclude_h_centers=search_exclude_h,
+    search_exclude_h_half_width=search_exclude_h_width,
 )
 
 # Compute ring removal for every H plane so the viewer can scrub H.  This keeps
@@ -336,6 +390,8 @@ backfilled = backfill_bragg(
     tv_iter=int(os.environ.get("TV_ITER", "300")),
     local_radius=int(os.environ.get("LOCAL_RADIUS", "2")),
     local_min_count=int(os.environ.get("LOCAL_MIN_COUNT", "8")),
+    q_shell_step=float(os.environ.get("Q_SHELL_STEP", "0.05")),
+    q_shell_min_count=int(os.environ.get("Q_SHELL_MIN_COUNT", "20")),
 )
 # Keep the original mask for display, but reveal the small unmeasured direct-beam
 # shadow at the very origin (|Q|≈0): those voxels were deliberately filled with the

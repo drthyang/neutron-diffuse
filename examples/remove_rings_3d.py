@@ -52,9 +52,21 @@ data_file = os.environ.get("DATA_FILE")
 if data_file:
     in_path = Path(data_file)
 else:
-    cands = [p for p in sorted(raw.glob("*.nxs"))
-             if not p.stem.endswith(("_bkg", "_sub_bkg"))]
-    in_path = next((p for p in cands if "22K_mmm" in p.stem), cands[0])
+    def is_empty_background(path: Path) -> bool:
+        return (
+            path.stem.endswith("_bkg")
+            and not path.stem.endswith(("_sub_bkg", "_cc_sub_bkg"))
+        )
+
+    cands = [p for p in sorted(raw.glob("*.nxs")) if not is_empty_background(p)]
+    if not cands:
+        raise FileNotFoundError(
+            "No input .nxs files found in data/raw. Set DATA_FILE=/path/to/input.nxs."
+        )
+    in_path = next(
+        (p for p in cands if "22K_mmm" in p.stem and "cc_sub_bkg" in p.stem),
+        next((p for p in cands if "22K_mmm" in p.stem), cands[0]),
+    )
 
 q_range = (float(os.environ.get("Q_MIN", "1.5")),
            float(os.environ.get("Q_MAX", "10.5")))

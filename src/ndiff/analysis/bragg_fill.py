@@ -18,7 +18,7 @@ from scipy import ndimage
 from ndiff.core import HKLVolume
 from ndiff.inpainting.pipeline import fill, Method
 
-BraggFillMethod = Method | Literal["local"]
+BraggFillMethod = Method | Literal["local", "q_shell"]
 
 
 def backfill_bragg(
@@ -30,6 +30,8 @@ def backfill_bragg(
     tv_iter: int = 300,
     local_radius: int = 2,
     local_min_count: int = 8,
+    q_shell_step: float = 0.05,
+    q_shell_min_count: int = 20,
     direct_beam_fill: bool = True,
     direct_beam_q_gap: float = 0.05,
     direct_beam_q_width: float = 0.15,
@@ -41,6 +43,13 @@ def backfill_bragg(
     the local background level near the Bragg peak and avoids inventing a smooth
     TV surface through real diffuse texture.  TV/symmetry methods are retained
     for explicit comparisons.
+
+    ``method="q_shell"`` fills ordinary Bragg components from the robust radial
+    background level at the same ``|Q|`` as each punched voxel.  This is the
+    lattice-node Bragg workflow's background-level fill: the peak itself is
+    removed, and the hole is replaced by the diffuse level expected at that
+    scattering vector magnitude.  Components whose ``|Q|`` bins are too sparsely
+    sampled fall back to the local-shell median.
 
     The **direct beam** (the punched hole at the origin) is filled differently
     from ordinary Bragg holes: a generic dilated shell around that large,
@@ -57,7 +66,7 @@ def backfill_bragg(
     vol:
         Volume after Bragg punching (``vol.mask`` marks valid voxels).
     method:
-        Inpainting strategy. Default ``"symmetry+tv"``.
+        Inpainting strategy. Default ``"local"``.
     laue_class:
         Crystal Laue class for symmetry filling.
     tv_lam:
@@ -70,6 +79,11 @@ def backfill_bragg(
     local_min_count:
         Minimum valid shell voxels required before using the local shell median.
         Components with fewer fall back to the global valid-data median.
+    q_shell_step:
+        Radial ``|Q|`` bin width (Å⁻¹) for ``method="q_shell"``.
+    q_shell_min_count:
+        Minimum valid samples in a radial bin before it can be used for
+        ``method="q_shell"``.
     direct_beam_fill:
         If True (default), fill the origin hole from the ``|Q|``-just-outside
         diffuse background instead of the generic dilated shell.
@@ -84,9 +98,11 @@ def backfill_bragg(
     -------
     HKLVolume with Bragg holes filled.
     """
-    if method == "local":
+    if method in {"local", "q_shell"}:
         return _local_background_fill(
             vol, radius=local_radius, min_count=local_min_count,
+            q_shell_fill=(method == "q_shell"), q_shell_step=q_shell_step,
+            q_shell_min_count=q_shell_min_count,
             direct_beam_fill=direct_beam_fill,
             db_q_gap=direct_beam_q_gap, db_q_width=direct_beam_q_width,
         )
@@ -104,6 +120,9 @@ def _local_background_fill(
     vol: HKLVolume,
     radius: int = 2,
     min_count: int = 8,
+    q_shell_fill: bool = False,
+    q_shell_step: float = 0.05,
+    q_shell_min_count: int = 20,
     direct_beam_fill: bool = True,
     db_q_gap: float = 0.05,
     db_q_width: float = 0.15,
@@ -119,6 +138,11 @@ def _local_background_fill(
     global_vals = data[valid]
     global_fill = float(np.median(global_vals)) if global_vals.size else 0.0
     global_sigma = float(np.median(sigma[valid])) if global_vals.size else 1.0
+    q_lookup = (
+        _radial_background_lookup(vol, valid, q_step=q_shell_step,
+                                  min_count=q_shell_min_count)
+        if q_shell_fill else None
+    )
 
     # Direct beam first: fill the origin hole (and its interior) from the diffuse
     # background just outside it in |Q|, then exclude it from the generic loop.
@@ -143,27 +167,104 @@ def _local_background_fill(
             slices.append(slice(max(0, s.start - pad), min(n, s.stop + pad)))
         region = tuple(slices)
         comp = labels[region] == lbl
-        shell = ndimage.binary_dilation(
-            comp, structure=structure, iterations=max(int(radius), 1)
-        ) & ~comp
-        shell_valid = shell & valid[region]
-        if int(shell_valid.sum()) >= min_count:
-            vals = data[region][shell_valid]
-            fill_val = float(np.median(vals))
-            fill_sig = float(np.std(vals)) if vals.size > 1 else global_sigma
-        else:
-            fill_val = global_fill
-            fill_sig = global_sigma
-
         data_region = data[region]
         sigma_region = sigma[region]
-        data_region[comp] = fill_val
-        sigma_region[comp] = max(fill_sig, global_sigma)
+        filled_by_q = False
+        if q_lookup is not None:
+            q_fill, q_sig = _q_shell_component_values(q_lookup, region, comp)
+            if q_fill is not None:
+                data_region[comp] = q_fill
+                sigma_region[comp] = np.maximum(q_sig, global_sigma)
+                filled_by_q = True
+        if not filled_by_q:
+            shell = ndimage.binary_dilation(
+                comp, structure=structure, iterations=max(int(radius), 1)
+            ) & ~comp
+            shell_valid = shell & valid[region]
+            if int(shell_valid.sum()) >= min_count:
+                vals = data[region][shell_valid]
+                fill_val = float(np.median(vals))
+                fill_sig = float(np.std(vals)) if vals.size > 1 else global_sigma
+            else:
+                fill_val = global_fill
+                fill_sig = global_sigma
+
+            data_region[comp] = fill_val
+            sigma_region[comp] = max(fill_sig, global_sigma)
         data[region] = data_region
         sigma[region] = sigma_region
 
     return dataclasses.replace(vol, data=data, sigma=sigma,
                                mask=np.ones(vol.shape, dtype=bool))
+
+
+@dataclasses.dataclass(frozen=True)
+class _QShellLookup:
+    """Precomputed robust radial background used by ``method="q_shell"``."""
+
+    q: NDArray
+    bin_idx: NDArray[np.int_]
+    levels: NDArray[np.float64]
+    sigmas: NDArray[np.float64]
+    counts: NDArray[np.int_]
+
+
+def _radial_background_lookup(
+    vol: HKLVolume,
+    valid: NDArray[np.bool_],
+    q_step: float,
+    min_count: int,
+) -> _QShellLookup:
+    """Build per-|Q| robust background levels from currently valid voxels."""
+    q = vol.q_magnitude()
+    if not valid.any():
+        zeros = np.zeros(1, dtype=float)
+        return _QShellLookup(
+            q=q,
+            bin_idx=np.zeros(vol.shape, dtype=int),
+            levels=zeros,
+            sigmas=zeros,
+            counts=np.zeros(1, dtype=int),
+        )
+    qs = max(float(q_step), 1e-12)
+    qv = q[valid]
+    edges = np.arange(float(qv.min()), float(qv.max()) + qs, qs)
+    nb = max(len(edges) - 1, 1)
+    bin_idx = np.clip(np.digitize(q, edges) - 1, 0, nb - 1)
+
+    flat_b = bin_idx[valid]
+    flat_i = vol.data[valid]
+    order = np.argsort(flat_b, kind="stable")
+    sb, si = flat_b[order], flat_i[order]
+    bounds = np.searchsorted(sb, np.arange(nb + 1))
+    levels = np.full(nb, np.nan)
+    sigmas = np.full(nb, np.nan)
+    counts = np.zeros(nb, dtype=int)
+    for b in range(nb):
+        seg = si[bounds[b]:bounds[b + 1]]
+        counts[b] = int(seg.size)
+        if seg.size < min_count:
+            continue
+        levels[b] = float(np.median(seg))
+        sigmas[b] = float(np.std(seg)) if seg.size > 1 else 0.0
+    return _QShellLookup(q=q, bin_idx=bin_idx, levels=levels, sigmas=sigmas, counts=counts)
+
+
+def _q_shell_component_values(
+    lookup: _QShellLookup,
+    region: tuple[slice, slice, slice],
+    comp: NDArray[np.bool_],
+) -> tuple[Optional[NDArray[np.float64]], Optional[NDArray[np.float64]]]:
+    """Return per-voxel radial background values for a punched component."""
+    bins = lookup.bin_idx[region][comp]
+    if bins.size == 0:
+        return None, None
+    vals = lookup.levels[bins]
+    sig = lookup.sigmas[bins]
+    if np.isfinite(vals).sum() < bins.size:
+        return None, None
+    sig = np.where(np.isfinite(sig), sig, 0.0)
+    return vals.astype(float, copy=False), sig.astype(float, copy=False)
 
 
 def _fill_direct_beam(
