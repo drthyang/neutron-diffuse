@@ -16,7 +16,8 @@ literally "carry the slice-validated config to the whole volume".
 Run (headless — writes the residual volume + spot-check PNGs)::
 
     PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
-      /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/remove_rings_3d.py
+      /opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 \
+      examples/remove_rings_3d.py
 
 Env overrides:
     DATA_FILE   input .nxs (default: the 22K mmm validation file)

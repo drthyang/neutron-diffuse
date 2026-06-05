@@ -136,38 +136,17 @@ center_offset_h_slope = (
     float(os.environ.get("CENTER_H_SLOPE_Y", "0.0")),
 )
 
-# q_step (radial bin width): the dominant lever on the residual ring leftover.
-# The ring estimate is a *robust* (Bragg-trimmed) profile, which sits slightly
-# below the true peak — so a positive ring residual is left by construction, and
-# it shrinks as the bins resolve the peak more finely.  q_step=0.015 cuts the
-# 28K leftover ~15% with NO over-subtraction and the close-pair valley preserved;
-# but on a slice with rich diffuse, too-fine bins can eat broad diffuse, so A/B
-# this on YOUR validation slice (the 22K H=0.3333) before adopting it.  Finer
-# than ~0.01 starts cutting troughs.  Override with Q_STEP.
+# Radial bin width.  Finer bins can reduce residual ring arcs but may absorb
+# broad diffuse signal, so keep 0.02 as the stable default unless A/B testing.
 q_step = float(os.environ.get("Q_STEP", "0.02"))
 
-# profile_method: the per-(patch,|Q|) central estimator.  The default
-# 'trimmed_mean' (10–80) is ASYMMETRIC — it trims 20% off the top (to reject
-# Bragg) but only 10% off the bottom, so on a right-skewed cell it sits BELOW the
-# true ring level and under-subtracts the bright ring arcs (~12% of the arc
-# residual on 28K).  'median' is the symmetric unbiased robust centre — Bragg is
-# a small fraction of each cell so it can't move the median — and cuts the arc
-# under-fill ~10–12% with no extra over-subtraction.  A/B on YOUR 22K H=0.3333
-# slice before adopting.  Override with PROFILE_METHOD.
+# Per-(patch, |Q|) central estimator.  Median is the current default because it
+# is robust to small Bragg contamination in each azimuthal/radial cell.
 profile_method = os.environ.get("PROFILE_METHOD", "median")
 
-# texture_q_smooth: pools the azimuthal texture SHAPE across the ring's radial
-# width.  It assumes the ring's azimuthal pattern is the same at the peak and the
-# wings — but that only holds if the ring's WIDTH is azimuthally uniform.  When
-# the width varies with φ (strong at H≠0: the powder ring is broad at some
-# azimuths, narrow at others), pooling across |Q| forces one shared pattern and
-# HOMOGENISES the width → under-subtracts the broad arcs and over-subtracts the
-# narrow ones.  Setting it to 0 lets each |Q| bin keep its own azimuthal pattern
-# (the low-order Fourier basis still smooths in φ), capturing the inhomogeneous
-# width: on 28K H=0.32 this cuts both under-fill (−26%) and over-fill (−33%) with
-# no diffuse cost.  The trade-off it was added for is ringing into UNMEASURED
-# azimuths (one-sided coverage) — if your slice has sparse arcs, a small value
-# (~0.02) compromises.  Override with TEXTURE_Q_SMOOTH.
+# Optional pooling of azimuthal texture across the ring's radial width.  Zero
+# keeps each |Q| bin independent; small nonzero values can reduce ringing in
+# sparse-azimuth regions.
 texture_q_smooth = float(os.environ.get("TEXTURE_Q_SMOOTH", "0.0"))
 
 # n_patches: number of overlapping azimuthal wedges the ring profile is fit in.

@@ -9,7 +9,8 @@ holes) vs what survives (bright spots — e.g. off-integer satellite reflections
 Run::
 
     PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
-      /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/punch_bragg_3d.py
+      /opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 \
+      examples/punch_bragg_3d.py
 
 Env overrides:
     DATA_FILE    ring-removed input .h5 (default: data/processed/<22K>_ringremoved.h5)

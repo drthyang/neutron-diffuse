@@ -1,4 +1,4 @@
-"""Interactive plotting session for the real 28K dataset.
+"""Interactive plotting session for a raw HKL volume.
 
 Launch with an interactive Matplotlib backend so figures appear in live
 windows you can pan/zoom (and stay at an IPython prompt afterwards):
@@ -9,13 +9,13 @@ windows you can pan/zoom (and stay at an IPython prompt afterwards):
 (use --matplotlib=qt on Linux/Windows, or run inside Jupyter).
 
 After it loads you have these in scope:
-    data, bkg, sub        HKLVolume for data / background / data-bkg
+    data, bkg, sub        HKLVolume for data / optional background / data-bkg
     plot_slice, plot_radial_profile, plot_azimuthal_map, plot_overview
     extract_slice, plt
 
 Try:
     plot_overview(data, log_scale=True)            # 2x2 diagnostic
-    plot_slice(bkg, "kl", value=0.0, log_scale=True)
+    plot_slice(bkg, "kl", value=0.0, log_scale=True)  # if bkg is not None
     plot_slice(data, "hk", value=0.3333, interp=True)   # exact L=1/3 plane
     plot_slice(data, "hk", value=0.3333, interp=True,
                vmin=0.0, vmax=0.4)                 # manual colour limits
@@ -43,22 +43,38 @@ from ndiff.visualization import (
 _RAW = Path(__file__).resolve().parent.parent / "data" / "raw"
 
 
-def _find(suffix: str) -> Path:
-    """Return the single .nxs whose stem ends with *suffix* ('' = the data file)."""
-    hits = [
-        p
-        for p in sorted(_RAW.glob("*.nxs"))
-        if (p.stem.endswith(suffix) if suffix else not p.stem.endswith(("_bkg", "_sub_bkg")))
-    ]
+def _is_empty_background(path: Path) -> bool:
+    return (
+        path.stem.endswith("_bkg")
+        and not path.stem.endswith(("_sub_bkg", "_cc_sub_bkg"))
+    )
+
+
+def _find_data() -> Path:
+    """Return the preferred data .nxs file."""
+    hits = [p for p in sorted(_RAW.glob("*.nxs")) if not _is_empty_background(p)]
     if not hits:
-        raise FileNotFoundError(f"No .nxs in {_RAW} matching suffix {suffix!r}")
-    return hits[0]
+        raise FileNotFoundError(f"No data .nxs files found in {_RAW}")
+    return next(
+        (p for p in hits if "22K_mmm" in p.stem and "cc_sub_bkg" in p.stem),
+        next((p for p in hits if "22K_mmm" in p.stem), hits[0]),
+    )
 
 
-data = ndiff.load(_find(""))
-# Background scan has no UB of its own -> inherit the data's for a consistent |Q|.
-bkg = ndiff.load_mantid_nxs(_find("_bkg"), ub_matrix=data.ub_matrix)
-sub = ndiff.load(_find("_sub_bkg"))
+def _find_background() -> Path | None:
+    hits = [p for p in sorted(_RAW.glob("*.nxs")) if _is_empty_background(p)]
+    return hits[0] if hits else None
+
+
+data = ndiff.load(_find_data())
+_bkg_path = _find_background()
+if _bkg_path is None:
+    bkg = None
+    sub = data
+else:
+    # Background scan has no UB of its own -> inherit the data's for consistent |Q|.
+    bkg = ndiff.load_mantid_nxs(_bkg_path, ub_matrix=data.ub_matrix)
+    sub = data
 
 plt.ion()  # interactive: figures show without blocking
 

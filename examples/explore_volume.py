@@ -11,7 +11,8 @@ Loading both 689 MB volumes is the only heavy part (~1.4 GB RAM).
 Run::
 
     PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
-      /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 examples/explore_volume.py
+      /opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 \
+      examples/explore_volume.py
 
 Env overrides:
     DATA_FILE   raw input .nxs (default: the 22K mmm validation file)
@@ -35,9 +36,21 @@ data_file = os.environ.get("DATA_FILE")
 if data_file:
     in_path = Path(data_file)
 else:
-    cands = [p for p in sorted(raw_dir.glob("*.nxs"))
-             if not p.stem.endswith(("_bkg", "_sub_bkg"))]
-    in_path = next((p for p in cands if "22K_mmm" in p.stem), cands[0])
+    def is_empty_background(path: Path) -> bool:
+        return (
+            path.stem.endswith("_bkg")
+            and not path.stem.endswith(("_sub_bkg", "_cc_sub_bkg"))
+        )
+
+    cands = [p for p in sorted(raw_dir.glob("*.nxs")) if not is_empty_background(p)]
+    if not cands:
+        raise FileNotFoundError(
+            "No input .nxs files found in data/raw. Set DATA_FILE=/path/to/input.nxs."
+        )
+    in_path = next(
+        (p for p in cands if "22K_mmm" in p.stem and "cc_sub_bkg" in p.stem),
+        next((p for p in cands if "22K_mmm" in p.stem), cands[0]),
+    )
 
 proc_file = os.environ.get("PROC_FILE")
 proc_path = (Path(proc_file) if proc_file
@@ -47,7 +60,7 @@ if not proc_path.exists():
         f"processed volume not found: {proc_path}\n"
         "Run the 3D ring removal first:\n"
         "  PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \\\n"
-        "    /Users/tt9/miniforge3/envs/rmc-discord/bin/python3 "
+        "    /opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 "
         "examples/remove_rings_3d.py"
     )
 

@@ -1,154 +1,164 @@
 # neutron-diffuse
 
-**3D diffuse neutron scattering processing — powder ring removal and 3D-ΔPDF.**
+**3D diffuse neutron scattering cleanup and 3D-DeltaPDF preparation.**
 
-Takes a symmetrised 3D HKL volume (output of Mantid or equivalent) and produces
-a clean diffuse scattering volume ready for 3D-ΔPDF analysis.
+`neutron-diffuse` works on symmetrised 3D HKL volumes from Mantid or equivalent
+pipelines. The current real-data workflow removes powder rings, punches Bragg and
+satellite peaks, backfills the holes, and prepares the cleaned diffuse volume for
+3D-DeltaPDF Fourier transformation.
 
-```
-[ Symmetrised 3D HKL volume from Mantid ]
-        │
-        ▼  DATA PROCESSING
-        │  (1) Empty-scan subtraction          → remove environment ring
-        │  (2) Factored ring model fit         → remove residual sample-holder ring
-        │  (3) Backfill ring holes             → interpolate diffuse signal
-        │
-        ▼  FURTHER ANALYSIS
-        │  (4) Bragg peak removal (punch)
-        │  (5) Backfill Bragg holes
-        │  (6) 3D-ΔPDF via Fourier transform
-        │
-        ▼
-  [ 3D-ΔPDF in real space ]
+```text
+[ Mantid / symmetrised HKL volume ]
+        |
+        v
+  (1) Powder-ring subtraction          examples/remove_rings_3d.py
+  (2) Bragg/satellite punch            examples/punch_bragg_3d.py
+  (3) Bragg-hole backfill              examples/backfill_bragg_3d.py
+  (4) 3D-DeltaPDF Fourier transform    ndiff.analysis.compute_delta_pdf
 ```
 
-## Why two steps for ring removal?
+## Current Real-Data Workflow
 
-An **empty-scan subtraction** removes the environment ring (cryostat, furnace).
-A residual ring from the sample holder remains and cannot be removed by subtraction
-alone, because the sample holder scattering is present only with the sample mounted.
-The **factored ring model** removes this residual ring by fitting
+Run from the repository root. The preferred input on this machine is the
+Mantid-background-subtracted `*_cc_sub_bkg.nxs` file in `data/raw/`.
 
+```bash
+PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl RING_PRESET=cc_on \
+/opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 examples/remove_rings_3d.py
+
+PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl PUNCH_PRESET=cc_on MODE=both \
+MIN_I=0.8 MIN_PROM=0.8 INTEGER_FIT_POSITION=1 INTEGER_FIT_SHAPE=1 \
+INTEGER_H_GUARD=0.12 \
+SEARCH_EXCLUDE_H=-0.6667,-0.3333,0.3333,0.6667 SEARCH_EXCLUDE_H_WIDTH=0.08 \
+PREVIEW=0 \
+/opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 examples/punch_bragg_3d.py
+
+PYTHONPATH=src METHOD=q_shell \
+/opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 examples/backfill_bragg_3d.py
 ```
-I_ring(Q, φ) = T(φ) × Σᵢ Aᵢ G(|Q| − qᵢ, σᵢ)
+
+The three scripts write:
+
+- `data/processed/*_ringremoved.h5`
+- `data/processed/*_braggpunched.h5`
+- `data/processed/*_braggpunched_backfilled.h5`
+
+Use the interactive all-H viewer for visual QA:
+
+```bash
+env PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl USE_BACKGROUND=0 \
+PUNCH_PRESET=cc_on MODE=both MIN_I=0.8 MIN_PROM=0.8 \
+INTEGER_FIT_POSITION=1 INTEGER_FIT_SHAPE=1 INTEGER_H_GUARD=0.12 \
+SEARCH_EXCLUDE_H=-0.6667,-0.3333,0.3333,0.6667 SEARCH_EXCLUDE_H_WIDTH=0.08 \
+BACKFILL_METHOD=q_shell H_VALUE=0.3333 \
+/opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 examples/explore_slice.py
 ```
 
-where T(φ) is a shared azimuthal texture function (Fourier series) extracted via
-rank-1 SVD of the per-patch amplitude matrix.  This imposes no assumption on the
-diffuse signal.
+The viewer shows `data`, `Removed ring`, `Punched`, and `Backfilled`, with an H
+slider for scrubbing the full volume.
 
-## Quickstart
+## Algorithms
+
+### Powder Rings
+
+The current production path uses `PatchedRadialRingModel`, a non-parametric
+radial-background model fit independently on each H plane. It estimates the
+azimuthally smooth powder-ring contribution and subtracts it, preserving
+structured diffuse residuals by construction.
+
+Important defaults/knobs:
+
+- `profile_method="median"` for robust per-bin ring level.
+- `texture_q_smooth=0.0` in the class default to preserve azimuthally varying
+  ring width.
+- `RING_PRESET=cc_on` in the 3D driver for the cleaner `*_cc_sub_bkg.nxs`
+  workflow.
+- Ring removal is subtractive only. The removed mask-and-replace experiment was
+  rejected because radial excess can be real diffuse scattering.
+
+See [docs/algorithms/powder_rings.md](docs/algorithms/powder_rings.md).
+
+### Bragg Punch And Backfill
+
+`BraggRemover` supports:
+
+- `mode="integer"`: enumerate integer HKL nodes and decide per node whether a
+  nearby peak exists.
+- `mode="search"` / `mode="auto"`: hkl-agnostic per-`|Q|` high-tail outlier
+  search for off-integer satellites.
+- `mode="both"`: integer first, then search on the residual.
+
+The current visual QA preference is guarded `MODE=both`: integer-node punches are
+confined near integer-H planes with `INTEGER_H_GUARD`, while `SEARCH_EXCLUDE_H`
+protects known fractional-H diffuse planes from the hkl-agnostic search stage.
+
+`backfill_bragg(method="q_shell")` fills ordinary Bragg holes from the robust
+background level at the same `|Q|`. The direct beam is handled separately with a
+just-outside-`|Q|` fill.
+
+See [docs/algorithms/bragg_cleanup.md](docs/algorithms/bragg_cleanup.md).
+
+## Python API Sketch
 
 ```python
 import ndiff
-from ndiff.preprocessing import (
-    EmptySubtractor, PatchedRingModel, backfill_ring_shells, detect_ring_shells,
+from ndiff.analysis import BraggRemover, backfill_bragg, compute_delta_pdf
+
+vol = ndiff.load("data/processed/sample_ringremoved.h5")
+
+remover = BraggRemover(
+    mode="both",
+    punch_radii=(0.09, 0.12, 0.45),
+    min_intensity=0.8,
+    min_prominence=0.8,
+    integer_optimize_position=True,
+    integer_optimize_shape=True,
+    integer_h_guard_hkl=0.12,
+    search_n_mad=4.0,
+    search_min_intensity=0.8,
+    search_min_prominence=0.8,
+    search_exclude_h_centers=(-2 / 3, -1 / 3, 1 / 3, 2 / 3),
+    search_exclude_h_half_width=0.08,
+    incident_beam_ellipsoid_radii_hkl=(0.15, 0.50, 1.00),
 )
-from ndiff.analysis import bragg_mask, backfill_bragg, compute_delta_pdf
 
-# Load symmetrised 3D HKL volume (from Mantid or equivalent)
-vol = ndiff.load("experiment_sym.h5")
-vol_empty = ndiff.load("empty_environment.h5")
-
-# ── Step 1: empty-scan subtraction ──────────────────────────────────────────
-sub = EmptySubtractor(vol_empty)            # empty scan is a constructor arg
-vol1 = sub.subtract(vol)                    # scale estimated automatically
-print(f"Empty scan scale factor: {sub.scale:.4f}")
-
-# ── Step 2: factored ring model (residual sample-holder ring) ────────────────
-model = PatchedRingModel(n_patches=36, overlap_frac=0.3, n_fourier=6)
-fitted = model.fit(vol1)                     # or fit(vol1, ring_hints=[2.69, 3.10])
-print(f"Rank-1 variance: {fitted.rank1_variance:.3f}")   # > 0.90 is good
-print("Per-ring texture residual:", fitted.per_ring_texture_residual())
-
-vol2, i_ring = model.subtract(vol1, fitted)  # ring-dominated voxels are masked
-
-# ── Step 3: backfill the masked ring shells ──────────────────────────────────
-rings, *_ = detect_ring_shells(vol1)         # |Q| ranges to treat as contaminated
-vol_clean = backfill_ring_shells(vol2, rings, n_neighbors=16)
-
-# ── Step 4–5: Bragg punch and fill ──────────────────────────────────────────
-vol_clean.apply_mask(bragg_mask(vol_clean, punch_radius_hkl=0.3))
-vol_diffuse = backfill_bragg(vol_clean)
-
-# ── Step 6: 3D-ΔPDF ─────────────────────────────────────────────────────────
-dpdf = compute_delta_pdf(vol_diffuse, apodization="hann")
-
-# Save
-ndiff.save(vol_diffuse, "diffuse_only.h5")
+punched = remover.apply(vol)
+filled = backfill_bragg(punched, method="q_shell")
+dpdf = compute_delta_pdf(filled, apodization="hann")
 ```
-
-For the current real-data workflow, the example drivers are the most up-to-date
-entry points:
-
-```bash
-PYTHONPATH=src python examples/remove_rings_3d.py
-PYTHONPATH=src python examples/punch_bragg_3d.py
-PYTHONPATH=src python examples/backfill_bragg_3d.py
-```
-
-Use `examples/explore_slice.py` for interactive QA.  It opens an H-slider viewer
-with four panels: data, ring-removed, punched, and backfilled.
 
 ## Installation
 
 ```bash
 git clone https://github.com/drthyang/neutron-diffuse
-cd neutron-diffuse && pip install -e ".[dev]"
+cd neutron-diffuse
+pip install -e ".[dev]"
 ```
 
-## Module overview
+## Module Overview
 
-```
+```text
 src/ndiff/
-├── core.py                     HKLVolume: 3D array + UB matrix + mask + σ
-├── io/hkl_reader.py            load() / save() — HDF5 and ASCII
-├── preprocessing/
-│   ├── empty_subtraction.py    EmptySubtractor  (step 1)
-│   ├── ring_model.py           PatchedRingModel  (step 2) ← primary ring removal
-│   ├── powder_rings.py         detect_ring_shells, mask_ring_shells, radial_profile
-│   └── backfill.py             backfill_ring_shells  (step 3)
-├── analysis/
-│   ├── bragg.py                BraggRemover / bragg_mask  (step 4)
-│   ├── bragg_fill.py           backfill_bragg  (step 5)
-│   └── delta_pdf.py            compute_delta_pdf → DeltaPDF  (step 6)
-├── inpainting/
-│   ├── tv_inpainting.py        tv_inpaint — Chambolle-Pock primal-dual
-│   ├── interpolation.py        rbf_fill, biharmonic_fill
-│   └── pipeline.py             fill — symmetry → TV → RBF orchestration
-└── utils/reciprocal_space.py   ub_from_lattice, d_spacing, q_to_hkl
+├── core.py                     HKLVolume: 3D array + UB matrix + mask + sigma
+├── io/                         Mantid NeXus, HDF5, and legacy HKL I/O
+├── preprocessing/              empty subtraction, powder-ring models, ring fill
+├── analysis/                   Bragg punch/fill and 3D-DeltaPDF
+├── inpainting/                 symmetry, TV, RBF, biharmonic fallbacks
+└── visualization/              slices, profiles, overview, interactive viewer
 ```
 
-## Diagnostics
+## Testing
 
-After fitting `PatchedRingModel`, inspect:
+```bash
+PYTHONPATH=src /opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 \
+  -m pytest -o addopts=''
+```
 
-- `fitted.rank1_variance` — fraction of variance explained by the shared T(φ).
-  Values ≥ 0.90 confirm the rank-1 factorisation is valid.  Values < 0.90
-  indicate that higher-|Q| rings have stronger per-ring azimuthal texture and
-  may need individual T_i(φ) fits.
-- `fitted.per_ring_texture_residual()` — per-ring RMS deviation from the shared
-  texture.  Identify which ring drives the rank-1 failure.
+Current expected result: `73 passed`.
 
 ## Status
 
-Real Mantid NeXus loading, full-3D ring removal, Bragg/satellite punching, local
-Bragg backfill, and 3D-DeltaPDF computation are implemented.  The current Bragg
-punch stage treats the `(0,0,0)` incident beam separately from Bragg peaks and
-uses UB-aware phi-direction tail expansion for peaks smeared along powder rings.
-The cleanup stack is ready for real-data 3D-DeltaPDF candidate generation and
-inspection.  See [HANDOFF.md](HANDOFF.md) for current hand-off notes and
-[ROADMAP.md](ROADMAP.md) for the development plan.
-
-## Dependencies
-
-```
-numpy >= 1.24
-scipy >= 1.10      (SVD, NNLS, KDTree, FFT, spline)
-h5py  >= 3.8       (HDF5 I/O)
-matplotlib >= 3.7  (visualisation)
-```
-
-## License
-
-MIT
+Ring removal and Bragg cleanup are in active real-data QA. The next development
+stage is the final 3D-DeltaPDF Fourier transform inspection and tuning. See
+[HANDOFF.md](HANDOFF.md) for the current operational state and
+[ROADMAP.md](ROADMAP.md) for the phase plan.

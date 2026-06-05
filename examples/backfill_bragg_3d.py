@@ -7,7 +7,8 @@ new all-valid volume for DeltaPDF.
 Run::
 
     PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
-      /Users/tt9/miniforge3/envs/rmc-discord/bin/python examples/backfill_bragg_3d.py
+      /opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 \
+      examples/backfill_bragg_3d.py
 
 Env overrides:
     DATA_FILE   punched input .h5

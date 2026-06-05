@@ -6,13 +6,14 @@ After masking contaminated voxels (Bragg punches, or ring shells when radial
 interpolation cannot fill them) we need to reconstruct physically reasonable
 intensities. Several complementary strategies are implemented, combined in a pipeline.
 
-> **Scope.** This pipeline is the **general-purpose** inpainter, used primarily for
-> **Bragg holes** (`backfill_bragg`). Powder-ring shells are filled first by
-> `backfill_ring_shells`, which interpolates radially across the thin shell from
-> uncontaminated neighbours (see [powder_rings.md](powder_rings.md)); the methods below
-> are the fallback when a masked voxel has too few clean neighbours. Symmetry averaging
-> is **not** used for ring removal, because the Laue equivalents of a ring voxel lie on
-> the same ring and are equally contaminated.
+> **Scope.** This pipeline is the **general-purpose** inpainter. The current
+> real-data Bragg workflow usually uses `backfill_bragg(method="q_shell")` or
+> `method="local"` before falling back to TV/symmetry methods. Powder-ring shells
+> are filled first by `backfill_ring_shells`, which interpolates radially across
+> the thin shell from uncontaminated neighbours (see
+> [powder_rings.md](powder_rings.md)). Symmetry averaging is **not** used for ring
+> removal, because the Laue equivalents of a ring voxel lie on the same ring and
+> are equally contaminated.
 
 ---
 
@@ -74,11 +75,26 @@ for broad, diffuse backgrounds. Slower than TV for large masks.
 
 ---
 
-## Default pipeline: `"symmetry+tv"`
+## General fallback pipeline: `"symmetry+tv"`
 
 1. Symmetry equivalents fill as many masked voxels as possible.
 2. Remaining unfilled voxels are passed to TV inpainting.
 3. Output includes a `filled_flag` channel marking reconstructed voxels.
+
+## Real-data Bragg backfill
+
+For Bragg-punched volumes, prefer the dedicated wrapper:
+
+```python
+from ndiff.analysis import backfill_bragg
+
+filled = backfill_bragg(punched, method="q_shell")
+```
+
+`method="q_shell"` fills ordinary Bragg components from the robust radial
+background level at the same `|Q|`, while the direct beam keeps its special
+just-outside-`|Q|` fill. `method="local"` remains useful for fast visual checks
+or sparse synthetic volumes.
 
 ---
 

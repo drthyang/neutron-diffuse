@@ -26,7 +26,26 @@ The measured signal is `I_measured(Q, φ) = I_diffuse(Q) + I_ring(Q, φ)`, where
 diffuse signal we want is direction-dependent and does **not** share the ring's radial
 peak structure or azimuthal texture.
 
-## Algorithm
+## Current Real-Data Path
+
+The original factored Gaussian/SVD model remains in the package as
+`PatchedRingModel`, but the current real-data driver uses
+`PatchedRadialRingModel` through `examples/remove_rings_3d.py`.
+
+That path is non-parametric:
+
+1. Fit each H plane independently in the displayed `0kl` frame.
+2. Build robust radial profiles in azimuthal patches.
+3. Estimate a smooth baseline with SNIP-like clipping.
+4. Subtract only azimuthally smooth ring intensity.
+5. Carry cross-H confirmed ring shells and amplitude ceilings into each plane so
+   integer-H Bragg artifacts do not become fake powder rings.
+
+The key design rule is: **ring removal is subtractive only**. Do not replace
+masked/excess regions unless the mask is based on azimuthal smoothness, not
+radial excess.
+
+## Original Factored Ring Algorithm
 
 ### Step 1 — Empty-scan subtraction  (`EmptySubtractor`)
 
@@ -94,7 +113,7 @@ The factored model assumes all rings share one T(φ). Check this after fitting:
 | Artifact | Cause | Mitigation |
 |----------|-------|-----------|
 | Residual ring after subtraction | Gaussian width too narrow | Widen σᵢ; check detection |
-| Per-ring texture mismatch | Shared T(φ) too restrictive | Inspect `rank1_variance`; per-ring T_i(φ) |
+| Texture mismatch | Shared T(φ) too restrictive | Inspect `rank1_variance` |
 | Over-subtraction of diffuse | Ring model absorbs diffuse | Reduce detection sensitivity |
 | Gibbs ringing in ΔPDF | Hard mask boundary | Sigmoid taper (`taper_width > 0`) |
 | Biased fill values | Interpolation can't capture sharp diffuse | TV fallback; tune λ |
@@ -102,4 +121,5 @@ The factored model assumes all rings share one T(φ). Check this after fitting:
 ## References
 
 - Weber & Simonov, *Z. Kristallogr.* 227, 238–247 (2012) — 3D-ΔPDF.
-- Simonov, Weber & Steurer, *J. Appl. Cryst.* 47, 2011–2018 (2014) — 3D-ΔPDF and punch-and-fill.
+- Simonov, Weber & Steurer, *J. Appl. Cryst.* 47, 2011–2018 (2014) —
+  3D-ΔPDF and punch-and-fill.

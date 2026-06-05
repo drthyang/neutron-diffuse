@@ -2,10 +2,9 @@
 
 ## Overview
 
-`ndiff` ships a small **visualization** layer (`ndiff.visualization`) and an
-interactive **exploration preamble** (`examples/explore.py`) for inspecting an
-`HKLVolume` by eye — slices, radial profiles, azimuthal ring texture, and a
-multi-panel diagnostic overview.
+`ndiff` ships a small **visualization** layer (`ndiff.visualization`) and
+interactive example scripts for inspecting an `HKLVolume` by eye: slices, radial
+profiles, azimuthal ring texture, and cleanup before/after panels.
 
 This is deliberately kept as a thin, scriptable layer rather than a monolithic
 GUI: each plot function takes an `HKLVolume`, draws into a Matplotlib `Axes`
@@ -15,11 +14,36 @@ panels, a dashboard, Mantid-side hooks) should build on these same primitives.
 
 ---
 
-## 1. Launching a live plotting session
+## 1. Cleanup QA Viewer
 
-The exploration preamble loads the three real 28K volumes and pulls the plot
-helpers into scope. Run it with IPython and an **interactive** Matplotlib
-backend so figures open in live, pan/zoom windows and you stay at a prompt:
+The current real-data QA entry point is `examples/explore_slice.py`. It processes
+all H planes, then opens a four-panel viewer with an H slider:
+
+```bash
+env PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl USE_BACKGROUND=0 \
+PUNCH_PRESET=cc_on MODE=both MIN_I=0.8 MIN_PROM=0.8 \
+INTEGER_FIT_POSITION=1 INTEGER_FIT_SHAPE=1 INTEGER_H_GUARD=0.12 \
+SEARCH_EXCLUDE_H=-0.6667,-0.3333,0.3333,0.6667 SEARCH_EXCLUDE_H_WIDTH=0.08 \
+BACKFILL_METHOD=q_shell H_VALUE=0.3333 \
+/opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3 examples/explore_slice.py
+```
+
+Panels:
+
+- `data`
+- `Removed ring`
+- `Punched`
+- `Backfilled`
+
+Use this viewer to inspect integer-H Bragg cleanup and fractional-H diffuse
+preservation before running the final 3D-DeltaPDF transform.
+
+## 2. Launching A General Plotting Session
+
+The older exploration preamble (`examples/explore.py`) loads raw/data/background
+volumes when those files are present and pulls the plot helpers into scope. Run
+it with IPython and an **interactive** Matplotlib backend so figures open in
+live, pan/zoom windows and you stay at a prompt:
 
 ```bash
 cd <repo root>
@@ -51,7 +75,7 @@ so it keeps working if you swap in a different dataset.
 
 ---
 
-## 2. The visualization API
+## 3. The Visualization API
 
 All functions live in `ndiff.visualization` and are re-exported at that level:
 
@@ -145,7 +169,7 @@ fig = plot_overview(data, log_scale=True)
 
 ---
 
-## 3. Recipes
+## 4. Recipes
 
 ```python
 # Compare data vs background on a shared colour treatment.
@@ -166,7 +190,7 @@ import matplotlib; matplotlib.use("Agg")
 
 ---
 
-## 4. Design notes & future directions
+## 5. Design Notes & Future Directions
 
 - **Primitive-first.** Every plot function accepts an `HKLVolume`, draws into a
   caller-supplied `Axes`/`Figure`, and returns it. Composite views
@@ -192,4 +216,6 @@ import matplotlib; matplotlib.use("Agg")
 
 - [`powder_rings.md`](algorithms/powder_rings.md) — the |Q| binning and ring
   detection that `plot_radial_profile` / `plot_azimuthal_map` visualise.
+- [`bragg_cleanup.md`](algorithms/bragg_cleanup.md) — Bragg punch/backfill
+  workflow and current guarded `MODE=both` settings.
 - `examples/explore.py` — the live-session preamble described above.
