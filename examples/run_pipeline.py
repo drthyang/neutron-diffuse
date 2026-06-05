@@ -6,7 +6,9 @@ Runs the four processing stages in order, then opens the orthoslice viewer:
     2. punch_bragg_3d.py      *_ringremoved.h5          → *_braggpunched.h5
     3. backfill_bragg_3d.py   *_braggpunched.h5         → *_backfilled.h5
     4. delta_pdf.py           *_backfilled.h5           → examples/_delta_pdf.h5
-    5. explore_delta_pdf_ortho.py   (interactive sliders)
+    5. explore_slice.py       (4-panel KL QA: data | ring removed | punched |
+                               backfilled — H + vmin/vmax sliders)
+    6. explore_delta_pdf_ortho.py   (ΔPDF real-space orthoslices, sliders)
 
 Each stage is **skipped if its output already exists** (resume), so re-running
 only does the missing work.  Use FORCE / FORCE_FROM to recompute.
@@ -60,6 +62,7 @@ STAGE_DEFAULTS = {
         "SUBTRACT_BG": "0,1.5,1.5", "CROP_K": "8", "CROP_L": "15",
         "APODIZE": "gaussian", "GAUSSIAN_SIGMA": "0.4",
     },
+    "qa": {"H_VALUE": "0.3333", "SLIDER_MIN": "0.0", "SLIDER_MAX": "1.0"},
     "viewer": {"RMAX": "50"},
 }
 
@@ -177,13 +180,23 @@ else:
     _run("4/5 3D-ΔPDF", "delta_pdf.py", _stage_env("pdf", PROC_FILE=fill_out))
 
 # ------------------------------------------------------------------
-# stage 5: interactive orthoslice viewer
+# stages 5–6: interactive viewers (close each window to advance)
 # ------------------------------------------------------------------
 if os.environ.get("NO_VIEWER", "0") == "1":
     print(f"\nNO_VIEWER=1 — done. ΔPDF cached at {pdf_out}", flush=True)
     sys.exit(0)
 
-print(f"\n{'='*70}\n▶ 5/5 interactive orthoslice viewer\n{'='*70}", flush=True)
+# 5/6 processed-data QA: 4-panel KL viewer (data | ring removed | punched |
+# backfilled) with H + vmin/vmax sliders, loading the precomputed stages so
+# nothing is recomputed.
+print(f"\n{'='*70}\n▶ 5/6 processed-data QA viewer (KL plane; H + vmin/vmax sliders)"
+      f"\n{'='*70}", flush=True)
+qa_env = _stage_env("qa", DATA_FILE=raw, RING_FILE=ring_out,
+                    PUNCH_FILE=punch_out, BACKFILL_FILE=fill_out)
+subprocess.run([PY, str(HERE / "explore_slice.py")], env=qa_env, cwd=REPO)
+
+# 6/6 ΔPDF real-space orthoslice viewer
+print(f"\n{'='*70}\n▶ 6/6 3D-ΔPDF orthoslice viewer\n{'='*70}", flush=True)
 viewer_env = _stage_env("viewer", PDF_FILE=pdf_out)
 subprocess.run([PY, str(HERE / "explore_delta_pdf_ortho.py")], env=viewer_env, cwd=REPO)
 print("workflow complete.", flush=True)

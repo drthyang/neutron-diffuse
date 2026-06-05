@@ -65,11 +65,16 @@ Latest visual QA preference:
 ## One-Command Workflow
 
 `examples/run_pipeline.py` chains every stage end-to-end — raw `.nxs` → ring
-removal → Bragg punch → backfill → 3D-ΔPDF → the interactive orthoslice viewer —
-using the validated `cc_on` / clean-ΔPDF presets below.  Each stage is **skipped
-if its output already exists** (resume); pass `FORCE=1` or `FORCE_FROM=rings|
-punch|backfill|pdf` to recompute, `NO_VIEWER=1` to stop after the ΔPDF.  Every
-individual stage's env vars still pass through and override the defaults.
+removal → Bragg punch → backfill → 3D-ΔPDF — then opens two interactive viewers:
+(5) the 4-panel KL cleanup QA viewer (`explore_slice.py`: data | ring removed |
+punched | backfilled, with H + vmin/vmax sliders) and (6) the ΔPDF orthoslice
+viewer (`explore_delta_pdf_ortho.py`).  Close each window to advance.  It uses
+the validated `cc_on` / clean-ΔPDF presets below.  Each compute stage is
+**skipped if its output already exists** (resume); pass `FORCE=1` or
+`FORCE_FROM=rings|punch|backfill|pdf` to recompute, `NO_VIEWER=1` to stop after
+the ΔPDF.  The ΔPDF stage is dataset-aware — it recomputes if the cached
+`_delta_pdf.h5` came from a different input.  Every individual stage's env vars
+still pass through and override the defaults.
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
