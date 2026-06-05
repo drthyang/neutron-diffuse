@@ -6,9 +6,9 @@ Shows three rows (one per temperature) × three orthogonal real-space cuts:
     col 1: x_H – z_L  (at y_K = cut)
     col 2: y_K – z_L  (at x_H = cut)
 
-Cut positions are shared across all temperatures so you always compare the
-same real-space slice.  Each row has its own robust colour scale (p99 at
-r > 3 Å); the contrast slider multiplies all panels uniformly.
+All nine panels share a single colour scale (global p99 of |ΔPDF| at r > 3 Å
+across all three datasets), so intensities are directly comparable across
+temperatures.  The contrast slider multiplies this global scale.
 
 Run::
 
@@ -20,10 +20,8 @@ Env:
     PDF_45K   path to 45 K ΔPDF .h5  (default: examples/_delta_pdf_45K.h5)
     PDF_100K  path to 100 K ΔPDF .h5 (default: examples/_delta_pdf_100K.h5)
     RMAX      display half-window in Å for all axes (default: 50)
-    PERCENTILE per-row colour-scale percentile at r > 3 Å (default: 98)
+    PERCENTILE global colour-scale percentile at r > 3 Å (default: 98)
     CONTRAST_MIN / CONTRAST_MAX  contrast slider range (default: 0.1 / 20)
-    SHARED_SCALE  1 → use a single colour scale tied to 22 K for all rows
-                  (default: 0 = per-row independent scale)
 """
 import os
 import sys
@@ -48,7 +46,6 @@ RMAX = float(os.environ.get("RMAX", "50.0"))
 PCT = float(os.environ.get("PERCENTILE", "98.0"))
 CMIN = float(os.environ.get("CONTRAST_MIN", "0.1"))
 CMAX = float(os.environ.get("CONTRAST_MAX", "20.0"))
-SHARED_SCALE = bool(int(os.environ.get("SHARED_SCALE", "0")))
 
 # ------------------------------------------------------------------
 # load all three ΔPDF files
@@ -79,16 +76,23 @@ for t in TEMPS:
                        xw=x[mx], yw=y[my], zw=z[mz])
     print(f"  shape={data.shape}  apod={apod}", flush=True)
 
+# ------------------------------------------------------------------
+# global colour scale: p99 of |ΔPDF| at r > 3 Å across all datasets
+# ------------------------------------------------------------------
+print(f"computing global colour scale (p{PCT:.0f} at r>3 Å) ...", flush=True)
+_all_vals = []
+for t in TEMPS:
+    d = datasets[t]
+    x, y, z = d["x"], d["y"], d["z"]
+    r2 = x[:, None, None]**2 + y[None, :, None]**2 + z[None, None, :]**2
+    _all_vals.append(np.abs(d["data"][r2 > 9.0]))
+global_vmax = float(np.percentile(np.concatenate(_all_vals), PCT))
+del _all_vals
+print(f"  global vmax = ±{global_vmax:.4g}", flush=True)
+
 
 def nidx(ax, v):
     return int(np.argmin(np.abs(ax - v)))
-
-
-def pvmax(slc, a1, a2):
-    g1, g2 = np.meshgrid(a1, a2, indexing="ij")
-    r = np.sqrt(g1 ** 2 + g2 ** 2)
-    sel = np.abs(slc[r > 3.0])
-    return float(np.percentile(sel, PCT)) if sel.size else 1.0
 
 
 def _slices(d, ix, iy, iz):
@@ -115,10 +119,6 @@ XLABELS = ["x_H (Å)", "x_H (Å)", "y_K (Å)"]
 YLABELS = ["y_K (Å)", "z_L (Å)", "z_L (Å)"]
 
 panels = {}   # panels[temp][col] = AxesImage
-vmaxes0 = {}  # baseline p99 per (temp, col) at z/y/x = 0
-
-# reference vmax (22K, col 0) if SHARED_SCALE
-_ref_vmax = None
 
 for ri, t in enumerate(TEMPS):
     d = datasets[t]
@@ -129,19 +129,12 @@ for ri, t in enumerate(TEMPS):
     a12 = [(d["xw"], d["yw"]), (d["xw"], d["zw"]), (d["yw"], d["zw"])]
 
     panels[t] = []
-    vmaxes0[t] = []
     for ci, (img, (a1, a2), xl, yl, plane) in enumerate(
             zip(imgs0, a12, XLABELS, YLABELS, COL_PLANES)):
-        vm = pvmax(img, a1, a2)
-        if SHARED_SCALE and ri == 0 and ci == 0:
-            _ref_vmax = vm
-        if SHARED_SCALE:
-            vm = _ref_vmax or vm
-        vmaxes0[t].append(vm)
         ax = axes[ri][ci]
         im = ax.imshow(img.T, origin="lower", aspect="equal",
                        extent=[a1[0], a1[-1], a2[0], a2[-1]],
-                       cmap="RdBu_r", vmin=-vm, vmax=vm,
+                       cmap="RdBu_r", vmin=-global_vmax, vmax=global_vmax,
                        interpolation="bilinear")
         ax.set_title(f"{t}  {plane}", fontsize=10)
         ax.set_xlabel(xl, fontsize=8)
@@ -201,25 +194,20 @@ chk.on_clicked(_toggle_grid)
 
 
 def update(_):
+    vm = global_vmax * s_c.val
     for t in TEMPS:
         d = datasets[t]
         ix = nidx(d["x"], s_x.val)
         iy = nidx(d["y"], s_y.val)
         iz = nidx(d["z"], s_z.val)
         imgs = _slices(d, ix, iy, iz)
-        a12 = [(d["xw"], d["yw"]), (d["xw"], d["zw"]), (d["yw"], d["zw"])]
         titles = [
             f"{t}  x_H–y_K  (z_L={d['z'][iz]:+.1f} Å)",
             f"{t}  x_H–z_L  (y_K={d['y'][iy]:+.1f} Å)",
             f"{t}  y_K–z_L  (x_H={d['x'][ix]:+.1f} Å)",
         ]
-        for im, img, (a1, a2), ttl, vm0 in zip(
-                panels[t], imgs, a12, titles, vmaxes0[t]):
+        for im, img, ttl in zip(panels[t], imgs, titles):
             im.set_data(img.T)
-            if SHARED_SCALE:
-                vm = vm0 * s_c.val
-            else:
-                vm = pvmax(img, a1, a2) * s_c.val
             im.set_clim(-vm, vm)
             im.axes.set_title(ttl, fontsize=10)
     fig.canvas.draw_idle()
@@ -228,10 +216,9 @@ def update(_):
 for s in (s_x, s_y, s_z, s_c):
     s.on_changed(update)
 
-scale_note = "shared scale (22 K ref)" if SHARED_SCALE else "per-row auto scale"
 fig.suptitle(
-    f"3D-ΔPDF: 22 K / 45 K / 100 K  ·  ±{RMAX:.0f} Å  ·  {scale_note}  "
-    "— drag sliders to move cuts",
+    f"3D-ΔPDF: 22 K / 45 K / 100 K  ·  ±{RMAX:.0f} Å  ·  "
+    f"global scale ±{global_vmax:.4g}  — drag sliders to move cuts",
     y=0.975, fontsize=13,
 )
 
