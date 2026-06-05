@@ -16,8 +16,9 @@ Run (interactive, on this Mac)::
       examples/explore_delta_pdf.py
 
 Controls:
-    x_H slider   — scrub the real-space x_H plane (Å)
+    x_H slider     — scrub the real-space x_H plane (Å)
     |scale| slider — symmetric colour-scale half-range
+    "unit cells" checkbox — toggle the light-gray unit-cell gridlines
     Close the window to exit.
 
 Env overrides:
@@ -25,6 +26,9 @@ Env overrides:
     PROC_FILE   backfilled .h5 to transform if no PDF_FILE (auto-detect)
     X_VALUE     initial x_H plane in Å (default: 0.0)
     RMAX        display half-window in Å for K and L axes (default: 25)
+    SCALE_MAX   upper |scale| slider multiple of the p99 level (default: 20)
+    LAT_A/LAT_B/LAT_C  direct-lattice constants in Å for the unit-cell gridlines
+                (default: ΔPDF file attrs, else the source UB matrix)
     INTERP      imshow interpolation (default: bilinear; "nearest" for raw pixels)
     SMOKE       1 → render the initial frame to PNG and exit (no GUI); used
                 to verify the script headless.
@@ -39,9 +43,10 @@ import matplotlib
 SMOKE = bool(int(os.environ.get("SMOKE", "0")))
 matplotlib.use("Agg" if SMOKE else "macosx")
 
+import h5py
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.widgets import Slider
+from matplotlib.widgets import CheckButtons, Slider
 
 # ------------------------------------------------------------------
 # load or compute the 3D-ΔPDF
@@ -82,6 +87,39 @@ print(f"  ΔPDF shape (x_H,y_K,z_L): {data.shape}", flush=True)
 
 x_value = float(os.environ.get("X_VALUE", "0.0"))
 rmax = float(os.environ.get("RMAX", "25.0"))
+scale_max = float(os.environ.get("SCALE_MAX", "20.0"))   # |scale| slider headroom
+
+
+def _resolve_lattice():
+    """Direct-lattice constants (a, b, c) in Å for unit-cell gridlines, or None.
+
+    Precedence: env LAT_A/B/C → ΔPDF-file attrs → source backfilled UB (loaded
+    case) → the in-memory volume's UB (computed case).
+    """
+    ev = [os.environ.get(k) for k in ("LAT_A", "LAT_B", "LAT_C")]
+    if all(ev):
+        return tuple(float(v) for v in ev)
+    if pdf_file.exists():
+        with h5py.File(pdf_file, "r") as fh:
+            if all(k in fh.attrs for k in ("lat_a", "lat_b", "lat_c")):
+                return (float(fh.attrs["lat_a"]), float(fh.attrs["lat_b"]),
+                        float(fh.attrs["lat_c"]))
+            src = str(fh.attrs.get("source_file", ""))
+        sp = Path("data/processed") / src if src else None
+        if sp and sp.exists():
+            try:
+                with h5py.File(sp, "r") as fh:
+                    ub = np.array(fh["entry/ub_matrix"], dtype=float)
+                d = 2 * np.pi * np.linalg.inv(ub).T
+                return tuple(float(np.linalg.norm(d[:, i])) for i in range(3))
+            except Exception:
+                return None
+        return None
+    try:                                  # computed on the fly: vol is in scope
+        d = 2 * np.pi * np.linalg.inv(vol.ub_matrix).T
+        return tuple(float(np.linalg.norm(d[:, i])) for i in range(3))
+    except Exception:
+        return None
 
 # ------------------------------------------------------------------
 # robust colour scale: p99 of |ΔPDF| at r>3 Å (skip near-origin spike)
@@ -110,10 +148,10 @@ def _nearest_x(val: float) -> int:
 
 
 # ------------------------------------------------------------------
-# figure
+# figure + controls
 # ------------------------------------------------------------------
-fig, ax = plt.subplots(figsize=(7.5, 7.5))
-plt.subplots_adjust(left=0.12, bottom=0.20, right=0.98, top=0.93)
+fig, ax = plt.subplots(figsize=(8.0, 8.6))
+fig.subplots_adjust(left=0.11, bottom=0.18, right=0.97, top=0.94)
 
 ix0 = _nearest_x(x_value)
 im = ax.imshow(
@@ -128,21 +166,56 @@ im = ax.imshow(
 ax.set_xlabel("y_K (Å)")
 ax.set_ylabel("z_L (Å)")
 title = ax.set_title(f"3D-ΔPDF  y_K–z_L plane   x_H = {x_axis[ix0]:+.2f} Å")
-cbar = fig.colorbar(im, ax=ax, label="ΔPDF (arb. units)", shrink=0.85)
+fig.colorbar(im, ax=ax, label="ΔPDF (arb. units)", shrink=0.85)
 
-# sliders
-ax_x = plt.axes([0.12, 0.10, 0.70, 0.03])
-ax_v = plt.axes([0.12, 0.05, 0.70, 0.03])
+# light-gray unit-cell gridlines (b along y_K, c along z_L), toggleable
+lat = _resolve_lattice()
+gridlines = []
+if lat is not None:
+    _, b_len, c_len = lat
+    if b_len > 0:
+        nmax = int(np.floor(max(abs(y_win[0]), abs(y_win[-1])) / b_len))
+        for n in range(-nmax, nmax + 1):
+            gridlines.append(ax.axvline(n * b_len, color="0.6", lw=0.6,
+                                        alpha=0.7, zorder=3))
+    if c_len > 0:
+        mmax = int(np.floor(max(abs(z_win[0]), abs(z_win[-1])) / c_len))
+        for m in range(-mmax, mmax + 1):
+            gridlines.append(ax.axhline(m * c_len, color="0.6", lw=0.6,
+                                        alpha=0.7, zorder=3))
+    print(f"  unit-cell grid: b={b_len:.3f} c={c_len:.3f} Å "
+          f"({len(gridlines)} lines)", flush=True)
+else:
+    print("  unit-cell grid: lattice unknown (set LAT_A/LAT_B/LAT_C to enable)",
+          flush=True)
+
+# controls: x_H + |scale| sliders (left), unit-cell toggle (right)
+axc = "lightgoldenrodyellow"
+ax_x = fig.add_axes([0.11, 0.105, 0.60, 0.03], facecolor=axc)
+ax_v = fig.add_axes([0.11, 0.055, 0.60, 0.03], facecolor=axc)
 s_x = Slider(ax_x, "x_H (Å)", float(x_axis.min()), float(x_axis.max()),
              valinit=float(x_axis[ix0]))
-s_v = Slider(ax_v, "|scale|", vmax0 * 0.05, vmax0 * 5.0, valinit=vmax0)
+s_v = Slider(ax_v, "|scale|", vmax0 * 0.05, vmax0 * scale_max, valinit=vmax0)
+
+ax_chk = fig.add_axes([0.78, 0.055, 0.17, 0.06])
+ax_chk.set_frame_on(False)
+chk = CheckButtons(ax_chk, ["unit cells"], [True])
+
+
+def _toggle_grid(_label):
+    vis = chk.get_status()[0]
+    for ln in gridlines:
+        ln.set_visible(vis)
+    fig.canvas.draw_idle()
+
+
+chk.on_clicked(_toggle_grid)
 
 
 def _update(_):
     ix = _nearest_x(s_x.val)
     im.set_data(_plane(ix).T)
-    v = s_v.val
-    im.set_clim(-v, v)
+    im.set_clim(-s_v.val, s_v.val)
     title.set_text(f"3D-ΔPDF  y_K–z_L plane   x_H = {x_axis[ix]:+.2f} Å")
     fig.canvas.draw_idle()
 

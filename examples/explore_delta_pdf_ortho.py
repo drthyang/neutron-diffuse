@@ -168,19 +168,20 @@ else:
     print("  unit-cell grid: lattice unknown (set LAT_A/LAT_B/LAT_C to enable)",
           flush=True)
 
-# sliders
+# controls — cut sliders (left column), contrast + unit-cell toggle (right column)
 axc = "lightgoldenrodyellow"
-ax_sx = plt.axes([0.08, 0.14, 0.55, 0.025], facecolor=axc)
-ax_sy = plt.axes([0.08, 0.10, 0.55, 0.025], facecolor=axc)
-ax_sz = plt.axes([0.08, 0.06, 0.55, 0.025], facecolor=axc)
-ax_sc = plt.axes([0.74, 0.10, 0.20, 0.025], facecolor=axc)
+ax_sx = plt.axes([0.09, 0.135, 0.54, 0.028], facecolor=axc)
+ax_sy = plt.axes([0.09, 0.090, 0.54, 0.028], facecolor=axc)
+ax_sz = plt.axes([0.09, 0.045, 0.54, 0.028], facecolor=axc)
+ax_sc = plt.axes([0.76, 0.115, 0.18, 0.028], facecolor=axc)
 s_x = Slider(ax_sx, "x_H cut (Å)", float(x.min()), float(x.max()), valinit=0.0)
 s_y = Slider(ax_sy, "y_K cut (Å)", float(y.min()), float(y.max()), valinit=0.0)
 s_z = Slider(ax_sz, "z_L cut (Å)", float(z.min()), float(z.max()), valinit=0.0)
 s_c = Slider(ax_sc, "contrast ×", CMIN, CMAX, valinit=1.0)
 
-# unit-cell gridline on/off toggle (next to the contrast slider)
-ax_chk = plt.axes([0.74, 0.04, 0.20, 0.04], facecolor=axc)
+# unit-cell gridline on/off toggle (under the contrast slider, frameless)
+ax_chk = plt.axes([0.76, 0.04, 0.18, 0.055])
+ax_chk.set_frame_on(False)
 chk = CheckButtons(ax_chk, ["unit cells"], [True])
 
 
