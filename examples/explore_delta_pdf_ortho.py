@@ -27,6 +27,9 @@ Env overrides:
     PDF_FILE  precomputed ΔPDF .h5 (default: examples/_delta_pdf.h5)
     RMAX      display half-window in Å for all axes (default: 50)
     PERCENTILE per-panel colour-scale percentile at r>3 Å (default: 98)
+    CONTRAST_MIN / CONTRAST_MAX  range of the contrast-× slider that scales the
+              per-panel colour limits (defaults 0.1 .. 20; raise CONTRAST_MAX to
+              push the colour scale even larger / further de-saturate)
     SMOKE     1 → render the initial frame to PNG and exit (no GUI).
 """
 import os
@@ -58,6 +61,8 @@ print(f"  shape (x_H,y_K,z_L): {data.shape}  apod={apod}", flush=True)
 
 RMAX = float(os.environ.get("RMAX", "50.0"))
 PCT = float(os.environ.get("PERCENTILE", "98.0"))
+CMIN = float(os.environ.get("CONTRAST_MIN", "0.1"))
+CMAX = float(os.environ.get("CONTRAST_MAX", "20.0"))
 
 mx, my, mz = np.abs(x) <= RMAX, np.abs(y) <= RMAX, np.abs(z) <= RMAX
 xw, yw, zw = x[mx], y[my], z[mz]
@@ -116,7 +121,7 @@ ax_sc = plt.axes([0.74, 0.10, 0.20, 0.025], facecolor=axc)
 s_x = Slider(ax_sx, "x_H cut (Å)", float(x.min()), float(x.max()), valinit=0.0)
 s_y = Slider(ax_sy, "y_K cut (Å)", float(y.min()), float(y.max()), valinit=0.0)
 s_z = Slider(ax_sz, "z_L cut (Å)", float(z.min()), float(z.max()), valinit=0.0)
-s_c = Slider(ax_sc, "contrast ×", 0.1, 4.0, valinit=1.0)
+s_c = Slider(ax_sc, "contrast ×", CMIN, CMAX, valinit=1.0)
 
 
 def update(_):
