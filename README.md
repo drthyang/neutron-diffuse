@@ -33,7 +33,8 @@ python3 examples/run_pipeline.py
 `run_pipeline.py` skips any stage whose output already exists (resume); use
 `FORCE=1` / `FORCE_FROM=rings|punch|backfill|pdf` to recompute, or `NO_VIEWER=1`
 to stop after the ΔPDF. The preferred input is the Mantid-background-subtracted
-`*_cc_sub_bkg.nxs` file in `data/raw/`.
+`*_cc_sub_bkg.nxs` file in `data/raw/` (`cc` = CORELLI **c**orrelation **c**hopper;
+the `*_sub_bkg` files have the empty-can background subtracted).
 
 ## Stage-By-Stage Workflow
 

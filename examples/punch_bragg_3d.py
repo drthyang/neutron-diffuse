@@ -15,9 +15,10 @@ Run::
 Env overrides:
     DATA_FILE    ring-removed input .h5 (default: data/processed/<22K>_ringremoved.h5)
     OUT_FILE     punched output .h5  (default: <stem>_braggpunched.h5)
-    PUNCH_PRESET "cc_off" | "cc_on" | unset.  "cc_off" saves the earlier
-                 aggressive weak-peak setup; "cc_on" is less aggressive for the
-                 cleaner cc-on data so diffuse scattering is not over-masked.
+    PUNCH_PRESET "cc_off" | "cc_on" | unset (cc = CORELLI correlation chopper).
+                 "cc_off" saves the earlier aggressive weak-peak setup; "cc_on"
+                 is less aggressive for the cleaner correlation-chopper
+                 (*_cc_sub_bkg) data so diffuse scattering is not over-masked.
     MODE         "integer" | "auto" | "search" | "both" (default both).
                  "auto"/"search" detects sharp high-tail outliers above the
                  robust per-|Q| diffuse level, analogous to the ring-removal

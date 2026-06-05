@@ -23,9 +23,11 @@ Env overrides:
     DATA_FILE   input .nxs (default: the 22K mmm validation file)
     OUT_FILE    output .h5 (default: data/processed/<stem>_ringremoved.h5)
     Q_MIN,Q_MAX radial fit range (default 1.5, 10.5 — matches the slice harness)
-    RING_PRESET cc_off|cc_on. cc_off keeps the previous aggressive defaults;
-                cc_on is less flexible in texture so diffuse scattering at
-                H≈1/3 is less likely to enter I_ring.
+    RING_PRESET cc_off|cc_on (cc = CORELLI correlation chopper).  cc_off keeps
+                the previous aggressive defaults; cc_on is less flexible in
+                texture (tuned for the cleaner correlation-chopper / *_cc_sub_bkg
+                data) so diffuse scattering at H≈1/3 is less likely to enter
+                I_ring.
     Q_STEP,N_FOURIER,N_PATCHES,PROFILE_METHOD,TEXTURE_Q_SMOOTH,TEXTURE_RIDGE
                 override the selected preset/model defaults.
 """
