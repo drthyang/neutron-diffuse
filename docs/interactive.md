@@ -49,29 +49,46 @@ plotting scripts.**
 ### Orthoslice viewer (recommended) — `examples/explore_delta_pdf_ortho.py`
 
 All three orthogonal real-space planes at once — `x_H–y_K` (a–b), `x_H–z_L`
-(a–c), `y_K–z_L` (b–c) — with sliders to move each cut position and a global
-contrast control. Each panel auto-scales to its own robust level, so the three
-very different magnitudes stay readable.
+(a–c), `y_K–z_L` (b–c) — with sliders to move each cut position, a contrast
+control, and a **unit-cell gridline toggle**. Each panel auto-scales to its own
+robust level, so the three very different magnitudes stay readable.
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl RMAX=50 \
 python3 examples/explore_delta_pdf_ortho.py
 ```
 
+Controls: `x_H / y_K / z_L cut` sliders · `contrast ×` (scales the per-panel
+colour limits) · `unit cells` checkbox (light-gray gridlines at the a/b/c lattice
+spacings).
+
 - `RMAX` — display half-window (Å) for all axes (default 50).
 - `PERCENTILE` — per-panel colour-scale percentile at r>3 Å (default 98).
+- `CONTRAST_MIN` / `CONTRAST_MAX` — contrast-slider range (default 0.1 .. 20).
+- `LAT_A` / `LAT_B` / `LAT_C` — direct-lattice constants (Å) for the gridlines
+  (default: ΔPDF `.h5` attrs, else the source backfilled UB matrix).
 - `PDF_FILE` — ΔPDF `.h5` (default `examples/_delta_pdf.h5`).
 - `SMOKE=1` — render one frame to PNG headless (verification, no GUI).
 
 ### Single-plane viewer — `examples/explore_delta_pdf.py`
 
-The `y_K–z_L` plane with an `x_H` slider plus a `|scale|` slider. Good for
-focusing on the b–c correlation plane carried by the diffuse layers.
+The `y_K–z_L` plane with an `x_H` slider, a `|scale|` slider, and the same
+**unit-cell gridline toggle** (b along y_K, c along z_L). Good for focusing on the
+b–c correlation plane carried by the diffuse layers.
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl RMAX=25 \
 python3 examples/explore_delta_pdf.py
 ```
+
+- `RMAX` — display half-window (Å) for K and L (default 25).
+- `SCALE_MAX` — upper `|scale|` slider multiple of the p99 level (default 20).
+- `LAT_A` / `LAT_B` / `LAT_C` — lattice constants (Å) for the gridlines.
+- `X_VALUE` — initial x_H plane (Å); `PDF_FILE` / `PROC_FILE`; `SMOKE=1`.
+
+Both viewers store the lattice constants (`lat_a/b/c`) directly in the ΔPDF
+`.h5` when written by `examples/delta_pdf.py`, so the gridlines work without any
+fallback on freshly generated transforms.
 
 Both use the `macosx` backend and block on `plt.show()` — launch with
 `run_in_background: true`; exit code 0 means the window was closed. For the
