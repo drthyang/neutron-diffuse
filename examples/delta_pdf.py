@@ -134,7 +134,8 @@ print(f"  real-space range: x ±{dpdf.x_axis.max():.1f} Å,"
 
 # Save DeltaPDF to HDF5 so it can be reloaded without recomputing
 import h5py
-out_h5 = Path(__file__).parent / "_delta_pdf.h5"
+_default_out = Path(__file__).parent / "_delta_pdf.h5"
+out_h5 = Path(os.environ.get("OUT_FILE", str(_default_out)))
 with h5py.File(out_h5, "w") as fh:
     fh.create_dataset("data", data=dpdf.data, compression="gzip", compression_opts=4)
     fh.create_dataset("x_axis", data=dpdf.x_axis)
