@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -16,12 +16,12 @@ def plot_radial_profile(
     vol: HKLVolume,
     n_bins: int = 500,
     stat: str = "mean",
-    q_range: Optional[tuple[float, float]] = None,
-    mark_q: Optional[list[float]] = None,
-    ax: Optional["Axes"] = None,
-    title: Optional[str] = None,
+    q_range: tuple[float, float] | None = None,
+    mark_q: list[float] | None = None,
+    ax: Axes | None = None,
+    title: str | None = None,
     **kwargs: object,
-) -> "Axes":
+) -> Axes:
     """Plot the 1D radial intensity profile |Q| vs I.
 
     Wraps :func:`ndiff.preprocessing.powder_rings.radial_profile` for display.
@@ -48,6 +48,7 @@ def plot_radial_profile(
     matplotlib.axes.Axes
     """
     import matplotlib.pyplot as plt
+
     from ndiff.preprocessing.powder_rings import radial_profile
 
     q_centers, profile, counts = radial_profile(vol, n_bins=n_bins, stat=stat)
@@ -79,10 +80,10 @@ def plot_azimuthal_map(
     q_center: float,
     q_width: float = 0.1,
     n_phi_bins: int = 72,
-    ax: Optional["Axes"] = None,
-    title: Optional[str] = None,
+    ax: Axes | None = None,
+    title: str | None = None,
     **kwargs: object,
-) -> "Axes":
+) -> Axes:
     """Plot intensity vs azimuthal angle φ for a thin |Q| shell.
 
     Useful for visualising the azimuthal texture T(φ) of a powder ring.

@@ -21,9 +21,8 @@ from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.fft import fftn, fftshift, ifftshift, fftfreq
+from scipy.fft import fftfreq, fftn, fftshift, ifftshift
 from scipy.ndimage import gaussian_filter
-
 
 Window = Literal["hann", "gaussian", "none"]
 
@@ -69,7 +68,7 @@ class DeltaPDF:
 
 
 def compute_delta_pdf(
-    vol: "HKLVolume",  # noqa: F821
+    vol: HKLVolume,  # noqa: F821
     apodization: Window = "hann",
     gaussian_sigma: float = 0.5,
     zero_pad: bool = True,
@@ -133,7 +132,6 @@ def compute_delta_pdf(
     -------
     DeltaPDF
     """
-    from ndiff.core import HKLVolume  # local import to avoid circular
 
     data = vol.masked_data()  # NaN at masked voxels
 

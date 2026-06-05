@@ -1,13 +1,12 @@
 """Tests for inpainting methods."""
 
 import numpy as np
-import pytest
 
-from ndiff.inpainting.tv_inpainting import tv_inpaint
-from ndiff.inpainting.pipeline import fill
-from ndiff.inpainting.interpolation import rbf_fill, biharmonic_fill
-from ndiff.inpainting.symmetry import symmetry_fill, ORTHORHOMBIC_MMM
 from ndiff.core import HKLVolume
+from ndiff.inpainting.interpolation import biharmonic_fill, rbf_fill
+from ndiff.inpainting.pipeline import fill
+from ndiff.inpainting.symmetry import ORTHORHOMBIC_MMM, symmetry_fill
+from ndiff.inpainting.tv_inpainting import tv_inpaint
 
 
 def _smooth_volume(shape=(15, 15, 15)):

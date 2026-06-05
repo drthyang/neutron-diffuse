@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 import numpy as np
 from numpy.typing import NDArray
@@ -51,9 +50,9 @@ class HKLVolume:
         h_range: tuple[float, float],
         k_range: tuple[float, float],
         l_range: tuple[float, float],
-        sigma: Optional[NDArray[np.float64]] = None,
-        ub_matrix: Optional[NDArray[np.float64]] = None,
-    ) -> "HKLVolume":
+        sigma: NDArray[np.float64] | None = None,
+        ub_matrix: NDArray[np.float64] | None = None,
+    ) -> HKLVolume:
         nh, nk, nl = data.shape
         h_axis = np.linspace(h_range[0], h_range[1], nh)
         k_axis = np.linspace(k_range[0], k_range[1], nk)

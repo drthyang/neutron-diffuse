@@ -9,16 +9,15 @@ import dataclasses
 
 import numpy as np
 
+from ndiff.analysis import backfill_bragg, bragg_mask, compute_delta_pdf
 from ndiff.core import HKLVolume
 from ndiff.preprocessing import (
     EmptySubtractor,
     PatchedRingModel,
-    backfill_ring_shells,
     RingShell,
+    backfill_ring_shells,
 )
 from ndiff.preprocessing.ring_model import _gaussian
-from ndiff.analysis import bragg_mask, backfill_bragg, compute_delta_pdf
-
 
 RING_Q = 2.6
 RING_SIGMA = 0.08

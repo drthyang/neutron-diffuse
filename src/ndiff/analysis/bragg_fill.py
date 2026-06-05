@@ -9,14 +9,15 @@ slice-scale staircase / smoothing artefacts in structured diffuse scattering.
 from __future__ import annotations
 
 import dataclasses
-from typing import Literal, Optional, Sequence
+from collections.abc import Sequence
+from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
 from scipy import ndimage
 
 from ndiff.core import HKLVolume
-from ndiff.inpainting.pipeline import fill, Method
+from ndiff.inpainting.pipeline import Method, fill
 
 BraggFillMethod = Method | Literal["local", "q_shell"]
 
@@ -25,7 +26,7 @@ def backfill_bragg(
     vol: HKLVolume,
     method: BraggFillMethod = "local",
     laue_class: str = "m3m",
-    symmetry_ops: Optional[Sequence[NDArray]] = None,
+    symmetry_ops: Sequence[NDArray] | None = None,
     tv_lam: float = 0.2,
     tv_iter: int = 300,
     local_radius: int = 2,
@@ -254,7 +255,7 @@ def _q_shell_component_values(
     lookup: _QShellLookup,
     region: tuple[slice, slice, slice],
     comp: NDArray[np.bool_],
-) -> tuple[Optional[NDArray[np.float64]], Optional[NDArray[np.float64]]]:
+) -> tuple[NDArray[np.float64] | None, NDArray[np.float64] | None]:
     """Return per-voxel radial background values for a punched component."""
     bins = lookup.bin_idx[region][comp]
     if bins.size == 0:

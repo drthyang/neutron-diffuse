@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 from numpy.typing import NDArray
@@ -50,8 +49,8 @@ class _PeakPunch:
     il: int
     intensity: float
     center_hkl: tuple[float, float, float]
-    radii_hkl: Optional[tuple[float, float, float]] = None
-    source_node_hkl: Optional[tuple[int, int, int]] = None
+    radii_hkl: tuple[float, float, float] | None = None
+    source_node_hkl: tuple[int, int, int] | None = None
     local_background: float = float("nan")
 
     def as_tuple(self) -> tuple[int, int, int, float]:
@@ -168,11 +167,11 @@ class BraggRemover:
 
     mode: str = "integer"
     punch_radius_hkl: float = 0.3
-    punch_radii: Optional[tuple[float, float, float]] = None
-    min_intensity: Optional[float] = None
+    punch_radii: tuple[float, float, float] | None = None
+    min_intensity: float | None = None
     min_prominence: float = 1.0
-    integer_n_mad: Optional[float] = None
-    integer_q_step: Optional[float] = None
+    integer_n_mad: float | None = None
+    integer_q_step: float | None = None
     integer_min_shell_size: int = 20
     # Local relative-prominence catch for *small but sharp* Bragg at integer
     # nodes: keep a node when (peak - local_bg) >= integer_local_prominence_n_mad
@@ -180,39 +179,39 @@ class BraggRemover:
     # below the absolute min_intensity / min_prominence floors and the per-|Q|
     # shell threshold.  Position-locked to integer nodes (never a thirds plane),
     # so it is inherently safe for the fractional-H diffuse.  ``None`` disables.
-    integer_local_prominence_n_mad: Optional[float] = None
+    integer_local_prominence_n_mad: float | None = None
     integer_local_min_prominence: float = 0.0
     integer_optimize_position: bool = False
     integer_optimize_shape: bool = False
     integer_fit_threshold_frac: float = 0.35
     integer_fit_radius_n_sigma: float = 2.5
-    integer_fit_max_radius_hkl: Optional[tuple[float, float, float]] = None
-    integer_h_guard_hkl: Optional[float] = None
+    integer_fit_max_radius_hkl: tuple[float, float, float] | None = None
+    integer_h_guard_hkl: float | None = None
     detect_window_hkl: float = 0.2
     intensity_scale: bool = False
-    intensity_ref: Optional[float] = None
+    intensity_ref: float | None = None
     max_radius_scale: float = 3.0
     margin: float = 0.0
     punch_incident_beam: bool = True
-    incident_beam_radii: Optional[tuple[float, float, float]] = None
+    incident_beam_radii: tuple[float, float, float] | None = None
     incident_beam_margin: float = 0.08
     incident_beam_phi_tail_hkl: float = 0.0
-    incident_beam_ellipsoid_radii_hkl: Optional[tuple[float, float, float]] = None
-    incident_beam_sphere_radius_hkl: Optional[float] = None
-    force_origin: Optional[bool] = None
+    incident_beam_ellipsoid_radii_hkl: tuple[float, float, float] | None = None
+    incident_beam_sphere_radius_hkl: float | None = None
+    force_origin: bool | None = None
     phi_tail_hkl: float = 0.0
     # --- search mode (|Q|-shell outlier detection) ---
     search_q_step: float = 0.05
     search_n_mad: float = 8.0
     search_min_intensity: float = 2.0
     search_min_prominence: float = 0.0
-    search_exclude_h_centers: Optional[tuple[float, ...]] = None
+    search_exclude_h_centers: tuple[float, ...] | None = None
     search_exclude_h_half_width: float = 0.0
     # Periodic H protection: fractional parts (mod 1, in [0,1)) of H to protect
     # across the WHOLE range, e.g. (1/3, 2/3) shields every integer±1/3 plane
     # (the q=1/3 satellite family) — not just a fixed centre list.  Uses the same
     # search_exclude_h_half_width.  ``None`` disables.
-    search_exclude_h_fractions: Optional[tuple[float, ...]] = None
+    search_exclude_h_fractions: tuple[float, ...] | None = None
     subtract_profile: bool = False
 
     def _radii(self) -> tuple[float, float, float]:
@@ -276,7 +275,7 @@ class BraggRemover:
     def _punches_incident_beam(self) -> bool:
         return self.punch_incident_beam if self.force_origin is None else bool(self.force_origin)
 
-    def _incident_beam_center(self, vol: HKLVolume) -> Optional[tuple[int, int, int]]:
+    def _incident_beam_center(self, vol: HKLVolume) -> tuple[int, int, int] | None:
         """Nearest valid voxel to the incident beam at (0,0,0)."""
         if not self._punches_incident_beam():
             return None
@@ -414,7 +413,7 @@ class BraggRemover:
         origin: tuple[int, int, int],
         local_bg: float,
         peak: float,
-    ) -> tuple[tuple[float, float, float], Optional[tuple[float, float, float]]]:
+    ) -> tuple[tuple[float, float, float], tuple[float, float, float] | None]:
         """Fit a local integer-node peak by robust moments in HKL coordinates."""
         hs, ks, ls = origin
         excess = np.where(valid, window - local_bg, 0.0)
@@ -731,8 +730,8 @@ class BraggRemover:
         center: tuple[int, int, int],
         radii: tuple[float, float, float],
         phi_tail: float,
-        center_hkl: Optional[tuple[float, float, float]] = None,
-        h_guard: Optional[tuple[float, float]] = None,
+        center_hkl: tuple[float, float, float] | None = None,
+        h_guard: tuple[float, float] | None = None,
     ) -> NDArray[np.bool_]:
         """Punch one ellipsoid, optionally stretched along the local K-L tangent."""
         dh, dk, dl = self._steps(vol)
@@ -785,7 +784,7 @@ class BraggRemover:
     def _kl_ring_directions(
         vol: HKLVolume,
         hkl: tuple[float, float, float],
-    ) -> Optional[tuple[float, float, float, float]]:
+    ) -> tuple[float, float, float, float] | None:
         """Metric-aware radial and tangent unit vectors in the displayed K-L plane.
 
         Powder rings are constant-|Q| contours, with
@@ -815,28 +814,28 @@ class BraggRemover:
 def bragg_mask(
     vol: HKLVolume,
     punch_radius_hkl: float = 0.3,
-    punch_radii: Optional[tuple[float, float, float]] = None,
-    min_intensity: Optional[float] = None,
+    punch_radii: tuple[float, float, float] | None = None,
+    min_intensity: float | None = None,
     min_prominence: float = 1.0,
-    integer_n_mad: Optional[float] = None,
-    integer_q_step: Optional[float] = None,
+    integer_n_mad: float | None = None,
+    integer_q_step: float | None = None,
     integer_optimize_position: bool = False,
     integer_optimize_shape: bool = False,
     integer_fit_threshold_frac: float = 0.35,
     integer_fit_radius_n_sigma: float = 2.5,
-    integer_fit_max_radius_hkl: Optional[tuple[float, float, float]] = None,
-    integer_h_guard_hkl: Optional[float] = None,
+    integer_fit_max_radius_hkl: tuple[float, float, float] | None = None,
+    integer_h_guard_hkl: float | None = None,
     intensity_scale: bool = False,
     margin: float = 0.0,
     punch_incident_beam: bool = True,
-    incident_beam_radii: Optional[tuple[float, float, float]] = None,
+    incident_beam_radii: tuple[float, float, float] | None = None,
     incident_beam_margin: float = 0.08,
     incident_beam_phi_tail_hkl: float = 0.0,
-    incident_beam_ellipsoid_radii_hkl: Optional[tuple[float, float, float]] = None,
-    incident_beam_sphere_radius_hkl: Optional[float] = None,
-    force_origin: Optional[bool] = None,
+    incident_beam_ellipsoid_radii_hkl: tuple[float, float, float] | None = None,
+    incident_beam_sphere_radius_hkl: float | None = None,
+    force_origin: bool | None = None,
     phi_tail_hkl: float = 0.0,
-    search_exclude_h_centers: Optional[tuple[float, ...]] = None,
+    search_exclude_h_centers: tuple[float, ...] | None = None,
     search_exclude_h_half_width: float = 0.0,
 ) -> NDArray[np.bool_]:
     """Convenience wrapper.  Returns a keep-mask (True = valid)."""

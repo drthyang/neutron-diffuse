@@ -17,25 +17,25 @@ Step 3 — Backfill  (``backfill_ring_shells``)
     neighbours.  C¹ continuity comes from the interpolation itself.
 """
 
+from ndiff.preprocessing.backfill import backfill_ring_shells
 from ndiff.preprocessing.empty_subtraction import EmptySubtractor
-from ndiff.preprocessing.ring_model import PatchedRingModel, RingParams, FittedRingModel
+from ndiff.preprocessing.powder_rings import (
+    RingProfile,
+    RingShell,
+    al_ring_q_positions,
+    detect_ring_shells,
+    fit_ring_profiles,
+    line_profile,
+    mask_ring_shells,
+    radial_profile,
+)
 from ndiff.preprocessing.radial_background import (
     PatchedRadialRingModel,
     RadialRingProfiles,
     confirm_ring_shells_across_h,
 )
+from ndiff.preprocessing.ring_model import FittedRingModel, PatchedRingModel, RingParams
 from ndiff.preprocessing.sampling import azimuthal_sampling_mask
-from ndiff.preprocessing.backfill import backfill_ring_shells
-from ndiff.preprocessing.powder_rings import (
-    RingShell,
-    RingProfile,
-    detect_ring_shells,
-    mask_ring_shells,
-    radial_profile,
-    line_profile,
-    fit_ring_profiles,
-    al_ring_q_positions,
-)
 
 __all__ = [
     # Primary pipeline

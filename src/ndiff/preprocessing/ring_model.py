@@ -40,13 +40,11 @@ by the radial-interpolation backfill (backfill.py).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 import numpy as np
 from numpy.typing import NDArray
 
 from ndiff.core import HKLVolume
-
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -228,7 +226,7 @@ class PatchedRingModel:
         ring_shell_halfwidth: float = 0.12,
         ring_percentile_range: tuple[float, float] = (20.0, 80.0),
         ring_flank_halfwidth: float = 0.24,
-        flatness_cv: Optional[float] = None,
+        flatness_cv: float | None = None,
     ) -> None:
         self.n_patches = n_patches
         self.overlap_frac = overlap_frac
@@ -240,7 +238,7 @@ class PatchedRingModel:
         self.ring_percentile_range = ring_percentile_range
         self.ring_flank_halfwidth = ring_flank_halfwidth
         self.flatness_cv = flatness_cv
-        self._model: Optional[FittedRingModel] = None
+        self._model: FittedRingModel | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -249,8 +247,8 @@ class PatchedRingModel:
     def fit(
         self,
         vol: HKLVolume,
-        ring_hints: Optional[list[float]] = None,
-        q_range: Optional[tuple[float, float]] = None,
+        ring_hints: list[float] | None = None,
+        q_range: tuple[float, float] | None = None,
     ) -> FittedRingModel:
         """Fit the ring model to *vol*.
 
@@ -314,7 +312,7 @@ class PatchedRingModel:
     def subtract(
         self,
         vol: HKLVolume,
-        model: Optional[FittedRingModel] = None,
+        model: FittedRingModel | None = None,
     ) -> tuple[HKLVolume, NDArray[np.float64]]:
         """Subtract the fitted ring model from *vol*.
 
@@ -354,7 +352,7 @@ class PatchedRingModel:
         return vol_sub, I_ring
 
     @property
-    def model(self) -> Optional[FittedRingModel]:
+    def model(self) -> FittedRingModel | None:
         return self._model
 
     # ------------------------------------------------------------------
@@ -379,7 +377,7 @@ class PatchedRingModel:
         vol: HKLVolume,
         q_mag: NDArray,
         phi: NDArray,
-        ring_hints: Optional[list[float]],
+        ring_hints: list[float] | None,
         q_range: tuple[float, float],
     ) -> tuple[NDArray, NDArray, list[RingParams]]:
         """Divide φ into patches, fit Gaussians per patch.
@@ -433,11 +431,11 @@ class PatchedRingModel:
         self,
         vol: HKLVolume,
         q_mag: NDArray,
-        ring_hints: Optional[list[float]],
+        ring_hints: list[float] | None,
         q_range: tuple[float, float],
     ) -> list[RingParams]:
         """Detect ring positions from the full radial profile."""
-        from ndiff.preprocessing.powder_rings import detect_ring_shells, RingShell
+        from ndiff.preprocessing.powder_rings import detect_ring_shells
 
         if ring_hints is not None:
             # Use provided positions; the radial profile shape used for
@@ -470,7 +468,7 @@ class PatchedRingModel:
         q: NDArray,
         I: NDArray,
         ring_params: list[RingParams],
-    ) -> Optional[NDArray]:
+    ) -> NDArray | None:
         """Per-ring amplitude in one azimuthal patch, referenced to a baseline.
 
         For each ring:

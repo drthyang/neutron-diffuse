@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Literal, Optional, Sequence
+from collections.abc import Sequence
+from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -14,9 +15,9 @@ Method = Literal["symmetry", "tv", "rbf", "biharmonic", "symmetry+tv", "symmetry
 
 def fill(
     vol: HKLVolume,
-    mask: Optional[NDArray[np.bool_]] = None,
+    mask: NDArray[np.bool_] | None = None,
     method: Method = "symmetry+tv",
-    symmetry_ops: Optional[Sequence[NDArray]] = None,
+    symmetry_ops: Sequence[NDArray] | None = None,
     laue_class: str = "m3m",
     tv_lam: float = 0.1,
     tv_iter: int = 300,
@@ -53,8 +54,8 @@ def fill(
     HKLVolume
         New volume with filled data, updated sigma, and mask reset to all-True.
     """
+    from ndiff.inpainting.interpolation import biharmonic_fill, rbf_fill
     from ndiff.inpainting.symmetry import symmetry_fill
-    from ndiff.inpainting.interpolation import rbf_fill, biharmonic_fill
     from ndiff.inpainting.tv_inpainting import tv_inpaint
 
     work_mask = (mask if mask is not None else vol.mask).copy()

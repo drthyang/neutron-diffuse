@@ -6,7 +6,7 @@ coordinate value at which the third axis is cut.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, NamedTuple, Optional
+from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -15,7 +15,6 @@ from ndiff.core import HKLVolume
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
-    from matplotlib.image import AxesImage
 
 # plane key → (fixed_axis_attr, array_dim, y_axis_attr, x_axis_attr,
 #              y_label, x_label, transpose)
@@ -119,15 +118,15 @@ def plot_slice(
     vol: HKLVolume,
     plane: str = "kl",
     value: float = 0.0,
-    ax: Optional["Axes"] = None,
+    ax: Axes | None = None,
     cmap: str = "hot",
     percentile: float = 99.5,
-    vmin: Optional[float] = None,
-    vmax: Optional[float] = None,
+    vmin: float | None = None,
+    vmax: float | None = None,
     log_scale: bool = False,
     interp: bool = False,
-    title: Optional[str] = None,
-) -> "Axes":
+    title: str | None = None,
+) -> Axes:
     """Plot a 2D intensity slice.
 
     Parameters

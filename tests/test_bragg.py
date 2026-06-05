@@ -1,11 +1,10 @@
 """Tests for Bragg peak detection and 3D-ΔPDF."""
 
 import numpy as np
-import pytest
 
 from ndiff.analysis.bragg import BraggRemover, bragg_mask
 from ndiff.analysis.bragg_fill import backfill_bragg
-from ndiff.analysis.delta_pdf import compute_delta_pdf, _next_power_of_2
+from ndiff.analysis.delta_pdf import _next_power_of_2, compute_delta_pdf
 from ndiff.core import HKLVolume
 
 

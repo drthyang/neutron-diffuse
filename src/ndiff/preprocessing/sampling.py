@@ -21,8 +21,6 @@ anomalously sparse for their radius.
 
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
 from numpy.typing import NDArray
 
@@ -37,7 +35,7 @@ def azimuthal_sampling_mask(
     n_phi_bins: int = 72,
     min_count_frac: float = 0.25,
     min_count: int = 1,
-    q_range: Optional[tuple[float, float]] = None,
+    q_range: tuple[float, float] | None = None,
 ) -> NDArray[np.bool_]:
     """Keep-mask that drops voxels in azimuthally under-sampled (|Q|, φ) cells.
 

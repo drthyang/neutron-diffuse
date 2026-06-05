@@ -21,8 +21,7 @@ to cross-check or seed the detection, but the algorithm is material-agnostic.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import NDArray
@@ -30,7 +29,6 @@ from scipy.ndimage import median_filter
 from scipy.signal import find_peaks
 
 from ndiff.core import HKLVolume
-
 
 # ---------------------------------------------------------------------------
 # Data class
@@ -213,13 +211,13 @@ def line_profile(
 def fit_ring_profiles(
     q: NDArray,
     intensity: NDArray,
-    centers: Optional[list[float]] = None,
+    centers: list[float] | None = None,
     prominence: float = 0.04,
     min_distance: int = 8,
     cluster_gap: float = 0.3,
     half_window: float = 0.22,
     sigma0: float = 0.04,
-) -> list["RingProfile"]:
+) -> list[RingProfile]:
     """Fit each powder ring's radial shape (center, σ, amplitude, baseline).
 
     Intended for a *Bragg-free* radial profile (see :func:`line_profile` along a
@@ -246,7 +244,6 @@ def fit_ring_profiles(
     list[RingProfile]  (sorted by q_center)
     """
     from scipy.optimize import curve_fit
-    from scipy.signal import find_peaks
 
     q = np.asarray(q, float)
     intensity = np.asarray(intensity, float)

@@ -15,11 +15,11 @@ Further analysis:
     analysis.compute_delta_pdf         → (6) 3D-ΔPDF via FFT
 """
 
+from ndiff import analysis, inpainting, preprocessing, utils, visualization
 from ndiff._version import __version__
 from ndiff.core import HKLVolume
 from ndiff.io.hkl_reader import load, save
 from ndiff.io.mantid_nxs import is_mantid_nxs, load_mantid_nxs
-from ndiff import preprocessing, analysis, inpainting, utils, visualization
 
 __all__ = [
     "__version__",

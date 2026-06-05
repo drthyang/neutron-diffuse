@@ -7,7 +7,7 @@ matplotlib.use("Agg")  # headless; no display needed
 import numpy as np
 
 from ndiff.core import HKLVolume
-from ndiff.visualization import extract_slice, plot_slice, plot_overview
+from ndiff.visualization import extract_slice, plot_overview, plot_slice
 
 
 def _ramp_volume(shape=(5, 6, 7)):

@@ -7,13 +7,12 @@ by averaging their symmetry equivalents that are unmasked.
 
 from __future__ import annotations
 
-from typing import Optional, Sequence
+from collections.abc import Sequence
 
 import numpy as np
 from numpy.typing import NDArray
 
 from ndiff.core import HKLVolume
-
 
 # Each symmetry operation is a (3,3) integer matrix acting on (h,k,l)^T.
 # A minimal library of point-group generators is provided; pass your own ops
@@ -60,7 +59,7 @@ LAUE_CLASSES: dict[str, list[NDArray]] = {
 
 def symmetry_fill(
     vol: HKLVolume,
-    symmetry_ops: Optional[Sequence[NDArray]] = None,
+    symmetry_ops: Sequence[NDArray] | None = None,
     laue_class: str = "m3m",
     min_equivalents: int = 1,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.bool_]]:

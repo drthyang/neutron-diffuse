@@ -9,13 +9,13 @@ from ndiff.preprocessing import (
     confirm_ring_shells_across_h,
 )
 from ndiff.preprocessing.radial_background import (
-    _project_templates,
-    _snip_baseline,
-    _estimate_baseline,
     _adaptive_ring_width_profile,
     _azimuthal_angle,
+    _estimate_baseline,
     _offset_q_magnitude,
     _plane_components,
+    _project_templates,
+    _snip_baseline,
 )
 from ndiff.preprocessing.ring_model import _gaussian
 

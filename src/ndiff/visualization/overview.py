@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from ndiff.core import HKLVolume
 
@@ -12,14 +12,14 @@ if TYPE_CHECKING:
 
 def plot_overview(
     vol: HKLVolume,
-    title: Optional[str] = None,
+    title: str | None = None,
     log_scale: bool = False,
     cmap: str = "hot",
     percentile: float = 99.5,
-    vmin: Optional[float] = None,
-    vmax: Optional[float] = None,
-    mark_q: Optional[list[float]] = None,
-) -> "Figure":
+    vmin: float | None = None,
+    vmax: float | None = None,
+    mark_q: list[float] | None = None,
+) -> Figure:
     """Four-panel diagnostic figure: three principal slices + radial profile.
 
     Layout
@@ -52,8 +52,9 @@ def plot_overview(
     matplotlib.figure.Figure
     """
     import matplotlib.pyplot as plt
-    from ndiff.visualization.slices import plot_slice
+
     from ndiff.visualization.profiles import plot_radial_profile
+    from ndiff.visualization.slices import plot_slice
 
     fig, axes = plt.subplots(2, 2, figsize=(13, 10))
 
