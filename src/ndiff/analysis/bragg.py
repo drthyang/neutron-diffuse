@@ -792,12 +792,13 @@ class BraggRemover:
         """Metric-aware radial and tangent unit vectors in the displayed K-L plane.
 
         Powder rings are constant-|Q| contours, with
-        ``|Q|² = hkl @ (UB @ UB.T) @ hkl``.  On a fixed-H ``0kl`` slice, the
-        local radial direction in K-L coordinates is the K/L gradient of |Q|²;
-        the ring tangent is perpendicular to that gradient.  For an orthonormal
-        UB this reduces to the familiar ``radial=(K,L)``, ``tangent=(-L,K)``.
+        ``Q = UB @ hkl`` and ``|Q|² = hkl @ (UB.T @ UB) @ hkl``.  On a fixed-H
+        ``0kl`` slice, the local radial direction in K-L coordinates is the K/L
+        gradient of |Q|²; the ring tangent is perpendicular to that gradient.
+        For an orthonormal UB this reduces to the familiar ``radial=(K,L)``,
+        ``tangent=(-L,K)``.
         """
-        metric = vol.ub_matrix @ vol.ub_matrix.T
+        metric = vol.ub_matrix.T @ vol.ub_matrix
         x = np.asarray(hkl, dtype=float)
         grad = 2.0 * (metric @ x)
         krad, lrad = float(grad[1]), float(grad[2])

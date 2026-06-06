@@ -337,8 +337,8 @@ def test_phi_tail_uses_ub_metric_ring_tangent():
     vol, _ = _peaky_vol(shape=(41, 41, 41), hkl_range=(-2, 2))
     vol.ub_matrix = np.array([
         [1.0, 0.0, 0.0],
-        [0.0, 2.0, 0.8],
-        [0.0, 0.0, 1.0],
+        [0.0, 3.0, 1.2],
+        [0.0, 0.4, 0.7],
     ])
     direction = BraggRemover._kl_ring_directions(vol, (0.0, 1.0, 1.0))
     assert direction is not None
@@ -348,11 +348,22 @@ def test_phi_tail_uses_ub_metric_ring_tangent():
     # (-L, K).  For this skewed UB those are measurably different directions.
     naive = np.array([-1.0, 1.0]) / np.sqrt(2.0)
     actual = np.array([ktan, ltan])
-    assert abs(float(np.dot(actual, naive))) < 0.98
+    assert abs(float(np.dot(actual, naive))) < 0.95
 
-    metric = vol.ub_matrix @ vol.ub_matrix.T
+    metric = vol.ub_matrix.T @ vol.ub_matrix
     grad_kl = np.array((metric @ np.array([0.0, 1.0, 1.0]))[1:3])
     assert abs(float(np.dot(grad_kl, actual))) < 1e-12
+
+    # Finite-difference guard: moving along the returned tangent should not
+    # change the physical |Q| to first order.
+    eps = 1e-5
+    q_plus = np.linalg.norm(
+        np.array([0.0, 1.0 + eps * ktan, 1.0 + eps * ltan]) @ vol.ub_matrix.T
+    )
+    q_minus = np.linalg.norm(
+        np.array([0.0, 1.0 - eps * ktan, 1.0 - eps * ltan]) @ vol.ub_matrix.T
+    )
+    assert abs((q_plus - q_minus) / (2.0 * eps)) < 1e-10
 
 
 def test_auto_mode_aliases_search_mode():
