@@ -34,6 +34,9 @@ from ndiff.visualization.slices import (
     extract_slice,
 )
 
+_AXIS_TO_PLANE = {"H": "0kl", "K": "h0l", "L": "hk0"}
+_KEY_TO_AXIS = {"kl": "H", "lk": "H", "hl": "K", "lh": "K", "hk": "L", "kh": "L"}
+
 
 def _take_plane(vol: HKLVolume, key: str, value: float) -> SimpleNamespace:
     """Cheap nearest-plane extraction (masks only the 2D plane, not the whole
@@ -68,6 +71,7 @@ def interactive_slices(
     slider_min: float | None = None,
     slider_max: float | None = None,
     value_slider: bool = False,
+    plane_selector: bool = False,
     show: bool = True,
 ) -> matplotlib.figure.Figure:
     """Open an interactive window comparing slices with live colour controls.
@@ -102,6 +106,10 @@ def interactive_slices(
         the colour limits are held fixed across the scrub, so slices are directly
         comparable.  Scrubbing extracts only the 2D plane (not the whole volume),
         so it stays responsive on a 300-plane stack.
+    plane_selector : bool
+        Add an H/K/L radio selector next to the cut slider.  Switching H, K, or L
+        retargets the slider to the matching fixed axis and redraws the panels as
+        0kl, h0l, or hk0 slices, respectively.  Requires ``value_slider=True``.
     show : bool
         Call ``plt.show()`` before returning (set False for headless tests).
 
@@ -115,13 +123,19 @@ def interactive_slices(
     items = list(panels)
     if not items:
         raise ValueError("panels must contain at least one (label, volume)")
+    if plane_selector and not value_slider:
+        raise ValueError("plane_selector requires value_slider=True")
 
-    key = _ALIASES.get(plane.lower(), plane.lower())
+    state = {
+        "log": bool(log_scale),
+        "key": _ALIASES.get(plane.lower(), plane.lower()),
+        "plane": plane,
+    }
 
     def panel_slice(v: HKLVolume, val: float) -> SimpleNamespace | SliceData:
         if value_slider:
-            return _take_plane(v, key, val)
-        return extract_slice(v, plane=plane, value=val, interp=interp)
+            return _take_plane(v, str(state["key"]), val)
+        return extract_slice(v, plane=str(state["plane"]), value=val, interp=interp)
 
     labels = [lab for lab, _ in items]
     slices = [panel_slice(v, value) for _, v in items]
@@ -132,8 +146,6 @@ def interactive_slices(
         finite = np.array([0.0, 1.0])
     dmin, dmax = float(finite.min()), float(finite.max())
     floor = max(abs(dmax) * 1e-4, 1e-9)
-
-    state = {"log": bool(log_scale)}
 
     def to_display(a: np.ndarray) -> np.ndarray:
         if state["log"]:
@@ -175,10 +187,10 @@ def interactive_slices(
         imgs.append(im)
 
     fig.suptitle(slices[0].cut_label)
-    # Leave more room at the bottom when the cut (H) slider is shown so the
-    # navigation control sits clearly above the colour-scale controls.
+    # Leave more room at the bottom when navigation controls are shown so they
+    # sit clearly above the colour-scale controls.
     fig.subplots_adjust(left=0.16, right=0.97,
-                        bottom=0.34 if value_slider else 0.22,
+                        bottom=0.40 if plane_selector else (0.34 if value_slider else 0.22),
                         top=0.90, wspace=0.25)
     fig.colorbar(imgs[-1], ax=axes, fraction=0.046, pad=0.02,
                  label="log₁₀(I)" if state["log"] else "Intensity (arb.)")
@@ -224,12 +236,15 @@ def interactive_slices(
 
     # Optional cut-position (e.g. H) slider: scrub the fixed axis in place.  The
     # colour limits are deliberately NOT recomputed per slice, so the scale stays
-    # fixed and slices are directly comparable as you move through H.
+    # fixed and slices are directly comparable as you move through H/K/L.
     if value_slider:
-        fixed_attr = _PLANE[key][0]
-        fixed_axis = getattr(items[0][1], fixed_attr)
-        fixed_name = fixed_attr[0].upper()
-        ax_val = fig.add_axes((slx, 0.19, slw, 0.035), facecolor="#e8eef7")
+        def fixed_axis_info() -> tuple[np.ndarray, str]:
+            fixed_attr = _PLANE[str(state["key"])][0]
+            return getattr(items[0][1], fixed_attr), fixed_attr[0].upper()
+
+        fixed_axis, fixed_name = fixed_axis_info()
+        ax_val = fig.add_axes((slx, 0.245 if plane_selector else 0.19, slw, 0.035),
+                              facecolor="#e8eef7")
         s_val = Slider(ax_val, f"{fixed_name} plane", float(fixed_axis.min()),
                        float(fixed_axis.max()), valinit=float(value),
                        color="#3a6ea5")
@@ -240,11 +255,49 @@ def interactive_slices(
                 slices[i] = s
                 raw[i] = s.data.astype(float)
                 imgs[i].set_data(to_display(raw[i]))
+                extent = _imshow_extent(s.x_axis, s.y_axis)
+                imgs[i].set_extent(extent)
+                axes[i].set_xlim(extent[0], extent[1])
+                axes[i].set_ylim(extent[2], extent[3])
+                axes[i].set_xlabel(s.x_label)
+                axes[i].set_ylabel(s.y_label)
             fig.suptitle(slices[0].cut_label)
             apply_clim()
 
         s_val.on_changed(on_value)
         widgets.append(s_val)
+
+        if plane_selector:
+            axes_labels = ("H", "K", "L")
+            active_axis = _KEY_TO_AXIS.get(str(state["key"]), "H")
+            ax_plane = fig.add_axes((0.045, 0.19, 0.13, 0.13))
+            plane_radio = RadioButtons(ax_plane, axes_labels,
+                                       active=axes_labels.index(active_axis))
+
+            def reset_value_slider(prefer_zero: bool = True) -> None:
+                axis, name = fixed_axis_info()
+                lo2, hi2 = float(axis.min()), float(axis.max())
+                cur = float(s_val.val)
+                if prefer_zero and lo2 <= 0.0 <= hi2:
+                    next_val = 0.0
+                else:
+                    next_val = min(max(cur, lo2), hi2)
+                s_val.valmin, s_val.valmax = lo2, hi2
+                s_val.ax.set_xlim(lo2, hi2)
+                s_val.label.set_text(f"{name} plane")
+                s_val.eventson = False
+                s_val.set_val(next_val)
+                s_val.eventson = True
+                on_value(next_val)
+
+            def on_plane(label: str) -> None:
+                axis = label.upper()
+                state["plane"] = _AXIS_TO_PLANE[axis]
+                state["key"] = _ALIASES[state["plane"]]
+                reset_value_slider(prefer_zero=True)
+
+            plane_radio.on_clicked(on_plane)
+            widgets.append(plane_radio)
 
     # keep widget refs alive on the figure so they aren't garbage-collected
     fig._ndiff_widgets = tuple(widgets)  # type: ignore[attr-defined]

@@ -1,9 +1,10 @@
-"""Interactive cleanup viewer for 0kl slices across H.
+"""Interactive cleanup viewer for principal HKL slices.
 
 Fast 2D development harness: extracts the H=0 plane and runs Step 2
 (``PatchedRadialRingModel``, plane='0kl') — non-parametric per-patch radial
 background subtraction — then punches Bragg/satellite peaks and backfills the
-holes.  The viewer shows the four processing states:
+holes.  The viewer shows the four processing states and includes an H/K/L
+selector for browsing 0kl, h0l, or hk0 slices:
 
     (1) data, (2) ring removed, (3) punched, (4) backfilled.
 
@@ -37,7 +38,7 @@ from ndiff.visualization import interactive_slices
 raw = Path("data/raw")
 # Default to the preferred 22K mmm validation file; the alphabetically-first
 # .nxs is the older 28K file, so select the 22K one explicitly unless DATA_FILE
-# overrides.  H_VALUE picks the initial H plane in the viewer.
+# overrides.  VIEW_AXIS and H_VALUE/K_VALUE/L_VALUE pick the initial viewer cut.
 USE_BACKGROUND = os.environ.get("USE_BACKGROUND", "0") not in {"0", "false", "False", ""}
 data_file = os.environ.get("DATA_FILE")
 if data_file:
@@ -58,7 +59,13 @@ else:
         (p for p in cands if "22K_mmm" in p.stem and "cc_sub_bkg" in p.stem),
         next((p for p in cands if "22K_mmm" in p.stem), cands[0]),
     ))
-H_VALUE = float(os.environ.get("H_VALUE", "0.3333"))
+
+VIEW_PLANES = {"H": "0kl", "K": "h0l", "L": "hk0"}
+VIEW_AXIS = os.environ.get("VIEW_AXIS", "H").strip().upper()
+if VIEW_AXIS not in VIEW_PLANES:
+    raise ValueError("VIEW_AXIS must be one of H, K, or L")
+VIEW_VALUE = float(os.environ.get(f"{VIEW_AXIS}_VALUE",
+                                  "0.3333" if VIEW_AXIS == "H" else "0.0"))
 
 # Validate the ring model in isolation: skip the empty/background subtraction
 # (it over-subtracts and imprints the background detector gap).  Fit and remove
@@ -409,7 +416,7 @@ direct_beam_show_q = float(os.environ.get("DIRECT_BEAM_SHOW_Q", "0.15"))
 beam_ball = residual.q_magnitude() <= direct_beam_show_q
 backfilled = dataclasses.replace(backfilled, mask=backfilled.mask | beam_ball)
 
-print(f"0kl volume viewer initial H={H_VALUE:.4g}  "
+print(f"HKL volume viewer initial {VIEW_AXIS}={VIEW_VALUE:.4g}  "
       f"background={'on' if USE_BACKGROUND else 'OFF'}  "
       f"ring={'loaded' if ring_file else 'computed'}  "
       f"punch={'loaded' if punch_file else 'computed'}  "
@@ -422,8 +429,8 @@ print(f"Total punched: {int(punched_voxels.sum())} voxels "
       f"({100 * punched_voxels.sum() / max(int(valid.sum()), 1):.2f}% of valid)")
 if not backfill_file:
     print(f"Backfill: method={os.environ.get('BACKFILL_METHOD', 'local')}")
-print("Drag the H slider to scrub planes; drag the vmin/vmax sliders; "
-      "toggle linear/log₁₀ (bottom-left). "
+print("Choose H/K/L to switch slice orientation; drag the HKL plane slider, "
+      "drag the vmin/vmax sliders, or toggle linear/log₁₀ (bottom-left). "
       "Close the window to exit.")
 
 # Tight slider travel so the pullbar gives fine control near the diffuse level
@@ -436,6 +443,7 @@ interactive_slices(
      ("Removed ring", residual),
      ("Punched", punched),
      ("Backfilled", backfilled)],
-    plane="0kl", value=H_VALUE, cmap="viridis", vmin=0.0, vmax=0.3,
-    slider_min=slider_min, slider_max=slider_max, value_slider=True,
+    plane=VIEW_PLANES[VIEW_AXIS], value=VIEW_VALUE, cmap="viridis",
+    vmin=0.0, vmax=0.3, slider_min=slider_min, slider_max=slider_max,
+    value_slider=True, plane_selector=True,
 )

@@ -7,7 +7,12 @@ matplotlib.use("Agg")  # headless; no display needed
 import numpy as np
 
 from ndiff.core import HKLVolume
-from ndiff.visualization import extract_slice, plot_overview, plot_slice
+from ndiff.visualization import (
+    extract_slice,
+    interactive_slices,
+    plot_overview,
+    plot_slice,
+)
 
 
 def _ramp_volume(shape=(5, 6, 7)):
@@ -99,3 +104,43 @@ def test_plot_overview_shares_vmin_vmax_across_slices():
     slice_clims = [a.images[0].get_clim() for a in fig.axes if a.images]
     assert slice_clims  # three slice panels have images
     assert all(c == (0.2, 0.8) for c in slice_clims)
+
+
+def test_interactive_slices_hkl_selector_retargets_slider():
+    import matplotlib.pyplot as plt
+
+    vol, _ = _ramp_volume()
+    fig = interactive_slices(
+        [("data", vol)],
+        plane="0kl",
+        value=0.0,
+        value_slider=True,
+        plane_selector=True,
+        show=False,
+    )
+    try:
+        widgets = fig._ndiff_widgets
+        s_val = widgets[3]
+        plane_radio = widgets[4]
+
+        assert s_val.label.get_text() == "H plane"
+        assert s_val.valmin == float(vol.h_axis.min())
+        assert s_val.valmax == float(vol.h_axis.max())
+
+        plane_radio.set_active(1)
+        assert s_val.label.get_text() == "K plane"
+        assert s_val.valmin == float(vol.k_axis.min())
+        assert s_val.valmax == float(vol.k_axis.max())
+        assert "K =" in fig._suptitle.get_text()
+        assert fig.axes[0].get_xlabel() == "H (r.l.u.)"
+        assert fig.axes[0].get_ylabel() == "L (r.l.u.)"
+
+        plane_radio.set_active(2)
+        assert s_val.label.get_text() == "L plane"
+        assert s_val.valmin == float(vol.l_axis.min())
+        assert s_val.valmax == float(vol.l_axis.max())
+        assert "L =" in fig._suptitle.get_text()
+        assert fig.axes[0].get_xlabel() == "H (r.l.u.)"
+        assert fig.axes[0].get_ylabel() == "K (r.l.u.)"
+    finally:
+        plt.close(fig)
