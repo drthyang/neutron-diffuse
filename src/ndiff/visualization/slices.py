@@ -254,13 +254,13 @@ def _percentile_clim(
 def _imshow_extent(
     x_axis: NDArray[np.float64],
     y_axis: NDArray[np.float64],
-) -> list[float]:
+) -> tuple[float, float, float, float]:
     """Return [x_min, x_max, y_min, y_max] with half-bin margins."""
     dx = float(x_axis[1] - x_axis[0]) if len(x_axis) > 1 else 1.0
     dy = float(y_axis[1] - y_axis[0]) if len(y_axis) > 1 else 1.0
-    return [
+    return (
         float(x_axis[0])  - dx / 2,
         float(x_axis[-1]) + dx / 2,
         float(y_axis[0])  - dy / 2,
         float(y_axis[-1]) + dy / 2,
-    ]
+    )

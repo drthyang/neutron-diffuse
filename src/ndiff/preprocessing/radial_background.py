@@ -628,7 +628,7 @@ class PatchedRadialRingModel:
         # in (almost) every patch so it survives, while Bragg peaks (isolated in
         # azimuth, in only a patch or two) are rejected.  Falls back to the
         # scalar ``ring_width`` when disabled or unsupported.
-        ring_width = self.ring_width
+        ring_width: float | NDArray[np.float64] = self.ring_width
         if self.adaptive_ring_width and self.baseline_method == "snip" and filled.any():
             pooled = np.median(raw[filled], axis=0)
             pooled_cnt = np.median(counts[filled], axis=0)
@@ -650,7 +650,8 @@ class PatchedRadialRingModel:
         ring_ceiling = self._ring_q_ceiling(q_grid)
 
         # Pass 2 — baseline + ring excess per patch with the (adaptive) window.
-        for p in np.nonzero(filled)[0]:
+        for p_raw in np.nonzero(filled)[0]:
+            p = int(p_raw)
             prof = raw[p]
             b = _estimate_baseline(
                 prof, self.q_step, ring_width, self.baseline_smooth,
@@ -882,11 +883,10 @@ def _azimuthal_angle(
     cx0, cy0 = center_offset
     sx, sy = center_offset_h_slope
     if sx == 0.0 and sy == 0.0:
-        cx, cy = cx0, cy0
-    else:
-        H, _, _ = vol.hkl_grid()
-        cx = cx0 + sx * H
-        cy = cy0 + sy * H
+        return np.arctan2(y - cy0, x - cx0)
+    H, _, _ = vol.hkl_grid()
+    cx = cx0 + sx * H
+    cy = cy0 + sy * H
     return np.arctan2(y - cy, x - cx)
 
 
@@ -1336,7 +1336,8 @@ def _estimate_baseline(
     """
     if method == "snip":
         if np.ndim(ring_width) == 0:
-            n_iter = max(3, int(round(ring_width / (2.0 * q_step))))
+            scalar_width = float(np.asarray(ring_width).item())
+            n_iter = max(3, int(round(scalar_width / (2.0 * q_step))))
         else:
             n_iter = np.maximum(
                 3, np.round(np.asarray(ring_width) / (2.0 * q_step)).astype(int)

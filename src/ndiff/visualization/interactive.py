@@ -158,8 +158,8 @@ def interactive_slices(
                 float(np.percentile(d, 99)) if vmax is None else vmax)
 
     n = len(items)
-    fig, axes = plt.subplots(1, n, figsize=(5.4 * n, 6.0), squeeze=False)
-    axes = list(axes[0])
+    fig, axes_grid = plt.subplots(1, n, figsize=(5.4 * n, 6.0), squeeze=False)
+    axes = list(axes_grid[0])
 
     v0, v1 = default_clim()
     imgs = []
@@ -187,12 +187,12 @@ def interactive_slices(
     # toggle); the cut slider, when present, is added a clear gap above them.
     slx, slw = 0.26, 0.56
     lo, hi = scale_bounds()
-    ax_vmin = fig.add_axes([slx, 0.115, slw, 0.03])
-    ax_vmax = fig.add_axes([slx, 0.065, slw, 0.03])
+    ax_vmin = fig.add_axes((slx, 0.115, slw, 0.03))
+    ax_vmax = fig.add_axes((slx, 0.065, slw, 0.03))
     s_vmin = Slider(ax_vmin, "vmin", lo, hi, valinit=min(v0, v1))
     s_vmax = Slider(ax_vmax, "vmax", lo, hi, valinit=max(v0, v1))
 
-    ax_mode = fig.add_axes([0.045, 0.05, 0.13, 0.10])
+    ax_mode = fig.add_axes((0.045, 0.05, 0.13, 0.10))
     radio = RadioButtons(ax_mode, ("linear", "log₁₀"),
                          active=1 if state["log"] else 0)
 
@@ -202,7 +202,7 @@ def interactive_slices(
             im.set_clim(min(a, b), max(a, b))
         fig.canvas.draw_idle()
 
-    def on_mode(label: str) -> None:
+    def on_mode(label: str | None) -> None:
         state["log"] = (label == "log₁₀")
         for im, a in zip(imgs, raw):
             im.set_data(to_display(a))
@@ -229,7 +229,7 @@ def interactive_slices(
         fixed_attr = _PLANE[key][0]
         fixed_axis = getattr(items[0][1], fixed_attr)
         fixed_name = fixed_attr[0].upper()
-        ax_val = fig.add_axes([slx, 0.19, slw, 0.035], facecolor="#e8eef7")
+        ax_val = fig.add_axes((slx, 0.19, slw, 0.035), facecolor="#e8eef7")
         s_val = Slider(ax_val, f"{fixed_name} plane", float(fixed_axis.min()),
                        float(fixed_axis.max()), valinit=float(value),
                        color="#3a6ea5")

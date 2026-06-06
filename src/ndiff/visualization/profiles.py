@@ -59,7 +59,7 @@ def plot_radial_profile(
     valid = np.isfinite(profile) & (counts > 0)
     plot_kw: dict[str, object] = {"lw": 1.0, "color": "C0"}
     plot_kw.update(kwargs)  # type: ignore[arg-type]
-    ax.plot(q_centers[valid], profile[valid], **plot_kw)
+    ax.plot(q_centers[valid], profile[valid], **plot_kw)  # type: ignore[arg-type]
 
     if mark_q:
         for q in mark_q:
@@ -137,7 +137,7 @@ def plot_azimuthal_map(
     plot_kw: dict[str, object] = {"lw": 1.0, "color": "C1"}
     plot_kw.update(kwargs)  # type: ignore[arg-type]
     valid = np.isfinite(az_profile)
-    ax.plot(np.degrees(centers[valid]), az_profile[valid], **plot_kw)
+    ax.plot(np.degrees(centers[valid]), az_profile[valid], **plot_kw)  # type: ignore[arg-type]
 
     ax.set_xlabel("φ (°)")
     ax.set_ylabel("Intensity (arb.)")

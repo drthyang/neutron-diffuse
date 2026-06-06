@@ -173,7 +173,7 @@ def _local_background_fill(
         filled_by_q = False
         if q_lookup is not None:
             q_fill, q_sig = _q_shell_component_values(q_lookup, region, comp)
-            if q_fill is not None:
+            if q_fill is not None and q_sig is not None:
                 data_region[comp] = q_fill
                 sigma_region[comp] = np.maximum(q_sig, global_sigma)
                 filled_by_q = True
