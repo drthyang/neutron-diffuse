@@ -42,7 +42,9 @@ pipeline; the two are independently swappable.
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Protocol
 
 import numpy as np
 from numpy.typing import NDArray
@@ -50,6 +52,14 @@ from scipy.ndimage import gaussian_filter1d
 from scipy.optimize import minimize, nnls
 
 from ndiff.core import HKLVolume
+
+
+class _RingTemplateLike(Protocol):
+    q_center: float
+    sigma: float
+
+
+_RingTemplate = _RingTemplateLike | tuple[float, float]
 
 # ---------------------------------------------------------------------------
 # Fitted result
@@ -433,7 +443,7 @@ class PatchedRadialRingModel:
         texture_min_count_frac: float = 0.15,
         texture_q_smooth: float = 0.0,
         texture_smoothness: float = 10.0,
-        ring_templates: object | None = None,
+        ring_templates: Sequence[_RingTemplate] | None = None,
         allowed_ring_centers: NDArray[np.float64] | None = None,
         allowed_ring_halfwidths: NDArray[np.float64] | None = None,
         allowed_ring_ceilings: NDArray[np.float64] | None = None,
@@ -487,10 +497,11 @@ class PatchedRadialRingModel:
             return []
         gauss = []
         for t in self.ring_templates:
-            c = getattr(t, "q_center", None)
-            s = getattr(t, "sigma", None)
-            if c is None:                      # (center, sigma) tuple
+            if isinstance(t, tuple):
                 c, s = t
+            else:
+                c = t.q_center
+                s = t.sigma
             gauss.append(np.exp(-0.5 * ((q_grid - float(c)) / float(s)) ** 2))
         return gauss
 

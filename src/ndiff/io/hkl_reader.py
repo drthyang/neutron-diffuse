@@ -25,9 +25,11 @@ def load(path: _PathLike, **kwargs: object) -> HKLVolume:
         from ndiff.io.mantid_nxs import is_mantid_nxs, load_mantid_nxs
         if is_mantid_nxs(path):
             return load_mantid_nxs(path)
-        return _load_hdf5(path, **kwargs)
+        entry = _pop_only_kwarg(kwargs, "entry", "/entry")
+        return _load_hdf5(path, entry=entry)
     if ext in {".txt", ".dat", ".hkl"}:
-        return _load_ascii(path, **kwargs)
+        _reject_kwargs(kwargs)
+        return _load_ascii(path)
     raise ValueError(f"Unrecognised file extension: {ext!r}")
 
 
@@ -36,11 +38,25 @@ def save(vol: HKLVolume, path: _PathLike, **kwargs: object) -> None:
     path = Path(path)
     ext = path.suffix.lower()
     if ext in {".h5", ".hdf5", ".nxs"}:
-        _save_hdf5(vol, path, **kwargs)
+        entry = _pop_only_kwarg(kwargs, "entry", "/entry")
+        _save_hdf5(vol, path, entry=entry)
     elif ext in {".txt", ".dat", ".hkl"}:
-        _save_ascii(vol, path, **kwargs)
+        _reject_kwargs(kwargs)
+        _save_ascii(vol, path)
     else:
         raise ValueError(f"Unrecognised file extension: {ext!r}")
+
+
+def _pop_only_kwarg(kwargs: dict[str, object], name: str, default: str) -> str:
+    value = kwargs.pop(name, default)
+    _reject_kwargs(kwargs)
+    return str(value)
+
+
+def _reject_kwargs(kwargs: dict[str, object]) -> None:
+    if kwargs:
+        names = ", ".join(sorted(kwargs))
+        raise TypeError(f"Unexpected keyword argument(s): {names}")
 
 
 # ------------------------------------------------------------------

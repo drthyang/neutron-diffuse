@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Sequence
-from typing import Literal
+from typing import Literal, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -109,7 +109,7 @@ def backfill_bragg(
         )
     return fill(
         vol,
-        method=method,
+        method=cast(Method, method),
         laue_class=laue_class,
         symmetry_ops=list(symmetry_ops) if symmetry_ops else None,
         tv_lam=tv_lam,
@@ -166,7 +166,7 @@ def _local_background_fill(
         slices = []
         for s, n in zip(obj, vol.shape):
             slices.append(slice(max(0, s.start - pad), min(n, s.stop + pad)))
-        region = tuple(slices)
+        region = cast(tuple[slice, slice, slice], tuple(slices))
         comp = labels[region] == lbl
         data_region = data[region]
         sigma_region = sigma[region]
@@ -318,8 +318,10 @@ def _fill_direct_beam(
     if obj is None:
         return resolved
     pad = 6  # room for the outside |Q| shell beyond the beam edge
-    region = tuple(slice(max(0, s.start - pad), min(n, s.stop + pad))
-                   for s, n in zip(obj, vol.shape))
+    region = cast(
+        tuple[slice, slice, slice],
+        tuple(slice(max(0, s.start - pad), min(n, s.stop + pad)) for s, n in zip(obj, vol.shape)),
+    )
 
     comp_box = labels[region] == lbl
     q_box = _q_in_region(vol, region)

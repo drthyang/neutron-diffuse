@@ -688,8 +688,10 @@ class BraggRemover:
                 2.0 * rl + self.incident_beam_margin,
             )
         else:
-            radii = tuple(float(r) + self.incident_beam_margin
-                          for r in self.incident_beam_radii)
+            rh, rk, rl = (
+                float(r) + self.incident_beam_margin for r in self.incident_beam_radii
+            )
+            radii = (rh, rk, rl)
         return self._punch_one(
             vol, keep, center, radii,
             max(0.0, float(self.incident_beam_phi_tail_hkl)),

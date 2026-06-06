@@ -24,6 +24,8 @@ from numpy.typing import NDArray
 from scipy.fft import fftfreq, fftn, fftshift, ifftshift
 from scipy.ndimage import gaussian_filter
 
+from ndiff.core import HKLVolume
+
 Window = Literal["hann", "gaussian", "none"]
 
 
@@ -68,7 +70,7 @@ class DeltaPDF:
 
 
 def compute_delta_pdf(
-    vol: HKLVolume,  # noqa: F821
+    vol: HKLVolume,
     apodization: Window = "hann",
     gaussian_sigma: float = 0.5,
     zero_pad: bool = True,
@@ -166,10 +168,10 @@ def compute_delta_pdf(
     # isotropic H-blur (e.g. 1.5 r.l.u. ≈ 45 px on a 0.033-step H axis) would
     # smear the H=0/±1/3/±2/3 layers into each other's background.
     if subtract_smooth_bg:
-        if np.isscalar(subtract_smooth_bg):
-            sig_h = sig_k = sig_l = float(subtract_smooth_bg)
-        else:
+        if isinstance(subtract_smooth_bg, tuple):
             sig_h, sig_k, sig_l = (float(s) for s in subtract_smooth_bg)
+        else:
+            sig_h = sig_k = sig_l = float(subtract_smooth_bg)
         dh0 = (h_axis[-1] - h_axis[0]) / max(len(h_axis) - 1, 1)
         dk0 = (k_axis[-1] - k_axis[0]) / max(len(k_axis) - 1, 1)
         dl0 = (l_axis[-1] - l_axis[0]) / max(len(l_axis) - 1, 1)

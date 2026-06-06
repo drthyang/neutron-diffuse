@@ -29,6 +29,7 @@ from ndiff.core import HKLVolume
 from ndiff.visualization.slices import (
     _ALIASES,
     _PLANE,
+    SliceData,
     _imshow_extent,
     extract_slice,
 )
@@ -117,7 +118,7 @@ def interactive_slices(
 
     key = _ALIASES.get(plane.lower(), plane.lower())
 
-    def panel_slice(v: HKLVolume, val: float) -> SimpleNamespace:
+    def panel_slice(v: HKLVolume, val: float) -> SimpleNamespace | SliceData:
         if value_slider:
             return _take_plane(v, key, val)
         return extract_slice(v, plane=plane, value=val, interp=interp)
