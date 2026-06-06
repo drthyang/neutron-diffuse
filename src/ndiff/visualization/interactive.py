@@ -290,10 +290,12 @@ def interactive_slices(
                 s_val.eventson = True
                 on_value(next_val)
 
-            def on_plane(label: str) -> None:
+            def on_plane(label: str | None) -> None:
+                if label is None:
+                    return
                 axis = label.upper()
                 state["plane"] = _AXIS_TO_PLANE[axis]
-                state["key"] = _ALIASES[state["plane"]]
+                state["key"] = _ALIASES[str(state["plane"])]
                 reset_value_slider(prefer_zero=True)
 
             plane_radio.on_clicked(on_plane)
