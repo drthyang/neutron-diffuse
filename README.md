@@ -127,7 +127,7 @@ data/processed/*_braggpunched_backfilled.h5
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
-SUBTRACT_BG=0,1.5,1.5 CROP_K=8 CROP_L=15 APODIZE=gaussian \
+SUBTRACT_BG=0,1.5,1.5 CROP_H=4 CROP_K=8 CROP_L=15 APODIZE=gaussian \
 python3 examples/delta_pdf.py
 ```
 
@@ -142,7 +142,9 @@ examples/_delta_pdf_0kl.png
 
 `SUBTRACT_BG=0,sigma,sigma` subtracts a smooth per-H-plane background before the
 FFT. This removes the broad diffuse envelope that otherwise appears as a bright
-axis cross in real space while preserving H-layered structure.
+axis cross in real space while preserving H-layered structure. The standard 3D
+workflow crops reciprocal space to `|H| <= 4`, `|K| <= 8`, and `|L| <= 15`
+before the transform.
 
 ## Visual QA
 

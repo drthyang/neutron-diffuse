@@ -66,21 +66,21 @@ The `OUT_FILE` env var overrides the default `examples/_delta_pdf.h5` output.
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
   PROC_FILE="data/processed/TbTi3Bi4_22K_mmm_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved_braggpunched_backfilled.h5" \
   OUT_FILE="examples/_delta_pdf_22K.h5" \
-  SUBTRACT_BG="0,1.5,1.5" CROP_K=8 CROP_L=15 APODIZE=gaussian GAUSSIAN_SIGMA=0.4 \
+  SUBTRACT_BG="0,1.5,1.5" CROP_H=4 CROP_K=8 CROP_L=15 APODIZE=gaussian GAUSSIAN_SIGMA=0.4 \
   $PY examples/delta_pdf.py
 
 # 45 K
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
   PROC_FILE="data/processed/TbTi3Bi4_45K_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved_braggpunched_backfilled.h5" \
   OUT_FILE="examples/_delta_pdf_45K.h5" \
-  SUBTRACT_BG="0,1.5,1.5" CROP_K=8 CROP_L=15 APODIZE=gaussian GAUSSIAN_SIGMA=0.4 \
+  SUBTRACT_BG="0,1.5,1.5" CROP_H=4 CROP_K=8 CROP_L=15 APODIZE=gaussian GAUSSIAN_SIGMA=0.4 \
   $PY examples/delta_pdf.py
 
 # 100 K
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
   PROC_FILE="data/processed/TbTi3Bi4_100K_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved_braggpunched_backfilled.h5" \
   OUT_FILE="examples/_delta_pdf_100K.h5" \
-  SUBTRACT_BG="0,1.5,1.5" CROP_K=8 CROP_L=15 APODIZE=gaussian GAUSSIAN_SIGMA=0.4 \
+  SUBTRACT_BG="0,1.5,1.5" CROP_H=4 CROP_K=8 CROP_L=15 APODIZE=gaussian GAUSSIAN_SIGMA=0.4 \
   $PY examples/delta_pdf.py
 ```
 

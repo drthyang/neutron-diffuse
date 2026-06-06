@@ -30,7 +30,7 @@ Env:
     NO_VIEWER   1 → stop after the ΔPDF is written (no GUI)
     RMAX        viewer half-window in Å (default 50)
     # ΔPDF knobs (override the defaults below):
-    SUBTRACT_BG (default 0,1.5,1.5)  CROP_K (8)  CROP_L (15)
+    SUBTRACT_BG (default 0,1.5,1.5)  CROP_H (4)  CROP_K (8)  CROP_L (15)
     APODIZE (gaussian)  GAUSSIAN_SIGMA (0.4)
     # plus every stage's own env vars (RING_PRESET, MODE, METHOD, ...).
 """
@@ -62,7 +62,7 @@ STAGE_DEFAULTS = {
     },
     "backfill": {"METHOD": "q_shell"},
     "pdf": {
-        "SUBTRACT_BG": "0,1.5,1.5", "CROP_K": "8", "CROP_L": "15",
+        "SUBTRACT_BG": "0,1.5,1.5", "CROP_H": "4", "CROP_K": "8", "CROP_L": "15",
         "APODIZE": "gaussian", "GAUSSIAN_SIGMA": "0.4",
     },
     "qa": {"H_VALUE": "0.3333", "SLIDER_MIN": "0.0", "SLIDER_MAX": "1.0"},
@@ -159,28 +159,61 @@ _stage("backfill", "3/5 Bragg backfill", "backfill_bragg_3d.py", fill_out, "DATA
 # ------------------------------------------------------------------
 # stage 4: 3D-ΔPDF  (delta_pdf.py uses PROC_FILE in, fixed output _delta_pdf.h5)
 # The output name is fixed, so guard against a STALE cache from a different
-# dataset: delta_pdf.py stamps source_file into the .h5; recompute unless it
-# matches this run's backfilled input.
+# dataset or transform configuration. delta_pdf.py stamps source_file and
+# transform_config into the .h5; recompute unless both match this run.
 # ------------------------------------------------------------------
-def _pdf_is_current(pdf_path: Path, expected_src: str) -> bool:
+def _param_string(value: str) -> str:
+    return f"{float(value):.12g}" if value else ""
+
+
+def _subtract_bg_config(value: str) -> str:
+    if "," in value:
+        return ",".join(_param_string(v) for v in value.split(","))
+    return "" if not float(value or "0") else _param_string(value)
+
+
+def _pdf_transform_config(env: dict) -> str:
+    crop_hkl = ",".join(
+        _param_string(env.get(k, ""))
+        for k in ("CROP_H", "CROP_K", "CROP_L")
+    )
+    subtract_bg = _subtract_bg_config(env.get("SUBTRACT_BG", "0"))
+    return ";".join(
+        (
+            f"apodize={env.get('APODIZE', 'hann')}",
+            f"gaussian_sigma={_param_string(env.get('GAUSSIAN_SIGMA', '0.5'))}",
+            f"zero_pad={int(env.get('ZERO_PAD', '1'))}",
+            f"subtract_mean={int(env.get('SUBTRACT_MEAN', '1'))}",
+            f"crop_hkl={crop_hkl}",
+            f"subtract_bg={subtract_bg}",
+        )
+    )
+
+
+def _pdf_is_current(pdf_path: Path, expected_src: str, expected_config: str) -> bool:
     if not pdf_path.exists():
         return False
     try:
         import h5py
         with h5py.File(pdf_path, "r") as fh:
-            return fh.attrs.get("source_file", "") == expected_src
+            return (
+                fh.attrs.get("source_file", "") == expected_src
+                and fh.attrs.get("transform_config", "") == expected_config
+            )
     except Exception:
         return False
 
 
-if _pdf_is_current(pdf_out, fill_out.name) and not _forced("pdf"):
+pdf_env = _stage_env("pdf", PROC_FILE=fill_out)
+pdf_config = _pdf_transform_config(pdf_env)
+if _pdf_is_current(pdf_out, fill_out.name, pdf_config) and not _forced("pdf"):
     print(f"[skip] 4/5 3D-ΔPDF: {pdf_out.name} is current for this dataset "
-          "(FORCE=1 or FORCE_FROM=pdf to redo)", flush=True)
+          "and transform config (FORCE=1 or FORCE_FROM=pdf to redo)", flush=True)
 else:
     if pdf_out.exists():
-        print(f"[stale] {pdf_out.name} is from a different dataset — recomputing",
+        print(f"[stale] {pdf_out.name} is from a different dataset/config — recomputing",
               flush=True)
-    _run("4/5 3D-ΔPDF", "delta_pdf.py", _stage_env("pdf", PROC_FILE=fill_out))
+    _run("4/5 3D-ΔPDF", "delta_pdf.py", pdf_env)
 
 # ------------------------------------------------------------------
 # stages 5–6: interactive viewers (close each window to advance)

@@ -23,7 +23,7 @@ Env overrides:
     GAUSSIAN_SIGMA  fraction of Q_max for gaussian window (default: 0.5)
     ZERO_PAD        0|1  (default: 1)
     SUBTRACT_MEAN   0|1  (default: 1)
-    CROP_H          max |H| in r.l.u. to include in FFT (default: full range)
+    CROP_H          max |H| in r.l.u. to include in FFT (default: 4)
     CROP_K          max |K| in r.l.u. to include in FFT (default: full range)
     CROP_L          max |L| in r.l.u. to include in FFT (default: full range)
     SUBTRACT_BG     Gaussian-blur sigma in r.l.u. to subtract the smooth diffuse
@@ -88,7 +88,7 @@ gaussian_sigma = float(os.environ.get("GAUSSIAN_SIGMA", "0.5"))
 zero_pad       = bool(int(os.environ.get("ZERO_PAD", "1")))
 subtract_mean  = bool(int(os.environ.get("SUBTRACT_MEAN", "1")))
 
-_crop_h = os.environ.get("CROP_H")
+_crop_h = os.environ.get("CROP_H", "4")
 _crop_k = os.environ.get("CROP_K")
 _crop_l = os.environ.get("CROP_L")
 if _crop_h or _crop_k or _crop_l:
@@ -132,6 +132,26 @@ print(f"  real-space range: x ±{dpdf.x_axis.max():.1f} Å,"
       f"  y ±{dpdf.y_axis.max():.1f} Å,"
       f"  z ±{dpdf.z_axis.max():.1f} Å", flush=True)
 
+
+def _param_string(value):
+    if value is None:
+        return ""
+    if isinstance(value, tuple):
+        return ",".join(f"{float(v):.12g}" for v in value)
+    return f"{float(value):.12g}"
+
+
+transform_config = ";".join(
+    (
+        f"apodize={apodize}",
+        f"gaussian_sigma={gaussian_sigma:.12g}",
+        f"zero_pad={int(zero_pad)}",
+        f"subtract_mean={int(subtract_mean)}",
+        f"crop_hkl={_param_string(crop_hkl)}",
+        f"subtract_bg={_param_string(subtract_bg)}",
+    )
+)
+
 # Save DeltaPDF to HDF5 so it can be reloaded without recomputing
 import h5py
 _default_out = Path(__file__).parent / "_delta_pdf.h5"
@@ -144,6 +164,12 @@ with h5py.File(out_h5, "w") as fh:
     fh.attrs["q_max"]       = dpdf.q_max
     fh.attrs["apodization"] = dpdf.apodization
     fh.attrs["source_file"] = proc_path.name
+    fh.attrs["crop_hkl"] = _param_string(crop_hkl)
+    fh.attrs["subtract_smooth_bg"] = _param_string(subtract_bg)
+    fh.attrs["gaussian_sigma"] = gaussian_sigma
+    fh.attrs["zero_pad"] = int(zero_pad)
+    fh.attrs["subtract_mean"] = int(subtract_mean)
+    fh.attrs["transform_config"] = transform_config
     # store direct-lattice constants (Å) so viewers can draw unit-cell gridlines
     try:
         _direct = 2 * np.pi * np.linalg.inv(vol.ub_matrix).T
