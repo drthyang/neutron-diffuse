@@ -1,0 +1,127 @@
+# Quick Start
+
+Concise commands for the current TbTi3Bi4 workflow. Run them from the repository
+root.
+
+## Environment
+
+```bash
+export PY=/opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python
+export PYTHONPATH=src
+export MPLCONFIGDIR=/private/tmp/ndiff-mpl
+```
+
+If you use a different Python 3.10+ environment with the package dependencies,
+replace `$PY` with that interpreter.
+
+## Full Workflow
+
+`examples/run_pipeline.py` runs:
+
+```text
+ring removal -> Bragg punch -> Bragg backfill -> DeltaPDF
+```
+
+It skips stages whose output files already exist. Add `FORCE=1` to recompute
+everything, or `FORCE_FROM=punch` to recompute from one stage onward. Valid
+`FORCE_FROM` stages are `rings`, `punch`, `backfill`, and `pdf`.
+
+```bash
+# 22 K
+NO_VIEWER=1 \
+DATA_FILE="data/raw/TbTi3Bi4_22K_mmm_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg.nxs" \
+$PY examples/run_pipeline.py
+
+# 45 K
+NO_VIEWER=1 \
+DATA_FILE="data/raw/TbTi3Bi4_45K_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg.nxs" \
+$PY examples/run_pipeline.py
+
+# 100 K
+NO_VIEWER=1 \
+DATA_FILE="data/raw/TbTi3Bi4_100K_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg.nxs" \
+$PY examples/run_pipeline.py
+```
+
+## Per-Temperature DeltaPDF Files
+
+Use this when the reciprocal-space stages already exist and you want persistent
+DeltaPDF files in `data/processed`.
+
+```bash
+# 22 K
+PROC_FILE="data/processed/TbTi3Bi4_22K_mmm_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved_braggpunched_backfilled.h5" \
+OUT_FILE="data/processed/TbTi3Bi4_22K_mmm_delta_pdf.h5" \
+SUBTRACT_BG="0,1.5,1.5" CROP_H=4 CROP_K=8 CROP_L=15 APODIZE=gaussian GAUSSIAN_SIGMA=0.4 \
+$PY examples/delta_pdf.py
+
+# 45 K
+PROC_FILE="data/processed/TbTi3Bi4_45K_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved_braggpunched_backfilled.h5" \
+OUT_FILE="data/processed/TbTi3Bi4_45K_delta_pdf.h5" \
+SUBTRACT_BG="0,1.5,1.5" CROP_H=4 CROP_K=8 CROP_L=15 APODIZE=gaussian GAUSSIAN_SIGMA=0.4 \
+$PY examples/delta_pdf.py
+
+# 100 K
+PROC_FILE="data/processed/TbTi3Bi4_100K_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved_braggpunched_backfilled.h5" \
+OUT_FILE="data/processed/TbTi3Bi4_100K_delta_pdf.h5" \
+SUBTRACT_BG="0,1.5,1.5" CROP_H=4 CROP_K=8 CROP_L=15 APODIZE=gaussian GAUSSIAN_SIGMA=0.4 \
+$PY examples/delta_pdf.py
+```
+
+## View Processed Reciprocal-Space Data
+
+These commands open the four-panel cleanup QA viewer:
+
+```text
+raw -> ring removed -> Bragg punched -> backfilled
+```
+
+```bash
+# 22 K
+DATA_FILE="data/raw/TbTi3Bi4_22K_mmm_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg.nxs" \
+RING_FILE="data/processed/TbTi3Bi4_22K_mmm_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved.h5" \
+PUNCH_FILE="data/processed/TbTi3Bi4_22K_mmm_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved_braggpunched.h5" \
+BACKFILL_FILE="data/processed/TbTi3Bi4_22K_mmm_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved_braggpunched_backfilled.h5" \
+$PY examples/explore_slice.py
+
+# 45 K
+DATA_FILE="data/raw/TbTi3Bi4_45K_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg.nxs" \
+RING_FILE="data/processed/TbTi3Bi4_45K_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved.h5" \
+PUNCH_FILE="data/processed/TbTi3Bi4_45K_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved_braggpunched.h5" \
+BACKFILL_FILE="data/processed/TbTi3Bi4_45K_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved_braggpunched_backfilled.h5" \
+$PY examples/explore_slice.py
+
+# 100 K
+DATA_FILE="data/raw/TbTi3Bi4_100K_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg.nxs" \
+RING_FILE="data/processed/TbTi3Bi4_100K_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved.h5" \
+PUNCH_FILE="data/processed/TbTi3Bi4_100K_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved_braggpunched.h5" \
+BACKFILL_FILE="data/processed/TbTi3Bi4_100K_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved_braggpunched_backfilled.h5" \
+$PY examples/explore_slice.py
+```
+
+## View DeltaPDF
+
+```bash
+# 22 K
+PDF_FILE="data/processed/TbTi3Bi4_22K_mmm_delta_pdf.h5" \
+$PY examples/explore_delta_pdf_ortho.py
+
+# 45 K
+PDF_FILE="data/processed/TbTi3Bi4_45K_delta_pdf.h5" \
+$PY examples/explore_delta_pdf_ortho.py
+
+# 100 K
+PDF_FILE="data/processed/TbTi3Bi4_100K_delta_pdf.h5" \
+$PY examples/explore_delta_pdf_ortho.py
+```
+
+## Compare DeltaPDF Across Temperatures
+
+```bash
+PDF_22K="data/processed/TbTi3Bi4_22K_mmm_delta_pdf.h5" \
+PDF_45K="data/processed/TbTi3Bi4_45K_delta_pdf.h5" \
+PDF_100K="data/processed/TbTi3Bi4_100K_delta_pdf.h5" \
+$PY examples/explore_delta_pdf_multi.py
+```
+
+Set `SHARED_SCALE=1` to lock all panels to the 22 K color scale.

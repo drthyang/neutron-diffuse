@@ -54,6 +54,10 @@ written by the package itself.
 
 ## Quick Start
 
+For the current TbTi3Bi4 command set, start with
+[docs/quick_start.md](docs/quick_start.md). It has concise commands for the
+22 K, 45 K, and 100 K workflows and viewers.
+
 Run the complete pipeline:
 
 ```bash
@@ -212,6 +216,7 @@ Key pages:
 | [docs/algorithms/powder_rings.md](docs/algorithms/powder_rings.md) | Powder-ring model and subtraction strategy. |
 | [docs/algorithms/bragg_cleanup.md](docs/algorithms/bragg_cleanup.md) | Bragg/satellite detection, punching, and backfill. |
 | [docs/algorithms/delta_pdf.md](docs/algorithms/delta_pdf.md) | 3D-DeltaPDF transform, centring, and background subtraction. |
+| [docs/quick_start.md](docs/quick_start.md) | Concise workflow and plotting commands for 22 K, 45 K, and 100 K data. |
 | [docs/interactive.md](docs/interactive.md) | Viewer usage and visualization API. |
 | [docs/plotting_commands.md](docs/plotting_commands.md) | Reproducible plotting and multi-temperature command recipes. |
 

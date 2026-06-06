@@ -6,21 +6,23 @@ viewers, and reproducible command recipes in more detail.
 
 ## Recommended Reading Order
 
-1. [Repository README](../README.md) - installation, quick start, and the main
-   workflow.
-2. [Powder ring removal](algorithms/powder_rings.md) - how smooth powder-ring
+1. [Repository README](../README.md) - installation and package overview.
+2. [Quick Start](quick_start.md) - concise 22 K, 45 K, and 100 K workflow and
+   plotting commands.
+3. [Powder ring removal](algorithms/powder_rings.md) - how smooth powder-ring
    intensity is estimated and subtracted.
-3. [Bragg cleanup](algorithms/bragg_cleanup.md) - integer-node Bragg punching,
+4. [Bragg cleanup](algorithms/bragg_cleanup.md) - integer-node Bragg punching,
    search-mode satellite punching, direct-beam handling, and backfill.
-4. [3D-DeltaPDF transform](algorithms/delta_pdf.md) - centred FFT recipe,
+5. [3D-DeltaPDF transform](algorithms/delta_pdf.md) - centred FFT recipe,
    smooth-background subtraction, and real-space viewer assumptions.
-5. [Interactive exploration](interactive.md) - cleanup QA viewers, DeltaPDF
+6. [Interactive exploration](interactive.md) - cleanup QA viewers, DeltaPDF
    viewers, and plotting primitives.
 
 ## Pages
 
 | Page | Use it when you need to... |
 | --- | --- |
+| [quick_start.md](quick_start.md) | Run or view the current 22 K, 45 K, and 100 K workflow. |
 | [algorithms/powder_rings.md](algorithms/powder_rings.md) | Understand or tune powder-ring subtraction. |
 | [algorithms/bragg_cleanup.md](algorithms/bragg_cleanup.md) | Tune Bragg punching, satellite search, or q-shell backfill. |
 | [algorithms/delta_pdf.md](algorithms/delta_pdf.md) | Understand the FFT, centring, apodization, and background subtraction. |
@@ -37,7 +39,8 @@ Common generated files:
 | `data/processed/*_ringremoved.h5` | Powder-ring-subtracted reciprocal-space volume. |
 | `data/processed/*_braggpunched.h5` | Ring-removed volume with Bragg/satellite holes punched. |
 | `data/processed/*_braggpunched_backfilled.h5` | Cleaned diffuse volume after Bragg-hole backfill. |
-| `examples/_delta_pdf.h5` | Cached 3D-DeltaPDF output. |
+| `data/processed/*_delta_pdf.h5` | Per-temperature 3D-DeltaPDF output. |
+| `examples/_delta_pdf.h5` | Default cached 3D-DeltaPDF output when `OUT_FILE` is not set. |
 | `examples/_*.png` | Generated preview figures. |
 
 Generated data and figures are intentionally ignored by Git.
