@@ -358,7 +358,9 @@ class BraggRemover:
             prom = peak - local_bg
             # re-centre on the true peak (thermal/lattice drift off the integer)
             off = np.unravel_index(int(np.nanargmax(wv)), wv.shape)
-            ph, pk, pl = hs + off[0], ks + off[1], ls + off[2]
+            ph = int(hs + int(off[0]))
+            pk = int(ks + int(off[1]))
+            pl = int(ls + int(off[2]))
 
             # Relative path: small-but-sharp peak, prominent in LOCAL-MAD units.
             # Catches weak Bragg at nodes that the absolute floors miss.

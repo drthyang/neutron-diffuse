@@ -588,7 +588,9 @@ class PatchedRadialRingModel:
 
         patch_width = 2 * np.pi / self.n_patches
         half_width = 0.5 * patch_width * (1.0 + 2.0 * self.overlap_frac)
-        patch_centers = np.linspace(0, 2 * np.pi, self.n_patches, endpoint=False)
+        patch_centers = np.linspace(
+            0, 2 * np.pi, self.n_patches, endpoint=False
+        ).astype(np.float64)
 
         qv_all = q_mag[valid]
         Iv_all = vol.data[valid]

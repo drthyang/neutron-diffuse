@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+from numpy.typing import NDArray
 
 from ndiff.core import HKLVolume
 
@@ -141,12 +142,12 @@ def _load_ascii(path: Path) -> HKLVolume:
     sig[h_idx, k_idx, l_idx] = sigma
 
     mask = np.isfinite(data)
-    data = np.where(mask, data, 0.0)
-    sig = np.where(mask, sig, 0.0)
+    data_filled: NDArray[np.float64] = np.asarray(np.where(mask, data, 0.0), dtype=np.float64)
+    sig_filled: NDArray[np.float64] = np.asarray(np.where(mask, sig, 0.0), dtype=np.float64)
 
     return HKLVolume(
-        data=data,
-        sigma=sig,
+        data=data_filled,
+        sigma=sig_filled,
         mask=mask,
         h_axis=h_vals,
         k_axis=k_vals,

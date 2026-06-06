@@ -54,9 +54,9 @@ class HKLVolume:
         ub_matrix: NDArray[np.float64] | None = None,
     ) -> HKLVolume:
         nh, nk, nl = data.shape
-        h_axis = np.linspace(h_range[0], h_range[1], nh)
-        k_axis = np.linspace(k_range[0], k_range[1], nk)
-        l_axis = np.linspace(l_range[0], l_range[1], nl)
+        h_axis = np.linspace(h_range[0], h_range[1], nh).astype(np.float64)
+        k_axis = np.linspace(k_range[0], k_range[1], nk).astype(np.float64)
+        l_axis = np.linspace(l_range[0], l_range[1], nl).astype(np.float64)
         if sigma is None:
             sigma = np.sqrt(np.abs(data))
         mask = np.ones(data.shape, dtype=bool)
@@ -77,7 +77,8 @@ class HKLVolume:
 
     def hkl_grid(self) -> tuple[NDArray, NDArray, NDArray]:
         """Return (H, K, L) meshgrid arrays of shape (nh, nk, nl)."""
-        return np.meshgrid(self.h_axis, self.k_axis, self.l_axis, indexing="ij")
+        H, K, L = np.meshgrid(self.h_axis, self.k_axis, self.l_axis, indexing="ij")
+        return H, K, L
 
     def q_magnitude(self) -> NDArray[np.float64]:
         """Return |Q| in Å^-1 for every voxel, shape (nh, nk, nl)."""

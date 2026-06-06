@@ -147,7 +147,7 @@ def _local_background_fill(
 
     # Direct beam first: fill the origin hole (and its interior) from the diffuse
     # background just outside it in |Q|, then exclude it from the generic loop.
-    resolved = np.zeros(vol.shape, dtype=bool)
+    resolved: NDArray[np.bool_] = np.zeros(vol.shape, dtype=bool)
     if direct_beam_fill:
         resolved = _fill_direct_beam(
             vol, data, sigma, holes, valid, global_sigma,
