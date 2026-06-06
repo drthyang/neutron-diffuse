@@ -32,6 +32,7 @@ Env overrides:
                 override the selected preset/model defaults.
 """
 import matplotlib
+
 matplotlib.use("Agg")              # headless: write PNGs, no window
 
 import dataclasses
@@ -39,8 +40,8 @@ import os
 import time
 from pathlib import Path
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 import ndiff
 from ndiff.preprocessing import (

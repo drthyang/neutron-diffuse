@@ -21,6 +21,7 @@ Env overrides:
     SLIDER_MIN/SLIDER_MAX   vmin/vmax slider travel (default 0..1, tight near diffuse)
 """
 import matplotlib
+
 matplotlib.use("macosx")          # interactive backend (use "qt" on Linux/Win)
 
 import dataclasses

@@ -78,6 +78,7 @@ import os
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("macosx" if os.environ.get("PREVIEW", "1") != "0" else "Agg")
 
 import dataclasses

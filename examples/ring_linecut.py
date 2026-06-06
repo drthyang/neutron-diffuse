@@ -15,7 +15,7 @@ import numpy as np
 from scipy.signal import find_peaks
 
 import ndiff
-from ndiff.preprocessing import line_profile, al_ring_q_positions
+from ndiff.preprocessing import al_ring_q_positions, line_profile
 
 raw = Path("data/raw")
 data = ndiff.load([p for p in sorted(raw.glob("*.nxs"))

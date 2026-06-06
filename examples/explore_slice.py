@@ -14,6 +14,7 @@ Run with an interactive backend, e.g.::
     PYTHONPATH=src ipython --matplotlib=macosx -i examples/explore_slice.py
 """
 import matplotlib
+
 matplotlib.use("macosx")          # interactive backend (use "qt" on Linux/Win)
 
 import dataclasses

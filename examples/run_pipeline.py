@@ -147,7 +147,7 @@ pdf_out = HERE / "_delta_pdf.h5"
 PROC.mkdir(parents=True, exist_ok=True)
 
 print(f"input : {raw.name}")
-print(f"chain : ringremoved → braggpunched → backfilled → _delta_pdf.h5")
+print("chain : ringremoved → braggpunched → backfilled → _delta_pdf.h5")
 
 # ------------------------------------------------------------------
 # stages 1–3

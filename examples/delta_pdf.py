@@ -39,6 +39,7 @@ Env overrides:
 """
 
 import matplotlib
+
 matplotlib.use("Agg")
 
 import os
@@ -154,6 +155,7 @@ transform_config = ";".join(
 
 # Save DeltaPDF to HDF5 so it can be reloaded without recomputing
 import h5py
+
 _default_out = Path(__file__).parent / "_delta_pdf.h5"
 out_h5 = Path(os.environ.get("OUT_FILE", str(_default_out)))
 with h5py.File(out_h5, "w") as fh:

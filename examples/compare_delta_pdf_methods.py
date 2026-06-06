@@ -34,6 +34,7 @@ Env overrides:
     RMAX        real-space plot radius in Å (default: 20)
 """
 import matplotlib
+
 matplotlib.use("Agg")
 
 import os
@@ -42,7 +43,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.fft import fft2, fftshift, ifftshift, fftfreq
+from scipy.fft import fft2, fftfreq, fftshift, ifftshift
 from scipy.ndimage import gaussian_filter
 
 import ndiff

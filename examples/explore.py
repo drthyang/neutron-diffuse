@@ -39,6 +39,18 @@ from ndiff.visualization import (
     plot_slice,
 )
 
+__all__ = [
+    "bkg",
+    "data",
+    "extract_slice",
+    "plot_azimuthal_map",
+    "plot_overview",
+    "plot_radial_profile",
+    "plot_slice",
+    "plt",
+    "sub",
+]
+
 # Locate the raw files (long Mantid-style names) without hard-coding them.
 _RAW = Path(__file__).resolve().parent.parent / "data" / "raw"
 
@@ -80,4 +92,7 @@ plt.ion()  # interactive: figures show without blocking
 
 print(__doc__)
 for _name, _v in (("data", data), ("bkg", bkg), ("sub", sub)):
-    print(f"  {_name:4s}  shape={_v.data.shape}  valid={100 * _v.mask.mean():.1f}%")
+    if _v is None:
+        print(f"  {_name:4s}  not loaded")
+    else:
+        print(f"  {_name:4s}  shape={_v.data.shape}  valid={100 * _v.mask.mean():.1f}%")
