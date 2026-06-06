@@ -26,6 +26,10 @@ It skips stages whose output files already exist. Add `FORCE=1` to recompute
 everything, or `FORCE_FROM=punch` to recompute from one stage onward. Valid
 `FORCE_FROM` stages are `rings`, `punch`, `backfill`, and `pdf`.
 
+Ring removal processes H-slices/KL planes by default. To process the same volume
+as K-slices/HL planes or L-slices/HK planes, add `SLICE_AXIS=K` or
+`SLICE_AXIS=L` to the pipeline command. The default is `SLICE_AXIS=H`.
+
 ```bash
 # 22 K
 NO_VIEWER=1 \

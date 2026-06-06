@@ -399,11 +399,11 @@ class PatchedRadialRingModel:
         Catches what the |Q|-envelope cannot: a Bragg peak landing *on* a real
         ring inflates that ring's per-patch amplitude on one plane, spiking the
         subtraction (an over-subtraction trough *inside* a legitimate shell).
-        Setting the ceiling from the across-H typical ring amplitude (see
+        Setting the ceiling from the across-stack typical ring amplitude (see
         :func:`confirm_ring_shells_across_h`, × a margin) caps the spike back to
-        the cross-plane norm — keeping the ring amplitude continuous in H while
-        leaving normal planes (amplitude below the ceiling) untouched.  ``None``
-        disables the cap.
+        the cross-plane norm — keeping the ring amplitude continuous across the
+        processed slice stack while leaving normal planes (amplitude below the
+        ceiling) untouched.  ``None`` disables the cap.
     center_offset : (float, float)
         Experimental in-plane ring-center offset in Å⁻¹, in the same
         orthonormal plane frame used for φ. ``(0, 0)`` means rings are centered
@@ -764,12 +764,16 @@ def confirm_ring_shells_across_h(
     bin).  Real rings survive the across-plane median; phantoms wash out.
 
     Returns ``(centers, halfwidths, amplitudes)`` in Å⁻¹ (amplitudes in intensity
-    units) — the confirmed ring centres, their FWHM, and the **across-H typical
-    ring excess** at each centre (the pooled profile peak above its SNIP
+    units) — the confirmed ring centres, their FWHM, and the **across-stack
+    typical ring excess** at each centre (the pooled profile peak above its SNIP
     baseline).  The first two go to ``PatchedRadialRingModel(allowed_ring_centers=
-    …, allowed_ring_halfwidths=…)``; the amplitude sets the cross-H scale a
+    …, allowed_ring_halfwidths=…)``; the amplitude sets the cross-stack scale a
     per-plane ``allowed_ring_ceilings`` can cap a Bragg-inflated plane back to.
     Empty arrays when no rings are confirmed.
+
+    The historical function name says "across_h", but the implementation follows
+    ``plane``: ``"0kl"`` stacks across H, ``"h0l"`` stacks across K, and
+    ``"hk0"`` stacks across L.
     """
     stack_axis = {"0kl": 0, "h0l": 1, "hk0": 2}[plane]
     q_mag = _offset_q_magnitude(vol, plane)            # full 3D |Q|

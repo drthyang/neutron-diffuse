@@ -2,16 +2,15 @@
 
 Applies the slice-validated ``PatchedRadialRingModel`` (current class defaults:
 median profile, per-|Q| azimuthal texture, SNIP baseline, adaptive ring width)
-to every H-plane of the volume **independently** and stacks the residuals into a
-clean 3D diffuse volume.
+to every selected principal slice of the volume **independently** and stacks the
+residuals into a clean 3D diffuse volume.
 
 Why per-slice rather than one global fit:  the model fits the azimuthal texture
-T(φ) in the in-plane (b*,c*) frame and bins by the full 3D |Q|.  The ring's
-radial WIDTH and texture vary with H (this is exactly what the
-``texture_q_smooth=0`` default captures); a single volume-global fit would pool
-all H into one texture per |Q| and re-homogenise that H-dependence.  Looping the
-validated 0kl-slice pipeline over H keeps each plane's own texture/width — it is
-literally "carry the slice-validated config to the whole volume".
+T(φ) in the in-plane reciprocal frame and bins by the full 3D |Q|.  The ring's
+radial WIDTH and texture can vary across the stack axis (this is exactly what
+the ``texture_q_smooth=0`` default captures); a single volume-global fit would
+pool all slices into one texture per |Q| and re-homogenise that dependence.
+Looping the validated per-slice pipeline keeps each slice's own texture/width.
 
 Run (headless — writes the residual volume + spot-check PNGs)::
 
@@ -23,6 +22,9 @@ Env overrides:
     DATA_FILE   input .nxs (default: the 22K mmm validation file)
     OUT_FILE    output .h5 (default: data/processed/<stem>_ringremoved.h5)
     Q_MIN,Q_MAX radial fit range (default 1.5, 10.5 — matches the slice harness)
+    SLICE_AXIS  H|K|L stack axis to process independently.  H (default) fits
+                0kl/KL slices; K fits h0l/HL slices; L fits hk0/HK slices.
+    SPOT_VALUES comma-separated slice coordinates for spot-check PNGs.
     RING_PRESET cc_off|cc_on (cc = CORELLI correlation chopper).  cc_off keeps
                 the previous aggressive defaults; cc_on is less flexible in
                 texture (tuned for the cleaner correlation-chopper / *_cc_sub_bkg
@@ -113,6 +115,61 @@ preset = PRESETS[preset_name]
 def env_default(name: str, default: str) -> str:
     return os.environ.get(name, preset.get(name, default))
 
+
+@dataclasses.dataclass(frozen=True)
+class SliceConfig:
+    axis_name: str
+    axis_dim: int
+    axis_attr: str
+    plane: str
+    plane_label: str
+
+
+SLICE_CONFIGS = {
+    "H": SliceConfig("H", 0, "h_axis", "0kl", "KL"),
+    "K": SliceConfig("K", 1, "k_axis", "h0l", "HL"),
+    "L": SliceConfig("L", 2, "l_axis", "hk0", "HK"),
+}
+
+
+def _slice_config_from_env() -> SliceConfig:
+    axis = os.environ.get("SLICE_AXIS", os.environ.get("RING_SLICE_AXIS", "H"))
+    axis = axis.strip().upper()
+    if axis not in SLICE_CONFIGS:
+        raise ValueError(
+            f"SLICE_AXIS must be one of {sorted(SLICE_CONFIGS)}; got {axis!r}"
+        )
+    return SLICE_CONFIGS[axis]
+
+
+def _slice_volume(v, cfg: SliceConfig, index: int):
+    """Return a 3D one-plane HKLVolume view along *cfg.axis_dim*."""
+    sl = [slice(None), slice(None), slice(None)]
+    sl[cfg.axis_dim] = slice(index, index + 1)
+    kwargs = {
+        "data": v.data[tuple(sl)],
+        "sigma": v.sigma[tuple(sl)],
+        "mask": v.mask[tuple(sl)],
+        cfg.axis_attr: getattr(v, cfg.axis_attr)[index:index + 1],
+    }
+    return dataclasses.replace(v, **kwargs)
+
+
+def _take_plane(arr, cfg: SliceConfig, index: int):
+    return np.take(arr, index, axis=cfg.axis_dim)
+
+
+def _assign_plane(dest, cfg: SliceConfig, index: int, plane):
+    sl = [slice(None), slice(None), slice(None)]
+    sl[cfg.axis_dim] = index
+    dest[tuple(sl)] = plane
+
+
+def _spot_values() -> tuple[float, ...]:
+    values = os.environ.get("SPOT_VALUES", "0,0.3333,0.666")
+    return tuple(float(v) for v in values.split(",") if v.strip())
+
+
 out_file = os.environ.get("OUT_FILE")
 if out_file:
     out_path = Path(out_file)
@@ -123,21 +180,26 @@ out_path.parent.mkdir(parents=True, exist_ok=True)
 print(f"loading {in_path.name}", flush=True)
 vol = ndiff.load(in_path)
 nh, nk, nl = vol.data.shape
-print(f"volume (H,K,L)=({nh},{nk},{nl})  |Q| fit range {q_range}", flush=True)
+slice_cfg = _slice_config_from_env()
+axis_values = getattr(vol, slice_cfg.axis_attr)
+print(f"volume (H,K,L)=({nh},{nk},{nl})  |Q| fit range {q_range}  "
+      f"slice_axis={slice_cfg.axis_name} plane={slice_cfg.plane} "
+      f"({slice_cfg.plane_label})",
+      flush=True)
 
-# Pre-pass: confirm the real powder-ring |Q| shells ACROSS H.  A real ring sits
-# at the same 3D |Q| on every plane that samples it; a Bragg-fed phantom (which
-# corrupts only integer-H planes) washes out of the across-plane median.  Passing
-# the confirmed shells to the model restricts subtraction to them, killing the
-# phantom-ring over-subtraction troughs AND making the subtracted shells the same
-# on every plane (continuous in H — no discontinuity for the ΔPDF FFT).  Set
+# Pre-pass: confirm the real powder-ring |Q| shells ACROSS the selected stack
+# axis.  A real ring sits at the same 3D |Q| on every plane that samples it; a
+# Bragg-fed phantom (which corrupts only a few index planes) washes out of the
+# across-plane median.  Passing the confirmed shells to the model restricts
+# subtraction to them, killing the phantom-ring over-subtraction troughs AND
+# making the subtracted shells continuous along the stack axis.  Set
 # CONFIRM_RINGS=0 to disable and reproduce the old per-slice behaviour.
 #
 # A second, complementary guard caps each shell's per-plane amplitude: where a
 # Bragg peak lands ON a real ring (e.g. |Q|≈4.32 inside the 4.39 Å^-1 ring at
-# H=±4) it inflates that ring's amplitude on the one plane and over-subtracts
-# along the ring — which the |Q|-envelope cannot catch (the shell is real).
-# The ceiling = RING_AMP_CAP × the across-H typical amplitude caps the spike back
+# one slice) it inflates that ring's amplitude on the one plane and over-subtracts
+# along the ring — which the |Q|-envelope cannot catch (the shell is real).  The
+# ceiling = RING_AMP_CAP × the across-stack typical amplitude caps the spike back
 # to the cross-plane norm; normal planes (amplitude below the ceiling) are
 # untouched.  RING_AMP_CAP=0 disables the cap.
 confirm = os.environ.get("CONFIRM_RINGS", "1") != "0"
@@ -146,22 +208,23 @@ ring_centers = ring_halfwidths = ring_ceilings = None
 if confirm:
     t_pre = time.time()
     ring_centers, ring_halfwidths, ring_amps = confirm_ring_shells_across_h(
-        vol, plane="0kl", q_range=q_range)
+        vol, plane=slice_cfg.plane, q_range=q_range)
     if amp_cap > 0 and ring_amps.size:
         ring_ceilings = amp_cap * ring_amps
-    print(f"cross-H confirmed {ring_centers.size} ring shells in "
+    print(f"cross-{slice_cfg.axis_name} confirmed {ring_centers.size} ring shells in "
           f"{time.time() - t_pre:.1f}s "
-          f"(amplitude cap = {amp_cap}× across-H):", flush=True)
+          f"(amplitude cap = {amp_cap}× across-{slice_cfg.axis_name}):", flush=True)
     for i, (c, w) in enumerate(zip(ring_centers, ring_halfwidths)):
         ceil = "" if ring_ceilings is None else f"  ceiling={ring_ceilings[i]:7.3f}"
         print(f"    |Q|={c:6.3f} Å^-1  FWHM={w:6.3f}  amp={ring_amps[i]:6.3f}{ceil}",
               flush=True)
 
 # One model instance, reused per slice (fit() is called fresh on each plane, so
-# the per-slice profiles never leak between H).  All knobs at class defaults,
-# plus the cross-H confirmed shells and per-shell amplitude ceilings.
+# the per-slice profiles never leak between stack planes).  All knobs at class
+# defaults, plus the cross-stack confirmed shells and per-shell amplitude
+# ceilings.
 model = PatchedRadialRingModel(
-    plane="0kl",
+    plane=slice_cfg.plane,
     q_step=float(env_default("Q_STEP", "0.02")),
     n_patches=int(env_default("N_PATCHES", "36")),
     n_fourier=int(env_default("N_FOURIER", "8")),
@@ -177,6 +240,7 @@ print(f"model: preset={preset_name} profile={model.profile_method} "
       f"q_step={model.q_step} q_smooth={model.texture_q_smooth} "
       f"ridge={model.texture_ridge} baseline={model.baseline_method} "
       f"adaptive_width={model.adaptive_ring_width} "
+      f"slice_axis={slice_cfg.axis_name} plane={slice_cfg.plane} "
       f"confirmed_shells={'none' if ring_centers is None else ring_centers.size} "
       f"amp_cap={amp_cap}",
       flush=True)
@@ -187,51 +251,46 @@ n_skipped = 0
 ring_sum = 0.0                             # total positive ring intensity removed
 neg_voxels = 0                             # over-subtraction tally (res < -0.05)
 
-
-def _hslice(v, ih):
-    s = slice(ih, ih + 1)
-    return dataclasses.replace(
-        v, data=v.data[s], sigma=v.sigma[s], mask=v.mask[s], h_axis=v.h_axis[s],
-    )
-
-
 t0 = time.time()
-for ih in range(nh):
-    sl = _hslice(vol, ih)
+for ip in range(axis_values.size):
+    sl = _slice_volume(vol, slice_cfg, ip)
     valid = sl.mask & np.isfinite(sl.data)
     if int(valid.sum()) < model.min_voxels_per_patch:
-        # Plane too empty to fit (extreme |H|) — leave it unchanged.
-        res_data[ih] = sl.data[0]
+        # Plane too empty to fit (extreme stack-axis slice) — leave it unchanged.
+        _assign_plane(res_data, slice_cfg, ip, _take_plane(sl.data, slice_cfg, 0))
         n_skipped += 1
         continue
 
     # Drop anomalously sparse (|Q|,φ) cells from the FIT so they don't bias the
     # ring estimate (same as the slice harness); the residual is still written
     # for every voxel (subtractive), and the drops are recorded in out_mask.
-    keep = azimuthal_sampling_mask(sl, plane="0kl", min_count_frac=0.25,
-                                   q_range=(1.5, 10.5))
+    keep = azimuthal_sampling_mask(sl, plane=slice_cfg.plane, min_count_frac=0.25,
+                                   q_range=q_range)
     src = dataclasses.replace(sl, mask=keep)
-    out_mask[ih] = keep[0]
+    _assign_plane(out_mask, slice_cfg, ip, _take_plane(keep, slice_cfg, 0))
 
     try:
         prof = model.fit(src, q_range=q_range)
         _, I_ring = model.subtract(src, prof)
     except Exception as exc:                       # numerical edge case on a plane
-        print(f"  H[{ih}]={vol.h_axis[ih]:+.3f}: fit failed ({exc}); left as-is",
-              flush=True)
-        res_data[ih] = sl.data[0]
+        print(f"  {slice_cfg.axis_name}[{ip}]={axis_values[ip]:+.3f}: "
+              f"fit failed ({exc}); left as-is", flush=True)
+        _assign_plane(res_data, slice_cfg, ip, _take_plane(sl.data, slice_cfg, 0))
         n_skipped += 1
         continue
 
-    I_ring2d = I_ring[0]
-    res_data[ih] = sl.data[0] - I_ring2d
-    ring_sum += float(np.nansum(I_ring2d[valid[0]]))
-    neg_voxels += int(np.count_nonzero(res_data[ih][valid[0]] < -0.05))
+    I_ring2d = _take_plane(I_ring, slice_cfg, 0)
+    sl_data2d = _take_plane(sl.data, slice_cfg, 0)
+    valid2d = _take_plane(valid, slice_cfg, 0)
+    res2d = sl_data2d - I_ring2d
+    _assign_plane(res_data, slice_cfg, ip, res2d)
+    ring_sum += float(np.nansum(I_ring2d[valid2d]))
+    neg_voxels += int(np.count_nonzero(res2d[valid2d] < -0.05))
 
-    if ih % 30 == 0 or ih == nh - 1:
+    if ip % 30 == 0 or ip == axis_values.size - 1:
         dt = time.time() - t0
-        eta = dt / (ih + 1) * (nh - ih - 1)
-        print(f"  H[{ih:3d}]={vol.h_axis[ih]:+.3f}  "
+        eta = dt / (ip + 1) * (axis_values.size - ip - 1)
+        print(f"  {slice_cfg.axis_name}[{ip:3d}]={axis_values[ip]:+.3f}  "
               f"{dt:5.1f}s elapsed, ~{eta:4.0f}s left", flush=True)
 
 dt = time.time() - t0
@@ -245,11 +304,12 @@ out_vol = dataclasses.replace(vol, data=res_data, mask=out_mask)
 print(f"\nsaving residual volume -> {out_path}", flush=True)
 ndiff.save(out_vol, out_path)
 
-# ---- spot-check PNGs: data vs residual on the validated H slices ----------
-for H in (0.0, 0.3333, 0.666):
-    ih = int(np.argmin(np.abs(vol.h_axis - H)))
-    before = extract_slice(vol, plane="0kl", value=float(vol.h_axis[ih]))
-    after = extract_slice(out_vol, plane="0kl", value=float(vol.h_axis[ih]))
+# ---- spot-check PNGs: data vs residual on selected stack slices -----------
+for value in _spot_values():
+    ip = int(np.argmin(np.abs(axis_values - value)))
+    actual = float(axis_values[ip])
+    before = extract_slice(vol, plane=slice_cfg.plane, value=actual)
+    after = extract_slice(out_vol, plane=slice_cfg.plane, value=actual)
     fig, axes = plt.subplots(1, 2, figsize=(11, 5), constrained_layout=True)
     for ax, sd, title in ((axes[0], before, "data"),
                           (axes[1], after, "residual = data - rings")):
@@ -257,11 +317,11 @@ for H in (0.0, 0.3333, 0.666):
                        vmin=0.0, vmax=0.3, aspect="equal",
                        extent=[sd.x_axis[0], sd.x_axis[-1],
                                sd.y_axis[0], sd.y_axis[-1]])
-        ax.set_title(f"{title}  (H={vol.h_axis[ih]:+.3f})")
+        ax.set_title(f"{title}  ({slice_cfg.axis_name}={actual:+.3f})")
         ax.set_xlabel(sd.x_label)
         ax.set_ylabel(sd.y_label)
         fig.colorbar(im, ax=ax, shrink=0.8)
-    png = Path("examples") / f"_remove_rings_3d_H{vol.h_axis[ih]:+.3f}.png"
+    png = Path("examples") / f"_remove_rings_3d_{slice_cfg.axis_name}{actual:+.3f}.png"
     fig.savefig(png, dpi=110)
     plt.close(fig)
     print(f"  wrote {png}", flush=True)

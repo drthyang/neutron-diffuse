@@ -377,6 +377,31 @@ def _stacked_ring_vol(nh=11, nkl=41, q_real=2.6, q_phantom=1.8,
     ), phantom_plane
 
 
+def _permute_stack_axis(vol: HKLVolume, stack_axis: str) -> HKLVolume:
+    """Move the synthetic phantom stack from H to K or L for plane tests."""
+    if stack_axis == "H":
+        return vol
+    if stack_axis == "K":
+        data = np.moveaxis(vol.data, 0, 1)
+        return HKLVolume.from_arrays(
+            data,
+            (float(vol.k_axis[0]), float(vol.k_axis[-1])),
+            (float(vol.h_axis[0]), float(vol.h_axis[-1])),
+            (float(vol.l_axis[0]), float(vol.l_axis[-1])),
+            ub_matrix=vol.ub_matrix,
+        )
+    if stack_axis == "L":
+        data = np.moveaxis(vol.data, 0, 2)
+        return HKLVolume.from_arrays(
+            data,
+            (float(vol.k_axis[0]), float(vol.k_axis[-1])),
+            (float(vol.l_axis[0]), float(vol.l_axis[-1])),
+            (float(vol.h_axis[0]), float(vol.h_axis[-1])),
+            ub_matrix=vol.ub_matrix,
+        )
+    raise ValueError(stack_axis)
+
+
 def test_confirm_ring_shells_keeps_real_ring_rejects_phantom():
     vol, _ = _stacked_ring_vol()
     centers, fwhm, amps = confirm_ring_shells_across_h(
@@ -391,6 +416,24 @@ def test_confirm_ring_shells_keeps_real_ring_rejects_phantom():
     # The reported amplitude at the real ring is a positive excess.
     assert amps.shape == centers.shape
     assert amps[np.argmin(np.abs(centers - 2.6))] > 0.3
+
+
+def test_confirm_ring_shells_supports_all_principal_stack_axes():
+    base, _ = _stacked_ring_vol()
+    cases = [
+        ("H", "0kl"),
+        ("K", "h0l"),
+        ("L", "hk0"),
+    ]
+    for stack_axis, plane in cases:
+        vol = _permute_stack_axis(base, stack_axis)
+        centers, _, amps = confirm_ring_shells_across_h(
+            vol, plane=plane, q_range=(1.2, 3.2), q_step=0.04, min_voxels_per_bin=4,
+        )
+        assert centers.size >= 1, stack_axis
+        assert np.min(np.abs(centers - 2.6)) < 0.08, stack_axis
+        assert np.all(np.abs(centers - 1.8) > 0.15), stack_axis
+        assert amps[np.argmin(np.abs(centers - 2.6))] > 0.3, stack_axis
 
 
 def test_ring_q_envelope_passes_shells_and_zeros_between():
