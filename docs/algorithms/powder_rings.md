@@ -1,32 +1,41 @@
 # Powder Ring Removal
 
-## Physical basis
+## Purpose
 
-Polycrystalline material in the beam path (sample environment, cryostat, sample holder,
-capsule walls, etc.) produces powder rings — sharp peaks in the radial intensity profile.
+Polycrystalline material in the beam path can add powder rings to a single-crystal
+diffuse scattering volume. Common sources include the sample environment,
+cryostat, sample holder, and capsule walls.
 
-A ring is **localised in |Q|** (a thin spherical shell at the powder d-spacing) but its
-amplitude is **not uniform around the shell**. Detector solid-angle coverage, absorption
-path length, and normalisation artefacts modulate the ring intensity with azimuthal
-direction. In real data the rings are therefore *far from isotropic*.
+The goal is to subtract the ring contribution while preserving real diffuse
+structure. The current production path is subtractive: it estimates only the
+azimuthally smooth ring intensity and subtracts that estimate. It does not mask
+or replace voxels just because they have radial excess, because radial excess can
+also be genuine diffuse scattering.
 
-We model the ring contribution at a voxel with |Q| and azimuthal angle φ as:
+## Physical Basis
+
+A powder ring is localized in `|Q|` (a thin spherical shell at the powder
+d-spacing), but its amplitude is not uniform around the shell. Detector
+solid-angle coverage, absorption path length, and normalization artifacts
+modulate the ring intensity with azimuthal direction. In real data, rings are
+therefore not isotropic.
+
+A useful model for a voxel with `|Q|` and azimuthal angle `phi` is:
 
 ```
-I_ring(Q, φ) = T(φ) × Σᵢ Aᵢ G(|Q| − qᵢ, σᵢ)
+I_ring(Q, phi) = T(phi) x sum_i A_i G(|Q| - q_i, sigma_i)
 ```
 
-- **G(|Q| − qᵢ, σᵢ)**: Gaussian radial profile of ring *i* (shared across all φ).
+- **G(|Q| - q_i, sigma_i)**: radial profile of ring *i*.
 - **Aᵢ**: per-ring amplitude (structure factor × absorption).
-- **T(φ)**: one shared azimuthal texture function. All rings from the same
-  polycrystalline material share the same T(φ) because they see the same detector
-  geometry.
+- **T(phi)**: azimuthal texture from detector coverage, absorption, and
+  normalization.
 
 The measured signal is `I_measured(Q, φ) = I_diffuse(Q) + I_ring(Q, φ)`, where the
 diffuse signal we want is direction-dependent and does **not** share the ring's radial
 peak structure or azimuthal texture.
 
-## Current Real-Data Path
+## Current Production Path
 
 The original factored Gaussian/SVD model remains in the package as
 `PatchedRingModel`, but the current real-data driver uses
@@ -45,7 +54,11 @@ The key design rule is: **ring removal is subtractive only**. Do not replace
 masked/excess regions unless the mask is based on azimuthal smoothness, not
 radial excess.
 
-## Original Factored Ring Algorithm
+## Legacy Factored Ring Algorithm
+
+The older algorithm is still useful background and remains available for
+comparison. It assumes a shared azimuthal texture across all rings and then
+optionally backfills masked shells.
 
 ### Step 1 — Empty-scan subtraction  (`EmptySubtractor`)
 

@@ -15,6 +15,11 @@ ring-removed volume
 
 The direct beam at `(0,0,0)` is handled separately from ordinary Bragg peaks.
 
+In practice, use the guarded `mode="both"` workflow for current real-data QA:
+integer-node Bragg peaks are handled with lattice-aware punches, and the
+hkl-agnostic search stage is constrained so it does not remove known
+fractional-H diffuse planes.
+
 ## Detection Modes
 
 `BraggRemover(mode=...)` supports three modes:
@@ -123,7 +128,7 @@ negative over-subtraction halo adjacent to the beam.
 Current real-data QA uses `METHOD=q_shell` for ordinary Bragg holes and keeps the
 special direct-beam fill enabled.
 
-## Recommended Current QA Settings
+## Recommended QA Settings
 
 ```bash
 PUNCH_PRESET=cc_on MODE=both MIN_I=0.8 MIN_PROM=0.8 \

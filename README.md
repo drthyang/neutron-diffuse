@@ -1,28 +1,60 @@
 # neutron-diffuse
 
-**3D diffuse neutron scattering cleanup and 3D-DeltaPDF preparation.**
+`neutron-diffuse` is a Python toolkit for cleaning 3D reciprocal-space neutron
+diffuse scattering volumes and preparing them for 3D-DeltaPDF analysis.
 
-`neutron-diffuse` works on symmetrised 3D HKL volumes from Mantid or equivalent
-pipelines. The current real-data workflow removes powder rings, punches Bragg and
-satellite peaks, backfills the holes, and prepares the cleaned diffuse volume for
-3D-DeltaPDF Fourier transformation.
+The current workflow is built around symmetrised Mantid HKL volumes. It removes
+powder-ring backgrounds, punches sharp Bragg and satellite peaks, fills the
+punched holes with a diffuse-background estimate, and Fourier-transforms the
+cleaned volume into a real-space 3D-DeltaPDF.
 
 ```text
-[ Mantid / symmetrised HKL volume ]
+Mantid / symmetrised HKL volume
         |
         v
-  (1) Powder-ring subtraction          examples/remove_rings_3d.py
-  (2) Bragg/satellite punch            examples/punch_bragg_3d.py
-  (3) Bragg-hole backfill              examples/backfill_bragg_3d.py
-  (4) 3D-ΔPDF Fourier transform        ndiff.analysis.compute_delta_pdf
-  (5) cleanup QA viewer                examples/explore_slice.py
-  (6) ΔPDF orthoslice viewer           examples/explore_delta_pdf_ortho.py
+  1. powder-ring subtraction        examples/remove_rings_3d.py
+  2. Bragg/satellite punch          examples/punch_bragg_3d.py
+  3. Bragg-hole backfill            examples/backfill_bragg_3d.py
+  4. 3D-DeltaPDF transform          examples/delta_pdf.py
+  5. cleanup QA viewer              examples/explore_slice.py
+  6. DeltaPDF orthoslice viewer     examples/explore_delta_pdf_ortho.py
 ```
+
+## Install
+
+Requires Python 3.10 or newer.
+
+```bash
+git clone https://github.com/drthyang/neutron-diffuse
+cd neutron-diffuse
+pip install -e ".[dev]"
+```
+
+For local scripts run from the repository root, set:
+
+```bash
+export PYTHONPATH=src
+export MPLCONFIGDIR=/tmp/mpl
+```
+
+`MPLCONFIGDIR` keeps Matplotlib cache files out of the repository.
+
+## Input Data
+
+The preferred input is a Mantid-background-subtracted NeXus file in
+`data/raw/`:
+
+```text
+*_cc_sub_bkg.nxs
+```
+
+Here `cc` means CORELLI correlation chopper, and `sub_bkg` means the empty-can
+background has already been subtracted. You can also load ndiff HDF5 files
+written by the package itself.
 
 ## Quick Start
 
-Install (see [Installation](#installation)), then run the whole pipeline with one
-command — it chains all stages and opens the interactive viewers at the end:
+Run the complete pipeline:
 
 ```bash
 DATA_FILE=data/raw/your_volume_cc_sub_bkg.nxs \
@@ -30,39 +62,68 @@ PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
 python3 examples/run_pipeline.py
 ```
 
-`run_pipeline.py` skips any stage whose output already exists (resume); use
-`FORCE=1` / `FORCE_FROM=rings|punch|backfill|pdf` to recompute, or `NO_VIEWER=1`
-to stop after the ΔPDF. The preferred input is the Mantid-background-subtracted
-`*_cc_sub_bkg.nxs` file in `data/raw/` (`cc` = CORELLI **c**orrelation **c**hopper;
-the `*_sub_bkg` files have the empty-can background subtracted).
+`examples/run_pipeline.py` runs all compute stages, skips stages whose outputs
+already exist, writes the 3D-DeltaPDF, then opens the cleanup and DeltaPDF
+viewers.
 
-## Stage-By-Stage Workflow
+Useful overrides:
 
-The same stages can be run individually from the repository root:
+| Variable | Effect |
+| --- | --- |
+| `DATA_FILE=/path/to/file.nxs` | Use a specific input file. |
+| `NO_VIEWER=1` | Stop after writing outputs; do not open GUI viewers. |
+| `FORCE=1` | Recompute every stage. |
+| `FORCE_FROM=rings|punch|backfill|pdf` | Recompute from one stage onward. |
+
+## Run Stages Manually
+
+Run these from the repository root when you want to inspect or tune individual
+stages.
+
+### 1. Remove Powder Rings
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl RING_PRESET=cc_on \
 python3 examples/remove_rings_3d.py
+```
 
+Output:
+
+```text
+data/processed/*_ringremoved.h5
+```
+
+### 2. Punch Bragg And Satellite Peaks
+
+```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl PUNCH_PRESET=cc_on MODE=both \
 MIN_I=0.8 MIN_PROM=0.8 INTEGER_FIT_POSITION=1 INTEGER_FIT_SHAPE=1 \
 INTEGER_H_GUARD=0.12 \
 SEARCH_EXCLUDE_H=-0.6667,-0.3333,0.3333,0.6667 SEARCH_EXCLUDE_H_WIDTH=0.08 \
 PREVIEW=0 \
 python3 examples/punch_bragg_3d.py
+```
 
+Output:
+
+```text
+data/processed/*_braggpunched.h5
+```
+
+### 3. Backfill Bragg Holes
+
+```bash
 PYTHONPATH=src METHOD=q_shell \
 python3 examples/backfill_bragg_3d.py
 ```
 
-The three scripts write:
+Output:
 
-- `data/processed/*_ringremoved.h5`
-- `data/processed/*_braggpunched.h5`
-- `data/processed/*_braggpunched_backfilled.h5`
+```text
+data/processed/*_braggpunched_backfilled.h5
+```
 
-Transform the cleaned volume to the real-space 3D-ΔPDF (writes
-`examples/_delta_pdf.h5` + central-slice PNGs):
+### 4. Compute The 3D-DeltaPDF
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
@@ -70,16 +131,25 @@ SUBTRACT_BG=0,1.5,1.5 CROP_K=8 CROP_L=15 APODIZE=gaussian \
 python3 examples/delta_pdf.py
 ```
 
-`SUBTRACT_BG=0,σ,σ` subtracts a slice-wise (per-H-plane) smooth Gaussian
-background before the FFT — this removes the broad diffuse envelope that would
-otherwise transform into a bright cross on the `y_K=0 / z_L=0` axes, while the
-`σ_H=0` preserves the H-layering. See
-[docs/algorithms/delta_pdf.md](docs/algorithms/delta_pdf.md).
+Outputs:
 
-Use the interactive all-H viewer for visual QA:
+```text
+examples/_delta_pdf.h5
+examples/_delta_pdf_hk0.png
+examples/_delta_pdf_h0l.png
+examples/_delta_pdf_0kl.png
+```
+
+`SUBTRACT_BG=0,sigma,sigma` subtracts a smooth per-H-plane background before the
+FFT. This removes the broad diffuse envelope that otherwise appears as a bright
+axis cross in real space while preserving H-layered structure.
+
+## Visual QA
+
+Inspect cleanup across H:
 
 ```bash
-env PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl USE_BACKGROUND=0 \
+PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl USE_BACKGROUND=0 \
 PUNCH_PRESET=cc_on MODE=both MIN_I=0.8 MIN_PROM=0.8 \
 INTEGER_FIT_POSITION=1 INTEGER_FIT_SHAPE=1 INTEGER_H_GUARD=0.12 \
 SEARCH_EXCLUDE_H=-0.6667,-0.3333,0.3333,0.6667 SEARCH_EXCLUDE_H_WIDTH=0.08 \
@@ -87,61 +157,20 @@ BACKFILL_METHOD=q_shell H_VALUE=0.3333 \
 python3 examples/explore_slice.py
 ```
 
-The viewer shows `data`, `Removed ring`, `Punched`, and `Backfilled`, with an H
-slider for scrubbing the full volume.
+The viewer shows raw data, removed ring intensity, punched data, and backfilled
+data, with an H slider for scrubbing through the volume.
 
-Preview the real-space 3D-ΔPDF with the orthoslice viewer (all three planes,
-movable cuts + contrast):
+Inspect the real-space 3D-DeltaPDF:
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl RMAX=50 \
 python3 examples/explore_delta_pdf_ortho.py
 ```
 
-See [docs/interactive.md](docs/interactive.md) for all viewers.
+This opens three linked orthogonal real-space cuts with movable cut sliders,
+contrast control, and unit-cell gridlines.
 
-## Algorithms
-
-### Powder Rings
-
-The current production path uses `PatchedRadialRingModel`, a non-parametric
-radial-background model fit independently on each H plane. It estimates the
-azimuthally smooth powder-ring contribution and subtracts it, preserving
-structured diffuse residuals by construction.
-
-Important defaults/knobs:
-
-- `profile_method="median"` for robust per-bin ring level.
-- `texture_q_smooth=0.0` in the class default to preserve azimuthally varying
-  ring width.
-- `RING_PRESET=cc_on` in the 3D driver for the cleaner `*_cc_sub_bkg.nxs`
-  workflow.
-- Ring removal is subtractive only. The removed mask-and-replace experiment was
-  rejected because radial excess can be real diffuse scattering.
-
-See [docs/algorithms/powder_rings.md](docs/algorithms/powder_rings.md).
-
-### Bragg Punch And Backfill
-
-`BraggRemover` supports:
-
-- `mode="integer"`: enumerate integer HKL nodes and decide per node whether a
-  nearby peak exists.
-- `mode="search"` / `mode="auto"`: hkl-agnostic per-`|Q|` high-tail outlier
-  search for off-integer satellites.
-- `mode="both"`: integer first, then search on the residual.
-
-The current visual QA preference is guarded `MODE=both`: integer-node punches are
-confined near integer-H planes with `INTEGER_H_GUARD`, while `SEARCH_EXCLUDE_H`
-protects known fractional-H diffuse planes from the hkl-agnostic search stage.
-
-`backfill_bragg(method="q_shell")` fills ordinary Bragg holes from the robust
-background level at the same `|Q|`. The direct beam is handled separately with a
-just-outside-`|Q|` fill.
-
-See [docs/algorithms/bragg_cleanup.md](docs/algorithms/bragg_cleanup.md).
-
-## Python API Sketch
+## Python API
 
 ```python
 import ndiff
@@ -170,42 +199,47 @@ filled = backfill_bragg(punched, method="q_shell")
 dpdf = compute_delta_pdf(filled, apodization="hann")
 ```
 
-## Installation
+## Documentation
 
-```bash
-git clone https://github.com/drthyang/neutron-diffuse
-cd neutron-diffuse
-pip install -e ".[dev]"
-```
+Start with [docs/README.md](docs/README.md).
 
-## Module Overview
+Key pages:
+
+| Page | Purpose |
+| --- | --- |
+| [docs/algorithms/powder_rings.md](docs/algorithms/powder_rings.md) | Powder-ring model and subtraction strategy. |
+| [docs/algorithms/bragg_cleanup.md](docs/algorithms/bragg_cleanup.md) | Bragg/satellite detection, punching, and backfill. |
+| [docs/algorithms/delta_pdf.md](docs/algorithms/delta_pdf.md) | 3D-DeltaPDF transform, centring, and background subtraction. |
+| [docs/interactive.md](docs/interactive.md) | Viewer usage and visualization API. |
+| [docs/plotting_commands.md](docs/plotting_commands.md) | Reproducible plotting and multi-temperature command recipes. |
+
+## Package Layout
 
 ```text
 src/ndiff/
-├── core.py                     HKLVolume: 3D array + UB matrix + mask + sigma
-├── io/                         Mantid NeXus, HDF5, and legacy HKL I/O
-├── preprocessing/              empty subtraction, powder-ring models, ring fill
-├── analysis/                   Bragg punch/fill and 3D-DeltaPDF
-├── inpainting/                 symmetry, TV, RBF, biharmonic fallbacks
-└── visualization/              slices, profiles, overview, interactive viewer
+├── core.py              HKLVolume: 3D array, HKL axes, mask, sigma, UB matrix
+├── io/                  Mantid NeXus, ndiff HDF5, and ASCII HKL I/O
+├── preprocessing/       powder-ring models, background handling, sampling
+├── analysis/            Bragg punch/fill and 3D-DeltaPDF
+├── inpainting/          symmetry, TV, RBF, and biharmonic fallbacks
+└── visualization/       slices, profiles, overview plots, interactive viewers
 ```
 
-## Testing
+## Tests And CI
+
+Run locally in a Python 3.10+ environment with dev dependencies:
 
 ```bash
-PYTHONPATH=src python3 \
-  -m pytest -o addopts=''
+PYTHONPATH=src python3 -m pytest -o addopts=''
+python3 -m ruff check src/ tests/
+python3 -m mypy src/ndiff --ignore-missing-imports
 ```
 
-Current expected result: `74 passed`.
+GitHub Actions runs the same checks on Python 3.10, 3.11, and 3.12.
 
 ## Status
 
-Version 0.1.0 — the full pipeline runs end to end: ring removal → Bragg cleanup
-→ 3D-ΔPDF, with one-command (`run_pipeline.py`) and stage-by-stage entry points,
-plus interactive cleanup and ΔPDF viewers. The ΔPDF transform is centred
-correctly and uses slice-wise smooth-background subtraction to remove the
-diffuse-envelope axis cross (see
-[docs/algorithms/delta_pdf.md](docs/algorithms/delta_pdf.md)). Remaining work is
-artifact reduction and physical interpretation. See [HANDOFF.md](HANDOFF.md) for
-the current operational state and [ROADMAP.md](ROADMAP.md) for the phase plan.
+Version 0.1.0. The end-to-end workflow is operational: powder-ring removal,
+Bragg cleanup, Bragg-hole backfill, 3D-DeltaPDF transform, and interactive QA
+viewers. Current development focuses on artifact reduction, parameter tuning,
+and physical interpretation of the cleaned DeltaPDF maps.

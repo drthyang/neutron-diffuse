@@ -1,26 +1,36 @@
-# Plotting commands
+# Plotting And Reproducibility Commands
 
-All commands run from the repo root with the `sci-general` conda environment.
-Set `PYTHONPATH=src` and `MPLCONFIGDIR=/tmp/mpl` for every invocation.
+This page records the command set used for the current TbTi3Bi4 processing and
+visual QA work. It is intentionally more dataset-specific than the repository
+README.
+
+Run commands from the repository root. Set `PYTHONPATH=src` so scripts import the
+local checkout, and set `MPLCONFIGDIR=/tmp/mpl` so Matplotlib cache files stay
+out of the repo.
+
+The examples below use a local conda environment named `sci-general`:
 
 ```bash
 PY=/opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python3
 ```
 
+If your Python 3.10+ environment is already active, replace `$PY` with
+`python3`.
+
 ---
 
-## Full pipeline (raw → ΔPDF)
+## Full Pipeline: Raw Volume To DeltaPDF
 
 Runs all four processing stages (ring removal → Bragg punch → backfill →
-3D-ΔPDF) and then opens the QA viewer and the ΔPDF orthoslice viewer.
-Already-computed stages are skipped automatically.
+3D-DeltaPDF) and then opens the cleanup QA viewer and the DeltaPDF orthoslice
+viewer. Already-computed stages are skipped automatically.
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
   $PY examples/run_pipeline.py
 ```
 
-Key env overrides:
+Key environment overrides:
 
 | Variable | Effect |
 |---|---|
@@ -29,7 +39,7 @@ Key env overrides:
 | `FORCE=1` | Recompute every stage even if output exists |
 | `FORCE_FROM=rings\|punch\|backfill\|pdf` | Recompute from that stage onward |
 
-Auto-detects the 22 K dataset in `data/raw/`.  For other temperatures pass
+The script auto-detects the 22 K dataset in `data/raw/`. For other temperatures pass
 `DATA_FILE` explicitly:
 
 ```bash
@@ -46,7 +56,7 @@ PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl NO_VIEWER=1 \
 
 ---
 
-## Compute per-temperature ΔPDF files
+## Compute Per-Temperature DeltaPDF Files
 
 Writes `examples/_delta_pdf_{T}.h5` using the already-backfilled volumes.
 The `OUT_FILE` env var overrides the default `examples/_delta_pdf.h5` output.
@@ -76,9 +86,9 @@ PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
 
 ---
 
-## Interactive viewers
+## Interactive Viewers
 
-### Single-temperature ΔPDF orthoslice viewer
+### Single-Temperature DeltaPDF Orthoslice Viewer
 
 Three orthogonal real-space cuts (x_H–y_K, x_H–z_L, y_K–z_L) with cut
 sliders, contrast control, and unit-cell gridlines.
@@ -96,9 +106,9 @@ PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
 | `PERCENTILE` | `98` | Colour-scale percentile (r > 3 Å) |
 | `CONTRAST_MIN` / `CONTRAST_MAX` | `0.1` / `20` | Contrast slider range |
 
-### Multi-temperature ΔPDF viewer (22 K / 45 K / 100 K)
+### Multi-Temperature DeltaPDF Viewer (22 K / 45 K / 100 K)
 
-3 × 3 grid: rows = temperatures, columns = orthogonal cuts.  All cut
+3 x 3 grid: rows = temperatures, columns = orthogonal cuts. All cut
 sliders are shared so the same real-space slice is shown for every temperature.
 
 ```bash
@@ -114,9 +124,9 @@ PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
 | `RMAX` | `50` | Display half-window in Å |
 | `SHARED_SCALE` | `0` | `1` = lock all panels to the 22 K colour scale |
 
-### Processed-data QA viewer
+### Processed-Data QA Viewer
 
-4-panel K–L slice viewer (raw → ring-removed → punched → backfilled) with
+4-panel K-L slice viewer (raw → ring-removed → punched → backfilled) with
 H-value and vmin/vmax sliders.
 
 ```bash
