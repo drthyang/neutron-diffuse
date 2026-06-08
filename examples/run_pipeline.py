@@ -143,7 +143,7 @@ if not raw.exists():
 ring_out = PROC / f"{raw.stem}_ringremoved.h5"
 punch_out = PROC / f"{ring_out.stem}_braggpunched.h5"
 fill_out = PROC / f"{punch_out.stem}_backfilled.h5"
-pdf_out = HERE / "_delta_pdf.h5"
+pdf_out = PROC / f"{fill_out.stem}_delta_pdf.h5"
 PROC.mkdir(parents=True, exist_ok=True)
 
 print(f"input : {raw.name}")
@@ -204,7 +204,7 @@ def _pdf_is_current(pdf_path: Path, expected_src: str, expected_config: str) -> 
         return False
 
 
-pdf_env = _stage_env("pdf", PROC_FILE=fill_out)
+pdf_env = _stage_env("pdf", PROC_FILE=fill_out, OUT_FILE=pdf_out)
 pdf_config = _pdf_transform_config(pdf_env)
 if _pdf_is_current(pdf_out, fill_out.name, pdf_config) and not _forced("pdf"):
     print(f"[skip] 4/5 3D-ΔPDF: {pdf_out.name} is current for this dataset "

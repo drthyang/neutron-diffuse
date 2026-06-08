@@ -51,7 +51,12 @@ from matplotlib.widgets import CheckButtons, Slider
 # ------------------------------------------------------------------
 # load or compute the 3D-ΔPDF
 # ------------------------------------------------------------------
-pdf_file = Path(os.environ.get("PDF_FILE", "examples/_delta_pdf.h5"))
+_pdf_env = os.environ.get("PDF_FILE")
+if _pdf_env:
+    pdf_file = Path(_pdf_env)
+else:
+    _cands = sorted(Path("data/processed").glob("*_delta_pdf.h5"))
+    pdf_file = _cands[0] if len(_cands) == 1 else Path("examples/_delta_pdf.h5")
 
 if pdf_file.exists():
     import h5py

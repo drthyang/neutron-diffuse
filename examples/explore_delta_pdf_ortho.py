@@ -1,4 +1,7 @@
-"""Interactive 3D-ΔPDF orthoslice viewer — all three real-space planes at once.
+"""Interactive 3D-PDF / 3D-ΔPDF orthoslice viewer — all three real-space planes at once.
+
+The plot title labels the kind (3D-PDF when the file carries a ``kind`` attr from
+``pdf_3d.py``, else 3D-ΔPDF) and the temperature parsed from the source filename.
 
 Shows the three orthogonal cuts through the real-space ΔPDF volume:
 
@@ -37,6 +40,7 @@ Env overrides:
     SMOKE     1 → render the initial frame to PNG and exit (no GUI).
 """
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -50,18 +54,46 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.widgets import CheckButtons, Slider
 
-pdf_file = Path(os.environ.get("PDF_FILE", "examples/_delta_pdf.h5"))
-if not pdf_file.exists():
-    sys.exit(f"{pdf_file} not found — run examples/delta_pdf.py first.")
+_pdf_env = os.environ.get("PDF_FILE")
+_temp    = os.environ.get("TEMP", "")
+if _pdf_env:
+    pdf_file = Path(_pdf_env)
+    if not pdf_file.exists():
+        sys.exit(f"PDF_FILE={pdf_file} not found.")
+else:
+    _cands = sorted(Path("data/processed").glob("*_delta_pdf.h5"))
+    if _temp:
+        _cands = [p for p in _cands if _temp in p.name]
+    if not _cands:
+        sys.exit(
+            "No matching *_delta_pdf.h5 in data/processed/.\n"
+            "Set TEMP=22K (or 45K / 100K), or PDF_FILE=/path/to/file.h5."
+        )
+    if len(_cands) > 1:
+        names = "\n  ".join(p.name for p in _cands)
+        sys.exit(
+            f"Multiple ΔPDF files — set TEMP=22K (or 45K / 100K) to pick one:\n  {names}"
+        )
+    pdf_file = _cands[0]
 
-print(f"loading ΔPDF {pdf_file.name} ...", flush=True)
+print(f"loading {pdf_file.name} ...", flush=True)
 with h5py.File(pdf_file, "r") as fh:
     data = fh["data"][...]
     x = fh["x_axis"][...]      # x_H (Å)
     y = fh["y_axis"][...]      # y_K (Å)
     z = fh["z_axis"][...]      # z_L (Å)
     apod = fh.attrs.get("apodization", "?")
-print(f"  shape (x_H,y_K,z_L): {data.shape}  apod={apod}", flush=True)
+    _kind_attr = str(fh.attrs.get("kind", ""))
+    _source = str(fh.attrs.get("source_file", ""))
+
+# Correct label from the file: 3D-PDF (total scattering, Bragg kept; pdf_3d.py
+# stamps a "kind" attr) vs 3D-ΔPDF (Bragg removed; delta_pdf.py, no such attr).
+KIND = "3D-PDF" if "3D-PDF" in _kind_attr else "3D-ΔPDF"
+# Temperature parsed from the source filename (…22K…/…45K…/…100K…), else "".
+_m = re.search(r"(\d+)\s*K", _source or pdf_file.name)
+TEMP = f"{_m.group(1)} K" if _m else ""
+print(f"  {KIND}{(' — ' + TEMP) if TEMP else ''}"
+      f"  shape (x_H,y_K,z_L): {data.shape}  apod={apod}", flush=True)
 
 RMAX = float(os.environ.get("RMAX", "50.0"))
 PCT = float(os.environ.get("PERCENTILE", "98.0"))
@@ -122,6 +154,10 @@ def s_yz(ix):   # y_K–z_L at x=ix
     return data[np.ix_([ix], my, mz)][0, :, :]
 
 fig, axes = plt.subplots(1, 3, figsize=(20, 7.4))
+try:  # name the OS window so several viewers are distinguishable
+    fig.canvas.manager.set_window_title(f"{KIND} {TEMP}".strip())
+except Exception:
+    pass
 plt.subplots_adjust(left=0.05, right=0.99, bottom=0.24, top=0.90, wspace=0.28)
 
 panels = []
@@ -213,7 +249,8 @@ def update(_):
 for s in (s_x, s_y, s_z, s_c):
     s.on_changed(update)
 
-fig.suptitle(f"3D-ΔPDF orthoslices  (apod={apod})  ±{RMAX:.0f} Å  "
+_temp_seg = f"  {TEMP}" if TEMP else ""
+fig.suptitle(f"{KIND} orthoslices{_temp_seg}  (apod={apod})  ±{RMAX:.0f} Å  "
              "— drag x_H/y_K/z_L cuts; contrast scales colour", y=0.97, fontsize=13)
 
 if SMOKE:
