@@ -3,13 +3,13 @@
 import numpy as np
 
 from ndiff.analysis.peak_profile import (
+    Resolution,
     calibrate_resolution,
     decompose_peak,
     fit_two_component,
     gaussian,
     lorentzian,
     magnetic_satellite_centers,
-    Resolution,
 )
 from ndiff.core import HKLVolume
 
@@ -123,7 +123,6 @@ def test_decompose_peak_per_axis_and_undersampling_flag():
         assert d.broad_fwhm > 1.5 * d.sharp_fwhm
         assert d.diffuse_fraction > 0.1
 
-    steps = (0.05, 0.20, 0.025)
     # points-across-FWHM tracks FWHM/step: L well-resolved, K badly undersampled
     assert dec[2].points_across_fwhm > 4.0          # L (fine grid)
     assert dec[1].points_across_fwhm < 1.0          # K (coarse grid)

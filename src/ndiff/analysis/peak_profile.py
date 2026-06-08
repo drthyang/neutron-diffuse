@@ -263,12 +263,15 @@ def extract_orthogonal_cuts(
     """
     if interp is None:
         interp = build_interpolator(vol)
-    hw = (half_window, half_window, half_window) if np.isscalar(half_window) else half_window
+    if isinstance(half_window, (int, float)):
+        hw = (float(half_window), float(half_window), float(half_window))
+    else:
+        hw = (float(half_window[0]), float(half_window[1]), float(half_window[2]))
     cuts: dict[int, tuple[NDArray, NDArray]] = {}
     for axis in range(3):
         coord = np.linspace(
-            center_hkl[axis] - float(hw[axis]),  # type: ignore[index]
-            center_hkl[axis] + float(hw[axis]),  # type: ignore[index]
+            center_hkl[axis] - hw[axis],
+            center_hkl[axis] + hw[axis],
             n_points,
         )
         hkl = np.tile(np.asarray(center_hkl, float), (n_points, 1))
@@ -389,38 +392,34 @@ def fit_two_component(
     base0 = float(np.percentile(y, 20))
     peak0 = max(float(y.max()) - base0, 1e-6)
     sig_fixed = float(sharp_sigma) if sharp_sigma else None
-    sig_seed = sig_fixed if sig_fixed else 0.04 * span
+    sig_seed = sig_fixed if sig_fixed is not None else 0.04 * span
     gam_seed = max(3.0 * sig_seed, 0.1 * span)
 
+    # One model with a single, fixed signature.  When the resolution width is
+    # supplied, σ is pinned by tight bounds rather than dropped from the parameter
+    # vector — this keeps one signature for both the fitter and the type checker.
+    def model(xx: NDArray, x0: float, a_s: float, sig: float, a_b: float,
+              gam: float, b0: float, b1: float) -> NDArray:
+        return (b0 + b1 * (xx - xref)
+                + a_s * gaussian(xx, x0, sig)
+                + a_b * broad_fn(xx, x0, gam))
+
     if sig_fixed is not None:
-        def model(xx: NDArray, x0: float, a_s: float, a_b: float, gam: float,
-                  b0: float, b1: float) -> NDArray:
-            return (b0 + b1 * (xx - xref)
-                    + a_s * gaussian(xx, x0, sig_fixed)
-                    + a_b * broad_fn(xx, x0, gam))
-        p0 = [x0_guess, 0.6 * peak0, 0.4 * peak0, gam_seed, base0, 0.0]
-        lb = [x.min(), 0.0, 0.0, sig_fixed, -np.inf, -np.inf]
-        ub = [x.max(), np.inf, np.inf, span, np.inf, np.inf]
+        sig_lo, sig_hi = sig_fixed * (1.0 - 1e-6), sig_fixed * (1.0 + 1e-6)
+        gam_lo = sig_fixed                 # the diffuse must be broader than the core
     else:
-        def model(xx: NDArray, x0: float, a_s: float, sig: float, a_b: float,
-                  gam: float, b0: float, b1: float) -> NDArray:  # type: ignore[misc]
-            return (b0 + b1 * (xx - xref)
-                    + a_s * gaussian(xx, x0, sig)
-                    + a_b * broad_fn(xx, x0, gam))
-        p0 = [x0_guess, 0.6 * peak0, sig_seed, 0.4 * peak0, gam_seed, base0, 0.0]
-        lb = [x.min(), 0.0, 1e-3 * span, 0.0, 1e-3 * span, -np.inf, -np.inf]
-        ub = [x.max(), np.inf, span, np.inf, span, np.inf, np.inf]
+        sig_lo, sig_hi = 1e-3 * span, span
+        gam_lo = 1e-3 * span
+    p0 = [x0_guess, 0.6 * peak0, sig_seed, 0.4 * peak0, gam_seed, base0, 0.0]
+    lb = [x.min(), 0.0, sig_lo, 0.0, gam_lo, -np.inf, -np.inf]
+    ub = [x.max(), np.inf, sig_hi, np.inf, span, np.inf, np.inf]
 
     try:
         popt, _ = curve_fit(model, x, y, p0=p0, bounds=(lb, ub), maxfev=30000)
     except (RuntimeError, ValueError):
         return failed
 
-    if sig_fixed is not None:
-        x0, a_s, a_b, gam, b0, b1 = (float(v) for v in popt)
-        sig = sig_fixed
-    else:
-        x0, a_s, sig, a_b, gam, b0, b1 = (float(v) for v in popt)
+    x0, a_s, sig, a_b, gam, b0, b1 = (float(v) for v in popt)
     sig, gam = abs(sig), abs(gam)
 
     resid = y - model(x, *popt)
