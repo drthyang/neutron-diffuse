@@ -43,3 +43,4 @@ data/*.pdf
 # generated example outputs (figures + cached transforms; regenerate via scripts)
 examples/_*.png
 examples/_*.h5
+examples/_*.csv

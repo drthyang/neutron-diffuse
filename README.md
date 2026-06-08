@@ -20,6 +20,11 @@ Mantid / symmetrised HKL volume
   6. DeltaPDF orthoslice viewer     examples/explore_delta_pdf_ortho.py
 ```
 
+For a **3D-PDF** (total scattering with the Bragg peaks *kept* — a Patterson-like
+map) instead of the ΔPDF, use `examples/run_pipeline_pdf.py`, which skips the
+punch and backfill stages. To characterise magnetic diffuse that sits *at* the
+Bragg satellites, use `examples/investigate_bragg_diffuse.py`.
+
 ## Install
 
 Requires Python 3.10 or newer.

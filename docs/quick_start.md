@@ -129,3 +129,45 @@ $PY examples/explore_delta_pdf_multi.py
 ```
 
 Set `SHARED_SCALE=1` to lock all panels to the 22 K color scale.
+
+## 3D-PDF (Bragg Kept)
+
+The DeltaPDF workflow removes the Bragg peaks (punch -> backfill) to isolate the
+diffuse. The **3D-PDF** instead keeps the Bragg peaks and Fourier-transforms the
+total scattering, giving a Patterson-like map of the average-structure
+correlations. `examples/run_pipeline_pdf.py` runs `ring removal -> 3D-PDF` with
+**no punch and no backfill**; the smooth-background subtraction is off. The
+ring-removed files are shared with the DeltaPDF workflow, so stage 1 is skipped
+if it already ran.
+
+```bash
+# 22 K (45 K / 100 K: same with the matching raw file)
+NO_VIEWER=1 \
+DATA_FILE="data/raw/TbTi3Bi4_22K_mmm_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg.nxs" \
+$PY examples/run_pipeline_pdf.py
+```
+
+Output: `data/processed/*_ringremoved_3dpdf.h5`. Set `RING_REMOVAL=0` to transform
+the raw data directly. View it with the orthoslice viewer (the window title shows
+the kind, 3D-PDF vs 3D-DeltaPDF, and the temperature):
+
+```bash
+PDF_FILE="data/processed/TbTi3Bi4_22K_mmm_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved_3dpdf.h5" \
+$PY examples/explore_delta_pdf_ortho.py
+```
+
+## Bragg / Diffuse Separation Diagnostic
+
+When magnetic diffuse sits *at* the q=1/3 magnetic satellites, characterise the
+peak shape before separating it. `examples/investigate_bragg_diffuse.py` calibrates
+the resolution on nuclear Bragg, then decomposes each satellite into a sharp
+(resolution-limited) core plus a broad diffuse component on H/K/L line cuts.
+
+```bash
+# all temperatures + the temperature-series overlay
+T_SERIES=1 $PY examples/investigate_bragg_diffuse.py
+```
+
+Writes per-temperature cut/fit figures, a summary plot, and a CSV with resolution
+`σ(|Q|)`, points-across-FWHM (which axes resolve the core), correlation length ξ,
+and the diffuse fraction.

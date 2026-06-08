@@ -15,11 +15,13 @@ Regenerate those files by rerunning the scripts below.
 
 | Script | Purpose |
 | --- | --- |
-| `run_pipeline.py` | End-to-end workflow: ring removal, Bragg punch, backfill, 3D-DeltaPDF, and viewers. |
+| `run_pipeline.py` | End-to-end 3D-DeltaPDF workflow: ring removal, Bragg punch, backfill, 3D-DeltaPDF, and viewers. |
+| `run_pipeline_pdf.py` | End-to-end **3D-PDF** workflow — KEEP Bragg (no punch, no backfill): ring removal → 3D-PDF → viewer. |
 | `remove_rings_3d.py` | Remove powder rings from a raw Mantid HKL volume. |
 | `punch_bragg_3d.py` | Punch Bragg and satellite peaks from a ring-removed volume. |
 | `backfill_bragg_3d.py` | Fill Bragg-punched holes before the DeltaPDF transform. |
-| `delta_pdf.py` | Compute and save the full 3D-DeltaPDF. |
+| `delta_pdf.py` | Compute and save the full 3D-DeltaPDF (Bragg removed). |
+| `pdf_3d.py` | Compute and save the total-scattering 3D-PDF (Bragg kept). |
 
 ## Viewers
 
@@ -39,6 +41,7 @@ Regenerate those files by rerunning the scripts below.
 | `delta_pdf_plane.py` | 2D DeltaPDF for one reciprocal H plane. |
 | `compare_delta_pdf_methods.py` | Compare DeltaPDF background-removal methods. |
 | `ring_linecut.py` | Inspect a Bragg-free linecut and ring positions. |
+| `investigate_bragg_diffuse.py` | Separate Bragg from co-located magnetic diffuse at the q=1/3 satellites: line-cut peak-shape fits, resolution `σ(\|Q\|)`, correlation length ξ, diffuse fraction, and a temperature series. |
 
 ## Typical Commands
 
@@ -58,4 +61,10 @@ Force recomputation from the DeltaPDF stage:
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl FORCE_FROM=pdf python3 examples/run_pipeline.py
+```
+
+Run the 3D-PDF workflow instead (keeps the Bragg peaks — no punch, no backfill):
+
+```bash
+PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl python3 examples/run_pipeline_pdf.py
 ```
