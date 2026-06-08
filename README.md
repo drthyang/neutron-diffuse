@@ -44,6 +44,22 @@ export MPLCONFIGDIR=/tmp/mpl
 
 `MPLCONFIGDIR` keeps Matplotlib cache files out of the repository.
 
+## Development
+
+Before pushing, run the same checks as CI (tests, lint, type check):
+
+```bash
+bash scripts/check.sh
+```
+
+It runs `pytest`, `ruff check src/ tests/`, and `mypy src/ndiff`. Set
+`PY=/path/to/python` to choose the interpreter. To run it automatically on every
+push, install it as a git hook in your clone:
+
+```bash
+ln -s ../../scripts/check.sh .git/hooks/pre-push
+```
+
 ## Input Data
 
 The preferred input is a Mantid-background-subtracted NeXus file in
