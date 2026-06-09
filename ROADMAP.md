@@ -108,7 +108,10 @@ Implemented API and drivers:
 - `examples/delta_pdf.py` — full 3D transform; slice/line-cut/radial PNGs and a
   `_delta_pdf.h5` cache
 - `examples/delta_pdf_plane.py` — single reciprocal H-plane 2D-ΔPDF
-- `examples/explore_delta_pdf.py` — interactive y_K–z_L viewer with x_H slider
+- `examples/explore_delta_pdf_ortho.py` — interactive viewer, all three
+  orthoslice planes at once (recommended); `examples/explore_delta_pdf.py` —
+  single y_K–z_L plane with an x_H slider
+- `examples/run_pipeline.py` — one-command end-to-end ΔPDF runner (resume-aware)
 
 Correct transform recipe `fftshift(fftn(ifftshift(·)))` with symmetric padding;
 the real part is valid for the centrosymmetric (`mmm`) data.
@@ -130,6 +133,25 @@ Next work / open validation:
 - Compare apodization choices for peak sharpness vs termination ripple.
 - Interpret the correlation lattice against the structure / H=±1/3 modulation.
 
+## Phase 4b — 3D-PDF And Satellite Diagnostic  Implemented
+
+Two siblings to the ΔPDF path, added 2026-06-08:
+
+- **3D-PDF (total scattering, Bragg kept).** `examples/run_pipeline_pdf.py` +
+  `examples/pdf_3d.py` skip the punch/backfill and transform the total
+  scattering, giving a Patterson-like 3D-PDF (average structure plus diffuse).
+  Reuses `compute_delta_pdf` and the shared `*_ringremoved.h5`; `SUBTRACT_BG` is
+  off (it is a ΔPDF-only axis-cross fix). Output `*_3dpdf.h5` carries a `kind`
+  attr so the ortho viewer labels 3D-PDF vs 3D-ΔPDF.
+- **Bragg/diffuse separation diagnostic.** `examples/investigate_bragg_diffuse.py`
+  + `ndiff.analysis.peak_profile`, for magnetic diffuse co-located at the
+  q=integer±1/3 satellites. Calibrates resolution σ(|Q|) on nuclear Bragg, fits
+  a sharp core + broad diffuse per axis, and reports ξ and the diffuse fraction.
+  The T-series shows broad diffuse at 22/45 K and none at 100 K.
+
+Open: decide "Phase B" — subtract the sharp core but keep the broad diffuse at
+the satellites, rather than punching them.
+
 ## Phase 5 — Release Hygiene  In Progress
 
 Before treating the pipeline as a stable release candidate:
@@ -140,5 +162,8 @@ Before treating the pipeline as a stable release candidate:
   reference artifacts.
 - Add a lightweight CLI or config-file runner if env-var scripts become hard to
   reproduce.
-- Add CI coverage for the Bragg guard/exclusion behavior.
-- Revisit `ruff`/`mypy` availability in the development environment.
+- Done: `scripts/check.sh` mirrors GitHub CI (`.github/workflows/ci.yml`) —
+  pytest + `ruff check src/ tests/` + `mypy src/ndiff` — and can be installed as
+  a `pre-push` hook; the suite is at 86 passing tests.
+- Still open: add CI coverage that specifically exercises the Bragg
+  guard/exclusion behavior, not just import/type checks.

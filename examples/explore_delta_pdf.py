@@ -6,8 +6,11 @@ correlation plane at each x_H.  This is the proper 3D transform (every plane
 mixes all reciprocal H layers with phase), unlike the per-plane 2D-ΔPDF in
 ``examples/delta_pdf_plane.py``.
 
-Source: ``examples/_delta_pdf.h5`` if present (written by ``delta_pdf.py``);
-otherwise it is computed on the fly from the backfilled volume and cached.
+Source: a single ``*_delta_pdf.h5`` in ``data/processed/`` if exactly one is
+present (the pipeline output), else ``examples/_delta_pdf.h5`` (the bare
+``delta_pdf.py`` default) if it exists, else it is computed on the fly from the
+backfilled volume.  Unlike the ortho viewer this one has no ``TEMP`` selector —
+set ``PDF_FILE`` to disambiguate when several ``data/processed`` files match.
 
 Run (interactive, on this Mac)::
 
@@ -22,7 +25,8 @@ Controls:
     Close the window to exit.
 
 Env overrides:
-    PDF_FILE    precomputed ΔPDF .h5 (default: examples/_delta_pdf.h5)
+    PDF_FILE    explicit ΔPDF .h5 to load (else: a single data/processed match,
+                then examples/_delta_pdf.h5, then computed from PROC_FILE)
     PROC_FILE   backfilled .h5 to transform if no PDF_FILE (auto-detect)
     X_VALUE     initial x_H plane in Å (default: 0.0)
     RMAX        display half-window in Å for K and L axes (default: 25)

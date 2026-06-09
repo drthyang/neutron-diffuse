@@ -13,7 +13,11 @@ with sliders to move each cut position and a global contrast control.  Each
 panel auto-scales to its own robust level (so the three very different
 magnitudes stay readable), and the contrast slider multiplies all three.
 
-Source: ``examples/_delta_pdf.h5`` (written by ``delta_pdf.py``).
+Source: a ``*_delta_pdf.h5`` in ``data/processed/`` (written by
+``run_pipeline.py``, or by ``delta_pdf.py`` with ``OUT_FILE`` pointed there).
+With several temperatures present, set ``TEMP`` to pick one, or ``PDF_FILE`` for
+an explicit file.  (A bare ``delta_pdf.py`` run defaults to
+``examples/_delta_pdf.h5``, which this viewer does NOT auto-load.)
 
 Run (interactive, on this Mac)::
 
@@ -28,7 +32,9 @@ Controls:
     Close the window to exit.
 
 Env overrides:
-    PDF_FILE  precomputed ΔPDF .h5 (default: examples/_delta_pdf.h5)
+    PDF_FILE  explicit ΔPDF .h5 to load (overrides the data/processed glob)
+    TEMP      22K | 45K | 100K — pick one when data/processed/ holds several
+              *_delta_pdf.h5 (the viewer exits asking for this if it is ambiguous)
     RMAX      display half-window in Å for all axes (default: 50)
     PERCENTILE per-panel colour-scale percentile at r>3 Å (default: 98)
     CONTRAST_MIN / CONTRAST_MAX  range of the contrast-× slider that scales the

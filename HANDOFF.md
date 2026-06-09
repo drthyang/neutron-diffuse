@@ -1,6 +1,6 @@
 # Hand-off Notes — neutron-diffuse
 
-**Date:** 2026-06-05
+**Date:** 2026-06-09
 **Repo:** `neutron-diffuse`
 **Current branch:** `main`
 
@@ -12,8 +12,10 @@ The full pipeline now runs end to end through the 3D-ΔPDF:
 2. Guarded Bragg/satellite punch via `examples/punch_bragg_3d.py`.
 3. Bragg-hole backfill via `examples/backfill_bragg_3d.py`.
 4. 3D-ΔPDF transform via `examples/delta_pdf.py` (full 3D),
-   `examples/delta_pdf_plane.py` (single reciprocal H-plane 2D), and
-   `examples/explore_delta_pdf.py` (interactive y_K–z_L viewer, x_H slider).
+   `examples/delta_pdf_plane.py` (single reciprocal H-plane 2D), and the
+   interactive viewers `examples/explore_delta_pdf_ortho.py` (recommended — all
+   three orthoslice planes at once) and `examples/explore_delta_pdf.py` (single
+   y_K–z_L plane with an x_H slider).
 
 A **Fourier-centring bug** in `compute_delta_pdf` was found and fixed
 (2026-06-05): the transform was missing `ifftshift` on the centred input and
@@ -32,6 +34,29 @@ data/raw/*_cc_sub_bkg.nxs
 
 Run with a Python ≥3.10 environment that has the dependencies installed
 (`pip install -e ".[dev]"`); the commands below use `python3`.
+
+## Additional Workflows (2026-06-08)
+
+Two siblings to the ΔPDF pipeline were added:
+
+- **3D-PDF (total scattering, Bragg KEPT).** `examples/run_pipeline_pdf.py`
+  chains ring removal → `examples/pdf_3d.py` → the ortho viewer, deliberately
+  **skipping** the punch/backfill so the transform keeps the Bragg peaks (a
+  Patterson-like 3D-PDF of the average structure plus the diffuse). It reuses
+  the same `compute_delta_pdf` engine and the SAME `*_ringremoved.h5` files as
+  the ΔPDF workflow; the only deliberate setting difference is `SUBTRACT_BG`
+  off (smooth-bg subtraction is a ΔPDF-only axis-cross fix). Output
+  `*_3dpdf.h5` carries a `kind` attr so the ortho viewer titles it 3D-PDF vs
+  3D-ΔPDF.
+- **Bragg/diffuse separation diagnostic.** `examples/investigate_bragg_diffuse.py`
+  (via `ndiff.analysis.peak_profile`) handles the case where magnetic diffuse
+  sits AT the q=integer±1/3 satellites, where punch+backfill would destroy it.
+  It calibrates instrument resolution σ(|Q|) on nuclear (integer-node) Bragg,
+  then decomposes each satellite along H/K/L into a sharp Gaussian core + a
+  broad Lorentzian, reporting correlation length ξ and the diffuse fraction.
+  The `T_SERIES=1` overlay shows the broad (diffuse) component present at 22 K
+  and 45 K and absent at 100 K — the magnetic signature. It is a
+  measurement/decision tool; it does not modify the pipeline volumes.
 
 ## Recommended QA Command
 
@@ -183,11 +208,14 @@ PYTHONPATH=src python3 \
   -m pytest -o addopts=''
 ```
 
-Expected current result: `74 passed` (includes the ΔPDF centring guard
-`test_delta_pdf_centring_positive_peak`).
+Expected current result: `86 passed` (includes the ΔPDF centring guard
+`test_delta_pdf_centring_positive_peak` and the `peak_profile` diagnostic tests).
 
-For linting, install the dev extras (`pip install -e ".[dev]"`) to get `ruff`
-and `mypy`; otherwise `git diff --check` plus `py_compile` is a quick local check.
+`scripts/check.sh` runs the same three checks as GitHub CI (`.github/workflows/ci.yml`)
+— pytest, `ruff check src/ tests/`, and `mypy src/ndiff` — and is the recommended
+pre-push gate (`PY=/path/to/python bash scripts/check.sh`, or symlink it as
+`.git/hooks/pre-push`). A check whose tool is not installed is skipped, not
+failed, so a bare clone without the dev extras still works.
 
 ## Next Step
 
@@ -206,3 +234,7 @@ correlation peaks). Remaining tuning / inspection:
   termination ripple.
 - Interpret the K-L correlation lattice against the TbTi3Bi4 structure and the
   H=±1/3 modulation.
+- The Bragg/diffuse diagnostic (see Additional Workflows) confirms broad diffuse
+  co-located at the q=1/3 satellites at 22/45 K. "Phase B" — subtract the sharp
+  resolution core but KEEP the broad diffuse at those satellites, rather than
+  punching them — is the gated next experiment for the magnetic signal.
