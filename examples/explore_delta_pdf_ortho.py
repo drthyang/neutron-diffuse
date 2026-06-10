@@ -9,9 +9,9 @@ Shows the three orthogonal cuts through the real-space ΔPDF volume:
     x_H–z_L  (at y_K = cut)      a–c plane
     y_K–z_L  (at x_H = cut)      b–c plane
 
-with sliders to move each cut position and a global contrast control.  Each
-panel auto-scales to its own robust level (so the three very different
-magnitudes stay readable), and the contrast slider multiplies all three.
+with sliders to move each cut position and shared vmin / vmax sliders that set a
+single colour scale applied to all three panels — so magnitudes are directly
+comparable across the orthoslices and stay fixed as you move the cuts.
 
 Source: a ``*_delta_pdf.h5`` in ``data/processed/`` (written by
 ``run_pipeline.py``, or by ``delta_pdf.py`` with ``OUT_FILE`` pointed there).
@@ -27,7 +27,7 @@ Run (interactive, on this Mac)::
 
 Controls:
     x_H / y_K / z_L sliders — move each orthogonal cut (Å)
-    contrast slider         — multiply the per-panel colour scale
+    vmin / vmax sliders     — shared colour limits applied to all three panels
     "unit cells" checkbox   — toggle the light-gray unit-cell gridlines
     Close the window to exit.
 
@@ -36,10 +36,9 @@ Env overrides:
     TEMP      22K | 45K | 100K — pick one when data/processed/ holds several
               *_delta_pdf.h5 (the viewer exits asking for this if it is ambiguous)
     RMAX      display half-window in Å for all axes (default: 50)
-    PERCENTILE per-panel colour-scale percentile at r>3 Å (default: 98)
-    CONTRAST_MIN / CONTRAST_MAX  range of the contrast-× slider that scales the
-              per-panel colour limits (defaults 0.1 .. 20; raise CONTRAST_MAX to
-              push the colour scale even larger / further de-saturate)
+    PERCENTILE percentile at r>3 Å for the initial shared colour scale (default 98)
+    SCALE_MAX  vmin/vmax slider extent as a multiple of that initial scale
+              (default 8; raise to push the colour limits further / de-saturate)
     LAT_A / LAT_B / LAT_C  direct-lattice constants in Å for the unit-cell
               gridlines (default: read from the ΔPDF file attrs, else the source
               UB matrix)
@@ -103,8 +102,7 @@ print(f"  {KIND}{(' — ' + TEMP) if TEMP else ''}"
 
 RMAX = float(os.environ.get("RMAX", "50.0"))
 PCT = float(os.environ.get("PERCENTILE", "98.0"))
-CMIN = float(os.environ.get("CONTRAST_MIN", "0.1"))
-CMAX = float(os.environ.get("CONTRAST_MAX", "20.0"))
+SCALE_MAX = float(os.environ.get("SCALE_MAX", "8.0"))
 
 
 def _lattice():
@@ -172,13 +170,15 @@ specs = [
     (s_xz(iy0), xw, zw, "x_H–z_L  (y_K cut)", "x_H (Å)", "z_L (Å)"),
     (s_yz(ix0), yw, zw, "y_K–z_L  (x_H cut)", "y_K (Å)", "z_L (Å)"),
 ]
-vmaxes = []
+# one shared colour scale for all three panels — initial half-range is the
+# robust p<PCT> at r>3 Å, pooled as the max across the three central slices so
+# nothing clips at startup; the vmin/vmax sliders then set it explicitly.
+vm0 = max(max(pvmax(img, a1, a2) for (img, a1, a2, *_rest) in specs), 1e-6)
+vhi = max(vm0 * SCALE_MAX, vm0 * 1.0001)
 for ax, (img, a1, a2, ttl, xl, yl) in zip(axes, specs):
-    vm = pvmax(img, a1, a2)
-    vmaxes.append(vm)
     im = ax.imshow(img.T, origin="lower", aspect="equal",
                    extent=[a1[0], a1[-1], a2[0], a2[-1]],
-                   cmap="RdBu_r", vmin=-vm, vmax=vm, interpolation="bilinear")
+                   cmap="RdBu_r", vmin=-vm0, vmax=vm0, interpolation="bilinear")
     ax.set_title(f"{ttl}", fontsize=12)
     ax.set_xlabel(xl)
     ax.set_ylabel(yl)
@@ -210,19 +210,21 @@ else:
     print("  unit-cell grid: lattice unknown (set LAT_A/LAT_B/LAT_C to enable)",
           flush=True)
 
-# controls — cut sliders (left column), contrast + unit-cell toggle (right column)
+# controls — cut sliders (left column), vmin/vmax + unit-cell toggle (right column)
 axc = "lightgoldenrodyellow"
 ax_sx = plt.axes([0.09, 0.135, 0.54, 0.028], facecolor=axc)
 ax_sy = plt.axes([0.09, 0.090, 0.54, 0.028], facecolor=axc)
 ax_sz = plt.axes([0.09, 0.045, 0.54, 0.028], facecolor=axc)
-ax_sc = plt.axes([0.76, 0.115, 0.18, 0.028], facecolor=axc)
+ax_vmax = plt.axes([0.76, 0.135, 0.18, 0.028], facecolor=axc)
+ax_vmin = plt.axes([0.76, 0.090, 0.18, 0.028], facecolor=axc)
 s_x = Slider(ax_sx, "x_H cut (Å)", float(x.min()), float(x.max()), valinit=0.0)
 s_y = Slider(ax_sy, "y_K cut (Å)", float(y.min()), float(y.max()), valinit=0.0)
 s_z = Slider(ax_sz, "z_L cut (Å)", float(z.min()), float(z.max()), valinit=0.0)
-s_c = Slider(ax_sc, "contrast ×", CMIN, CMAX, valinit=1.0)
+s_vmax = Slider(ax_vmax, "vmax", 0.0, vhi, valinit=vm0)
+s_vmin = Slider(ax_vmin, "vmin", -vhi, 0.0, valinit=-vm0)
 
-# unit-cell gridline on/off toggle (under the contrast slider, frameless)
-ax_chk = plt.axes([0.76, 0.04, 0.18, 0.055])
+# unit-cell gridline on/off toggle (under the vmin slider, frameless)
+ax_chk = plt.axes([0.76, 0.035, 0.18, 0.045])
 ax_chk.set_frame_on(False)
 chk = CheckButtons(ax_chk, ["unit cells"], [True])
 
@@ -237,33 +239,41 @@ def _toggle_grid(_label):
 chk.on_clicked(_toggle_grid)
 
 
+def _clim():
+    """Shared (vmin, vmax) from the sliders, kept valid (vmin < vmax)."""
+    lo, hi = float(s_vmin.val), float(s_vmax.val)
+    if lo >= hi:
+        lo = hi - 1e-9
+    return lo, hi
+
+
 def update(_):
     iz = nidx(z, s_z.val); iy = nidx(y, s_y.val); ix = nidx(x, s_x.val)
     imgs = [s_xy(iz), s_xz(iy), s_yz(ix)]
-    a12 = [(xw, yw), (xw, zw), (yw, zw)]
     titles = [f"x_H–y_K  (z_L={z[iz]:+.1f} Å)",
               f"x_H–z_L  (y_K={y[iy]:+.1f} Å)",
               f"y_K–z_L  (x_H={x[ix]:+.1f} Å)"]
-    for im, ax, img, (a1, a2), ttl in zip(panels, axes, imgs, a12, titles):
+    lo, hi = _clim()
+    for im, ax, img, ttl in zip(panels, axes, imgs, titles):
         im.set_data(img.T)
-        vm = pvmax(img, a1, a2) * s_c.val
-        im.set_clim(-vm, vm)
+        im.set_clim(lo, hi)          # one shared scale for every panel
         ax.set_title(ttl, fontsize=12)
     fig.canvas.draw_idle()
 
 
-for s in (s_x, s_y, s_z, s_c):
+for s in (s_x, s_y, s_z, s_vmin, s_vmax):
     s.on_changed(update)
 
 _temp_seg = f"  {TEMP}" if TEMP else ""
 fig.suptitle(f"{KIND} orthoslices{_temp_seg}  (apod={apod})  ±{RMAX:.0f} Å  "
-             "— drag x_H/y_K/z_L cuts; contrast scales colour", y=0.97, fontsize=13)
+             "— drag x_H/y_K/z_L cuts; vmin/vmax set a shared colour scale",
+             y=0.97, fontsize=13)
 
 if SMOKE:
     out = Path(__file__).parent / "_explore_delta_pdf_ortho_smoke.png"
     fig.savefig(out, dpi=120, bbox_inches="tight")
     print(f"[SMOKE] saved {out.name}", flush=True)
 else:
-    print("Drag the cut sliders to move each orthogonal plane; contrast scales "
-          "the colour range. Close the window to exit.", flush=True)
+    print("Drag the cut sliders to move each orthogonal plane; vmin/vmax set a "
+          "shared colour scale for all three. Close the window to exit.", flush=True)
     plt.show()
