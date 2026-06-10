@@ -1,17 +1,23 @@
 """End-to-end neutron-diffuse workflow: raw .nxs → 3D-ΔPDF → interactive viewer.
 
-Runs the four processing stages in order, then opens the orthoslice viewer:
+Runs the five processing stages in order, then opens the orthoslice viewer:
 
     1. remove_rings_3d.py     raw .nxs                  → *_ringremoved.h5
     2. punch_bragg_3d.py      *_ringremoved.h5          → *_braggpunched.h5
     3. backfill_bragg_3d.py   *_braggpunched.h5         → *_backfilled.h5
-   3b. flatten_background_3d.py  *_backfilled.h5        → *_flattened.h5
-                              (OPTIONAL, FLATTEN=1: isotropic radial-background
-                               flatten; feeds the ΔPDF in place of *_backfilled)
-    4. delta_pdf.py           *_backfilled/_flattened.h5 → examples/_delta_pdf.h5
-    5. explore_slice.py       (4-panel KL QA: data | ring removed | punched |
+    4. flatten_background_3d.py  *_backfilled.h5        → *_flattened.h5
+                              (isotropic radial-background flatten — the explicit
+                               background-removal step; default ON, FLATTEN=0 to skip)
+    5. delta_pdf.py           *_flattened.h5            → examples/_delta_pdf.h5
+    6. explore_slice.py       (4-panel KL QA: data | ring removed | punched |
                                backfilled — H + vmin/vmax sliders)
-    6. explore_delta_pdf_ortho.py   (ΔPDF real-space orthoslices, sliders)
+    7. explore_delta_pdf_ortho.py   (ΔPDF real-space orthoslices, sliders)
+
+Background removal is an explicit step (4 — the radial flatten), NOT a hidden
+blur inside the FFT: the ΔPDF's own Gaussian `SUBTRACT_BG` is OFF by default
+here.  The two are *alternative* background removers — running both removes the
+background twice, and the per-H-plane blur (σ_H=0) destroys the on-axis
+H-direction signal that the flatten preserves.
 
 Each stage is **skipped if its output already exists** (resume), so re-running
 only does the missing work.  Use FORCE / FORCE_FROM to recompute.
@@ -30,15 +36,18 @@ Env:
     DATA_FILE   raw input .nxs (default: auto-detect 22K mmm cc_sub_bkg in data/raw)
     FORCE       1 → recompute every stage even if its output exists
     FORCE_FROM  rings | punch | backfill | flatten | pdf — recompute from here on
-    FLATTEN     1 → run the optional radial-background flatten before the ΔPDF.
-                Auto-sets the ΔPDF SUBTRACT_BG=0 (a K-L blur would destroy the
-                on-axis H signal the flatten preserves); pass SUBTRACT_BG to
-                override.  Inspect the effect on the L=0 (H-K) plane.
+    FLATTEN     radial-background flatten (step 4) — default ON.  FLATTEN=0 skips
+                it (then NO background is removed unless you pass an explicit
+                SUBTRACT_BG).  The flatten preserves the on-axis H-direction
+                signal; judge its effect on the L=0 (H-K) plane.
     NO_VIEWER   1 → stop after the ΔPDF is written (no GUI)
     RMAX        viewer half-window in Å (default 50)
     # ΔPDF knobs (override the defaults below):
-    SUBTRACT_BG (default 0,1.5,1.5)  CROP_H (4)  CROP_K (8)  CROP_L (15)
-    APODIZE (gaussian)  GAUSSIAN_SIGMA (0.4)
+    SUBTRACT_BG (default 0 = OFF; the step-4 flatten replaces it).  Set e.g.
+                0,1.5,1.5 to use the legacy per-H-plane Gaussian blur instead —
+                but do NOT combine it with the flatten (double subtraction; the
+                σ_H=0 blur destroys the H-axis signal).
+    CROP_H (4)  CROP_K (8)  CROP_L (15)  APODIZE (gaussian)  GAUSSIAN_SIGMA (0.4)
     # plus every stage's own env vars (RING_PRESET, MODE, METHOD, ...).
 """
 import os
@@ -68,15 +77,18 @@ STAGE_DEFAULTS = {
         "SEARCH_EXCLUDE_H_WIDTH": "0.08", "PREVIEW": "0",
     },
     "backfill": {"METHOD": "q_shell"},
-    # optional isotropic radial-background flatten (FLATTEN=1).  floor keeps
-    # diffuse; when on, the ΔPDF SUBTRACT_BG is auto-forced to 0 below (a K-L
-    # blur would remove the on-axis H signal the flatten preserves).
+    # isotropic radial-background flatten — the explicit step-4 background
+    # remover (default ON).  floor (p25) keeps diffuse and is validated robust
+    # across 22/45/100K (see examples/validate_flatten.py).
     "flatten": {
         "ESTIMATOR": "floor", "FLOOR_PCT": "25", "Q_STEP": "0.05",
         "SMOOTH": "0.10", "MIN_COUNT": "20",
     },
+    # SUBTRACT_BG OFF by default: the step-4 flatten is the background remover.
+    # The per-H-plane Gaussian blur is the legacy alternative — set it explicitly
+    # to use it instead, but never together with the flatten (see the header).
     "pdf": {
-        "SUBTRACT_BG": "0,1.5,1.5", "CROP_H": "4", "CROP_K": "8", "CROP_L": "15",
+        "SUBTRACT_BG": "0", "CROP_H": "4", "CROP_K": "8", "CROP_L": "15",
         "APODIZE": "gaussian", "GAUSSIAN_SIGMA": "0.4",
     },
     "qa": {"H_VALUE": "0.3333", "SLIDER_MIN": "0.0", "SLIDER_MAX": "1.0"},
@@ -88,7 +100,7 @@ CHAIN_KEYS = ("DATA_FILE", "OUT_FILE", "PROC_FILE", "PDF_FILE")
 
 FORCE = os.environ.get("FORCE", "0") == "1"
 FORCE_FROM = os.environ.get("FORCE_FROM", "").strip().lower()
-FLATTEN = os.environ.get("FLATTEN", "0") == "1"
+FLATTEN = os.environ.get("FLATTEN", "1") != "0"
 ORDER = ["rings", "punch", "backfill", "flatten", "pdf"]
 if FORCE_FROM and FORCE_FROM not in ORDER:
     sys.exit(f"FORCE_FROM={FORCE_FROM!r}; choose one of {ORDER}")
@@ -159,9 +171,10 @@ ring_out = PROC / f"{raw.stem}_ringremoved.h5"
 punch_out = PROC / f"{ring_out.stem}_braggpunched.h5"
 fill_out = PROC / f"{punch_out.stem}_backfilled.h5"
 flatten_out = PROC / f"{fill_out.stem}_flattened.h5"
-# Optional radial-flatten stage feeds the ΔPDF; otherwise the backfilled volume
-# does.  pdf_out keeps a stable name either way — delta_pdf.py stamps the source
-# file, so toggling FLATTEN recomputes a stale cache (see _pdf_is_current).
+# The radial-flatten stage (step 4, default ON) feeds the ΔPDF; with FLATTEN=0
+# the backfilled volume does.  pdf_out keeps a stable name either way —
+# delta_pdf.py stamps the source file, so toggling FLATTEN recomputes a stale
+# cache (see _pdf_is_current).
 pdf_input = flatten_out if FLATTEN else fill_out
 pdf_out = PROC / f"{fill_out.stem}_delta_pdf.h5"
 PROC.mkdir(parents=True, exist_ok=True)
@@ -171,14 +184,17 @@ flatten_link = "→ flattened " if FLATTEN else ""
 print(f"chain : ringremoved → braggpunched → backfilled {flatten_link}→ _delta_pdf.h5")
 
 # ------------------------------------------------------------------
-# stages 1–3 (+ optional flatten)
+# stages 1–4 (rings, punch, backfill, background flatten)
 # ------------------------------------------------------------------
-_stage("rings", "1/5 ring removal", "remove_rings_3d.py", ring_out, "DATA_FILE", raw)
-_stage("punch", "2/5 Bragg punch", "punch_bragg_3d.py", punch_out, "DATA_FILE", ring_out)
-_stage("backfill", "3/5 Bragg backfill", "backfill_bragg_3d.py", fill_out, "DATA_FILE", punch_out)
+_stage("rings", "1/7 ring removal", "remove_rings_3d.py", ring_out, "DATA_FILE", raw)
+_stage("punch", "2/7 Bragg punch", "punch_bragg_3d.py", punch_out, "DATA_FILE", ring_out)
+_stage("backfill", "3/7 Bragg backfill", "backfill_bragg_3d.py", fill_out, "DATA_FILE", punch_out)
 if FLATTEN:
-    _stage("flatten", "3b/5 radial background flatten", "flatten_background_3d.py",
-           flatten_out, "DATA_FILE", fill_out)
+    _stage("flatten", "4/7 radial background flatten (background removal)",
+           "flatten_background_3d.py", flatten_out, "DATA_FILE", fill_out)
+else:
+    print("[skip] 4/7 radial background flatten: FLATTEN=0 — background NOT "
+          "removed unless an explicit SUBTRACT_BG is set", flush=True)
 
 # ------------------------------------------------------------------
 # stage 4: 3D-ΔPDF  (delta_pdf.py uses PROC_FILE in, fixed output _delta_pdf.h5)
@@ -229,24 +245,27 @@ def _pdf_is_current(pdf_path: Path, expected_src: str, expected_config: str) -> 
 
 
 pdf_env = _stage_env("pdf", PROC_FILE=pdf_input, OUT_FILE=pdf_out)
-# With FLATTEN on, the radial flatten has already removed the smooth background.
-# A K-L SUBTRACT_BG blur (σ_H=0, per-H-plane) would now destroy the on-axis H
-# signal — it subtracts each H-plane's integrated intensity, which IS the x_H
-# Fourier component (validated on 22K: H-axis peaks → ~1-3% retained, any σ).
-# So default SUBTRACT_BG=0 when flattening; an explicit user value still wins.
-if FLATTEN and "SUBTRACT_BG" not in os.environ:
-    pdf_env["SUBTRACT_BG"] = "0"
-    print("[flatten] ΔPDF SUBTRACT_BG=0 (flatten preserves the H-axis signal a "
-          "K-L blur would remove; set SUBTRACT_BG to override)", flush=True)
+# Background removal is step 4 (the radial flatten).  The ΔPDF's own Gaussian
+# SUBTRACT_BG is the *alternative* (legacy) remover and defaults OFF — running
+# both subtracts the background twice, and the per-H-plane blur (σ_H=0) destroys
+# the on-axis H signal the flatten preserves (validated: H-axis peaks → ~1-3%).
+_sbg = pdf_env.get("SUBTRACT_BG", "0")
+_sbg_on = any(float(v or 0) != 0 for v in _sbg.split(",")) if _sbg else False
+if FLATTEN and _sbg_on:
+    print(f"[warn] FLATTEN on AND SUBTRACT_BG={_sbg}: the background is being "
+          "removed TWICE and the K-L blur will damage the on-axis H signal. Use "
+          "one or the other (recommended: flatten only, SUBTRACT_BG=0).", flush=True)
+print(f"[background] step-4 radial flatten: {'ON' if FLATTEN else 'OFF'}   |   "
+      f"ΔPDF SUBTRACT_BG (legacy blur): {_sbg if _sbg_on else 'off'}", flush=True)
 pdf_config = _pdf_transform_config(pdf_env)
 if _pdf_is_current(pdf_out, pdf_input.name, pdf_config) and not _forced("pdf"):
-    print(f"[skip] 4/5 3D-ΔPDF: {pdf_out.name} is current for this dataset "
+    print(f"[skip] 5/7 3D-ΔPDF: {pdf_out.name} is current for this dataset "
           "and transform config (FORCE=1 or FORCE_FROM=pdf to redo)", flush=True)
 else:
     if pdf_out.exists():
         print(f"[stale] {pdf_out.name} is from a different dataset/config — recomputing",
               flush=True)
-    _run("4/5 3D-ΔPDF", "delta_pdf.py", pdf_env)
+    _run("5/7 3D-ΔPDF", "delta_pdf.py", pdf_env)
 
 # ------------------------------------------------------------------
 # stages 5–6: interactive viewers (close each window to advance)
@@ -258,14 +277,14 @@ if os.environ.get("NO_VIEWER", "0") == "1":
 # 5/6 processed-data QA: 4-panel KL viewer (data | ring removed | punched |
 # backfilled) with H + vmin/vmax sliders, loading the precomputed stages so
 # nothing is recomputed.
-print(f"\n{'='*70}\n▶ 5/6 processed-data QA viewer (KL plane; H + vmin/vmax sliders)"
+print(f"\n{'='*70}\n▶ 6/7 processed-data QA viewer (KL plane; H + vmin/vmax sliders)"
       f"\n{'='*70}", flush=True)
 qa_env = _stage_env("qa", DATA_FILE=raw, RING_FILE=ring_out,
                     PUNCH_FILE=punch_out, BACKFILL_FILE=fill_out)
 subprocess.run([PY, str(HERE / "explore_slice.py")], env=qa_env, cwd=REPO)
 
 # 6/6 ΔPDF real-space orthoslice viewer
-print(f"\n{'='*70}\n▶ 6/6 3D-ΔPDF orthoslice viewer\n{'='*70}", flush=True)
+print(f"\n{'='*70}\n▶ 7/7 3D-ΔPDF orthoslice viewer\n{'='*70}", flush=True)
 viewer_env = _stage_env("viewer", PDF_FILE=pdf_out)
 subprocess.run([PY, str(HERE / "explore_delta_pdf_ortho.py")], env=viewer_env, cwd=REPO)
 print("workflow complete.", flush=True)

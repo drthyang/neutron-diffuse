@@ -11,16 +11,18 @@ The full pipeline now runs end to end through the 3D-ΔPDF:
 1. Full-3D powder-ring subtraction via `examples/remove_rings_3d.py`.
 2. Guarded Bragg/satellite punch via `examples/punch_bragg_3d.py`.
 3. Bragg-hole backfill via `examples/backfill_bragg_3d.py`.
-3b. **Optional** isotropic radial-background flatten via
-   `examples/flatten_background_3d.py` (enable with `FLATTEN=1`). Sweeps
+4. Isotropic radial-background flatten via `examples/flatten_background_3d.py` —
+   the **explicit background-removal step, ON by default** (disable with
+   `FLATTEN=0`). Sweeps
    spherical `|Q|` shells from 0 to Qmax; in each shell it estimates a robust
    background **floor** (low percentile / mode, default p25) that sits below the
    diffuse and Bragg-residual high tail, smooths the per-shell levels into one
    continuous `bg(|Q|)`, and subtracts it. The radial pedestal flattens to ≈0
    while anisotropic diffuse and Bragg residuals are preserved. Feeds the ΔPDF
-   in place of the backfilled volume; `FLATTEN=1` auto-forces the ΔPDF
-   `SUBTRACT_BG=0`. **Use the flatten *instead of* a K-L `SUBTRACT_BG` blur, not
-   with it**: validated on 22K, the blur (σ_H=0, per-H-plane) destroys the
+   in place of the backfilled volume. The ΔPDF's own Gaussian `SUBTRACT_BG` blur
+   defaults **off** — it is the *alternative* remover. **Use the flatten
+   *instead of* a K-L `SUBTRACT_BG` blur, never both**: validated on 22K, the
+   blur (σ_H=0, per-H-plane) destroys the
    on-axis H-direction ΔPDF signal — it removes each H-plane's integrated
    intensity, which is the x_H Fourier component (real lattice-`a` peaks dropped
    to ~1-3%, for any σ). The isotropic flatten removes the background without
@@ -28,7 +30,26 @@ The full pipeline now runs end to end through the 3D-ΔPDF:
    L=0 (H-K) plane** — the H=0 (K-L) plane barely differs between methods.
    (Core: `flatten_radial_background` in
    `src/ndiff/preprocessing/radial_flatten.py`.)
-4. 3D-ΔPDF transform via `examples/delta_pdf.py` (full 3D),
+
+   **Robustness validated (2026-06-10).** `examples/validate_flatten.py` is a
+   **non-circular** QA for this stage — the per-shell-median check in
+   `flatten_background_3d.py` is nearly tautological (the subtraction is built
+   from that statistic). It tests (1) **isotropy** of the subtracted level
+   (octant-floor spread vs |Q|) and (2) **feature preservation** (background
+   residual, negative fraction vs noise, strong-feature contrast retention),
+   and prints a PASS/FLAG report. Run across 22/45/100K, all **PASS**:
+   background is isotropic (octant spread ≈0.10–0.14 ≪ 0.3), strong-feature
+   contrast **100% retained**, negatives a stable ~24.8% (the p25 expectation,
+   no over-subtraction). The default `floor` (p25) is the validated operating
+   point: `median`/`mode` centre the shell (~50% negative) and flag as
+   over-subtraction. No default change was warranted. The anisotropic-tail
+   shell fraction (40% at 22K vs 16–17% at 45/100K) tracks the stronger
+   magnetic diffuse at low T, all retained. Caveat: ~2–3% of voxels sit beyond
+   the reliably-sampled |Q|≈10 Å⁻¹ (tiny, smoothing-extrapolated bg). For a
+   Bragg-kept (3D-PDF) input the flatten also passes but the un-punched direct
+   beam dominates the innermost shells — handle the direct beam first if the
+   flatten is used in the PDF path.
+5. 3D-ΔPDF transform via `examples/delta_pdf.py` (full 3D),
    `examples/delta_pdf_plane.py` (single reciprocal H-plane 2D), and the
    interactive viewers `examples/explore_delta_pdf_ortho.py` (recommended — all
    three orthoslice planes at once) and `examples/explore_delta_pdf.py` (single
@@ -101,21 +122,27 @@ Latest visual QA preference:
 
 ## One-Command Workflow
 
-`examples/run_pipeline.py` chains every stage end-to-end — raw `.nxs` → ring
-removal → Bragg punch → backfill → (optional radial flatten) → 3D-ΔPDF — then
-opens two interactive viewers: (5) the 4-panel KL cleanup QA viewer
-(`explore_slice.py`: data | ring removed | punched | backfilled, with H +
-vmin/vmax sliders) and (6) the ΔPDF orthoslice viewer
+`examples/run_pipeline.py` chains every stage end-to-end — raw `.nxs` → (1) ring
+removal → (2) Bragg punch → (3) backfill → (4) radial-background flatten →
+(5) 3D-ΔPDF — then opens two interactive viewers: (6) the 4-panel KL cleanup QA
+viewer (`explore_slice.py`: data | ring removed | punched | backfilled, with H +
+vmin/vmax sliders) and (7) the ΔPDF orthoslice viewer
 (`explore_delta_pdf_ortho.py`).  Close each window to advance.  It uses the
 validated `cc_on` / clean-ΔPDF presets below.  Each compute stage is **skipped
 if its output already exists** (resume); pass `FORCE=1` or
 `FORCE_FROM=rings|punch|backfill|flatten|pdf` to recompute, `NO_VIEWER=1` to
-stop after the ΔPDF.  Set `FLATTEN=1` to insert the optional radial-background
-flatten before the ΔPDF (it auto-forces `SUBTRACT_BG=0`; an explicit
-`SUBTRACT_BG` still wins).  The ΔPDF stage is
-dataset-aware — it recomputes if the cached `_delta_pdf.h5` came from a
-different input (including switching the flatten on/off).  Every individual
-stage's env vars still pass through and override the defaults.
+stop after the ΔPDF.
+
+**Background removal is step 4 (the radial flatten), ON by default** — disable
+with `FLATTEN=0`.  The ΔPDF's own Gaussian `SUBTRACT_BG` blur defaults **off**:
+it is the *alternative* remover, never combined with the flatten (running both
+subtracts the background twice and the σ_H=0 blur destroys the on-axis H signal
+the flatten preserves).  The pipeline prints the active background method
+(`[background] step-4 radial flatten: ON | ΔPDF SUBTRACT_BG (legacy blur): off`)
+and warns if both are on.  The ΔPDF stage is dataset-aware — it recomputes if
+the cached `_delta_pdf.h5` came from a different input or transform config
+(including switching the flatten on/off, or setting `SUBTRACT_BG`).  Every
+individual stage's env vars still pass through and override the defaults.
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
@@ -229,8 +256,9 @@ PYTHONPATH=src python3 \
   -m pytest -o addopts=''
 ```
 
-Expected current result: `86 passed` (includes the ΔPDF centring guard
-`test_delta_pdf_centring_positive_peak` and the `peak_profile` diagnostic tests).
+Expected current result: `97 passed` (includes the ΔPDF centring guard
+`test_delta_pdf_centring_positive_peak`, the `peak_profile` diagnostic tests,
+and the flatten robustness guards in `test_radial_flatten.py`).
 
 `scripts/check.sh` runs the same three checks as GitHub CI (`.github/workflows/ci.yml`)
 — pytest, `ruff check src/ tests/`, and `mypy src/ndiff` — and is the recommended

@@ -9,12 +9,14 @@
   1. Powder-ring subtraction        implemented, real-data QA active
   2. Bragg/satellite punch          implemented, real-data QA active
   3. Bragg-hole backfill            implemented, real-data QA active
- 3b. Radial-background flatten      implemented (optional, FLATTEN=1)
-  4. 3D-DeltaPDF Fourier transform  implemented, centring bug fixed
+  4. Radial-background flatten      implemented (background removal, default ON)
+  5. 3D-DeltaPDF Fourier transform  implemented, centring bug fixed
 ```
 
-The current development goal is to enter the final 3D-DeltaPDF stage with a
-well-organized cleanup stack and clear defaults.
+Background removal is an explicit step (4 — the radial flatten), not a hidden
+blur inside the FFT; the transform's own Gaussian `SUBTRACT_BG` defaults off and
+is only the alternative remover. The current development goal is to enter the
+final 3D-DeltaPDF stage with a well-organized cleanup stack and clear defaults.
 
 ## Phase 1 — Foundation  Complete
 
@@ -99,7 +101,7 @@ Open validation:
 - Decide whether search exclusions should be derived from known magnetic diffuse
   planes rather than passed manually.
 
-## Phase 3b — Radial-Background Flatten  Implemented (optional)
+## Phase 3b — Radial-Background Flatten  Implemented (default ON, step 4)
 
 Isotropic complement to the per-plane ring removal: sweeps spherical `|Q|`
 shells and subtracts a smooth, continuous per-shell background **floor** so the
@@ -107,8 +109,10 @@ radial pedestal flattens to ≈0 while anisotropic diffuse and Bragg residuals a
 preserved.
 
 - `ndiff.preprocessing.flatten_radial_background` (`src/ndiff/preprocessing/radial_flatten.py`)
-- `examples/flatten_background_3d.py`; wired into `run_pipeline.py` behind `FLATTEN=1`
-  (auto-forces the ΔPDF `SUBTRACT_BG=0`).
+- `examples/flatten_background_3d.py`; the explicit background-removal step 4 in
+  `run_pipeline.py`, default ON (disable with `FLATTEN=0`). The ΔPDF's own
+  Gaussian `SUBTRACT_BG` blur defaults off — it is the alternative remover, never
+  combined with the flatten.
 - Default estimator `floor` (p25); `mode` / `median` / `snip` also available.
 
 Validated on 22K (flatten preserves diffuse: ~94% of bright satellites retained;
@@ -117,9 +121,31 @@ blur, not with it** — the blur (σ_H=0) destroys the on-axis H-direction ΔPDF
 signal (real lattice-`a` peaks → ~1-3%, any σ), which the isotropic flatten
 preserves. Judge on the L=0 (H-K) plane.
 
+Robustness validated across 22/45/100K (2026-06-10) via `examples/validate_flatten.py`
+— a **non-circular** QA (the per-shell-median check is nearly tautological).
+Results, all three temperatures **PASS**:
+
+- **Background is isotropic** — octant-floor spread / |bg| ≈ 0.10–0.14 (≪ 0.3),
+  so subtracting one level per |Q| shell is valid; we are not mislabeling
+  anisotropic structure as background.
+- **Features preserved** — strong anisotropic (Bragg/satellite) contrast 100%
+  retained; the subtraction is a function of |Q| alone, so it cannot distort
+  anisotropy (only shifts the radial mean).
+- **No over-subtraction** — negative fraction a stable ~24.8% (the p25
+  expectation), deep negatives (< −3σ) only ~1.2–1.7%.
+- **`floor` (p25) is the validated default** — `median`/`mode` centre the shell
+  (~50% negative) and flag as over-subtraction; `floor` keeps the bulk positive
+  and preserves possibly-real isotropic diffuse. No default change warranted.
+- Anisotropic-tail shell fraction tracks temperature (40% at 22K vs 16–17% at
+  45/100K), consistent with stronger magnetic diffuse at low T — all retained.
+
 Open validation:
 
-- Tune `FLOOR_PCT` / `SMOOTH` per dataset; confirm on the 45K/100K volumes.
+- Caveat (bounded): only ~2–3% of voxels sit beyond the reliably-sampled
+  |Q| ≈ 10 Å⁻¹, where `bg(|Q|)` is tiny and smoothing-extrapolated.
+- For a 3D-PDF (Bragg-kept) input the flatten also passes, but the un-punched
+  direct beam dominates the innermost shells (bg span ~4.3 vs 0.12 backfilled);
+  treat the direct beam before flattening if the flatten is used in the PDF path.
 - Optional future work: an H-aware residual-cross reduction that lowers the
   leftover L=0 cross without harming the sharp H-axis peaks.
 
@@ -189,6 +215,6 @@ Before treating the pipeline as a stable release candidate:
   reproduce.
 - Done: `scripts/check.sh` mirrors GitHub CI (`.github/workflows/ci.yml`) —
   pytest + `ruff check src/ tests/` + `mypy src/ndiff` — and can be installed as
-  a `pre-push` hook; the suite is at 86 passing tests.
+  a `pre-push` hook; the suite is at 97 passing tests.
 - Still open: add CI coverage that specifically exercises the Bragg
   guard/exclusion behavior, not just import/type checks.

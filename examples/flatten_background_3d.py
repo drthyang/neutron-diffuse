@@ -1,15 +1,19 @@
-"""Flatten the isotropic radial background of a 3D volume — optional final step.
+"""Flatten the isotropic radial background of a 3D volume — the background step.
 
-Runs after ``examples/backfill_bragg_3d.py``.  Sweeps spherical |Q| shells from
-0 to Qmax; in each shell it estimates a robust background **floor** (a low
-percentile / mode that sits below the diffuse and Bragg-residual high tail),
-smooths the per-shell levels into one continuous ``bg(|Q|)`` curve, and
-subtracts it from every voxel.  The smooth radial pedestal flattens to ≈0 while
-the anisotropic diffuse signal and Bragg residuals are preserved.
+Runs after ``examples/backfill_bragg_3d.py`` as step 4 of the pipeline (right
+before the ΔPDF FFT).  Sweeps spherical |Q| shells from 0 to Qmax; in each shell
+it estimates a robust background **floor** (a low percentile / mode that sits
+below the diffuse and Bragg-residual high tail), smooths the per-shell levels
+into one continuous ``bg(|Q|)`` curve, and subtracts it from every voxel.  The
+smooth radial pedestal flattens to ≈0 while the anisotropic diffuse signal and
+Bragg residuals are preserved.
 
-This is optional and OFF by default in ``run_pipeline.py`` (set ``FLATTEN=1``).
-When enabled you usually want the ΔPDF's own ``SUBTRACT_BG=0`` so the background
-is not subtracted twice.
+This is the explicit background-removal step and is **ON by default** in
+``run_pipeline.py`` (disable with ``FLATTEN=0``).  It replaces the ΔPDF's own
+Gaussian ``SUBTRACT_BG`` blur (which defaults off) — use one or the other, never
+both: running both subtracts the background twice, and the per-H-plane blur
+(σ_H=0) destroys the on-axis H-direction signal the flatten preserves.
+Robustness validated across 22/45/100K by ``examples/validate_flatten.py``.
 
 Run::
 

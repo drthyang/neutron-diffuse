@@ -145,6 +145,60 @@ def test_all_masked_returns_unchanged():
     assert np.array_equal(res.volume.data, vol.data)
 
 
+def test_subtraction_is_purely_radial_so_anisotropy_is_untouched():
+    """The flatten subtracts a single level per |Q|, so within a thin shell every
+    voxel loses the *same* amount.  That is the precise guarantee that it cannot
+    distort anisotropic features: any contrast between two voxels at the same |Q|
+    (a Bragg/diffuse peak vs its background) is preserved exactly — only the
+    radial mean is shifted.  Validated on real 22/45/100K data (100% feature-
+    contrast retention); this locks it in on synthetic data.
+    """
+    vol, q, _ = _base_vol()
+    H, K, L = vol.hkl_grid()
+    # several anisotropic blobs at different |Q| and azimuth
+    for h0, k0 in [(1.5, 0.0), (0.0, 1.8), (-1.2, 1.2)]:
+        vol.data[...] += 4.0 * np.exp(-((H - h0) ** 2 + (K - k0) ** 2 + L**2) / (2 * 0.25**2))
+
+    res = flatten_radial_background(vol, q_step=0.05, smooth=0.2, min_count=15)
+    delta = vol.data - res.volume.data            # the amount removed at each voxel
+
+    bg_span = float(np.nanmax(res.bg_curve) - np.nanmin(res.bg_curve))
+    # in a thin |Q| shell the removed amount varies only by the curve's slope ×
+    # the shell width — a tiny fraction of the total background span.
+    for q0 in (1.0, 2.0, 3.5):
+        shell = np.abs(q - q0) < 0.02
+        assert np.ptp(delta[shell]) < 0.03 * bg_span
+
+    # and the blob-to-background contrast within a shell is retained to ~100%
+    H1, K1, L1 = vol.hkl_grid()
+    peak = (np.abs(H1 - 1.5) < 0.05) & (np.abs(K1) < 0.05) & (np.abs(L1) < 0.05)
+    ref = (np.abs(q - q[peak].mean()) < 0.02) & ~peak
+    c_before = float(vol.data[peak].mean() - np.median(vol.data[ref]))
+    c_after = float(res.volume.data[peak].mean() - np.median(res.volume.data[ref]))
+    assert abs(c_after - c_before) < 0.02 * abs(c_before)
+
+
+def test_floor_is_conservative_median_centres_the_shell():
+    """Why ``floor`` is the validated default: subtracting p25 leaves the shell
+    bulk above zero (≈floor_pct negative), so a possibly-real isotropic-diffuse
+    level is kept; ``median`` centres the shell (≈50% negative), removing it.
+    On real data ``median``/``mode`` flagged as over-subtraction; ``floor`` did
+    not.  This guards that conservative ordering.
+    """
+    vol, _, _ = _base_vol(noise=0.2)
+
+    floor = flatten_radial_background(vol, estimator="floor", floor_percentile=25.0,
+                                      q_step=0.05, smooth=0.2, min_count=15)
+    med = flatten_radial_background(vol, estimator="median",
+                                    q_step=0.05, smooth=0.2, min_count=15)
+
+    fin = np.isfinite(vol.data)
+    neg_floor = float(np.mean(floor.volume.data[fin] < 0.0))
+    neg_med = float(np.mean(med.volume.data[fin] < 0.0))
+    assert neg_floor < 0.40                       # floor keeps the bulk positive
+    assert neg_med > neg_floor                    # median centres -> more negative
+
+
 def test_unknown_estimator_raises():
     vol, _, _ = _base_vol()
     with pytest.raises(ValueError, match="estimator"):

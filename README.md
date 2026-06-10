@@ -89,7 +89,12 @@ python3 examples/run_pipeline.py
 
 `examples/run_pipeline.py` runs all compute stages, skips stages whose outputs
 already exist, writes the 3D-DeltaPDF, then opens the cleanup and DeltaPDF
-viewers.
+viewers. The stages are: (1) ring removal, (2) Bragg punch, (3) Bragg backfill,
+(4) **radial-background flatten** — the explicit background-removal step (default
+on; `FLATTEN=0` to skip), (5) 3D-DeltaPDF FFT. The background is removed at
+step 4, not by a hidden blur inside the FFT: the transform's own Gaussian
+`SUBTRACT_BG` is off by default because it is the *alternative* remover (see
+step 5 below).
 
 Useful overrides:
 
@@ -98,7 +103,8 @@ Useful overrides:
 | `DATA_FILE=/path/to/file.nxs` | Use a specific input file. |
 | `NO_VIEWER=1` | Stop after writing outputs; do not open GUI viewers. |
 | `FORCE=1` | Recompute every stage. |
-| `FORCE_FROM=rings|punch|backfill|pdf` | Recompute from one stage onward. |
+| `FORCE_FROM=rings|punch|backfill|flatten|pdf` | Recompute from one stage onward. |
+| `FLATTEN=0` | Skip the radial-background flatten (step 4). |
 
 ## Run Stages Manually
 
@@ -148,11 +154,31 @@ Output:
 data/processed/*_braggpunched_backfilled.h5
 ```
 
-### 4. Compute The 3D-DeltaPDF
+### 4. Flatten The Radial Background (Background Removal)
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
-SUBTRACT_BG=0,1.5,1.5 CROP_H=4 CROP_K=8 CROP_L=15 APODIZE=gaussian \
+python3 examples/flatten_background_3d.py
+```
+
+Output:
+
+```text
+data/processed/*_backfilled_flattened.h5
+```
+
+Sweeps spherical `|Q|` shells and subtracts a smooth, continuous per-shell
+background floor (default estimator `floor`/p25), so the isotropic radial
+pedestal flattens to ≈0 while the anisotropic diffuse and Bragg residuals are
+preserved. This is the explicit background-removal step. Its robustness is
+validated across 22/45/100 K by `examples/validate_flatten.py` (background is
+isotropic, strong-feature contrast 100% retained, no over-subtraction).
+
+### 5. Compute The 3D-DeltaPDF
+
+```bash
+PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
+CROP_H=4 CROP_K=8 CROP_L=15 APODIZE=gaussian \
 python3 examples/delta_pdf.py
 ```
 
@@ -165,11 +191,14 @@ examples/_delta_pdf_h0l.png
 examples/_delta_pdf_0kl.png
 ```
 
-`SUBTRACT_BG=0,sigma,sigma` subtracts a smooth per-H-plane background before the
-FFT. This removes the broad diffuse envelope that otherwise appears as a bright
-axis cross in real space while preserving H-layered structure. The standard 3D
-workflow crops reciprocal space to `|H| <= 4`, `|K| <= 8`, and `|L| <= 15`
-before the transform.
+The standard 3D workflow crops reciprocal space to `|H| <= 4`, `|K| <= 8`, and
+`|L| <= 15` before the transform. The background has already been removed at
+step 4, so the transform's own smooth-background subtraction is **off**.
+`SUBTRACT_BG=0,sigma,sigma` is the *legacy alternative*: it subtracts a smooth
+per-H-plane Gaussian background inside the FFT. Use the flatten **or**
+`SUBTRACT_BG`, never both — running both removes the background twice, and the
+per-H-plane blur (σ_H=0) destroys the on-axis H-direction signal that the
+flatten preserves.
 
 ## Visual QA
 

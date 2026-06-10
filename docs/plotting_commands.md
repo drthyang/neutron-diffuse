@@ -58,29 +58,32 @@ PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl NO_VIEWER=1 \
 
 ## Compute Per-Temperature DeltaPDF Files
 
-Writes `examples/_delta_pdf_{T}.h5` using the already-backfilled volumes.
+Writes `examples/_delta_pdf_{T}.h5` using the **flattened** (step-4,
+background-removed) volumes, so the transform's own `SUBTRACT_BG` is left off.
 The `OUT_FILE` env var overrides the default `examples/_delta_pdf.h5` output.
+(To use the legacy in-FFT Gaussian blur instead, point `PROC_FILE` at the
+`*_backfilled.h5` and add `SUBTRACT_BG="0,1.5,1.5"` — never both.)
 
 ```bash
 # 22 K
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
-  PROC_FILE="data/processed/TbTi3Bi4_22K_mmm_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved_braggpunched_backfilled.h5" \
+  PROC_FILE="data/processed/TbTi3Bi4_22K_mmm_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved_braggpunched_backfilled_flattened.h5" \
   OUT_FILE="examples/_delta_pdf_22K.h5" \
-  SUBTRACT_BG="0,1.5,1.5" CROP_H=4 CROP_K=8 CROP_L=15 APODIZE=gaussian GAUSSIAN_SIGMA=0.4 \
+  CROP_H=4 CROP_K=8 CROP_L=15 APODIZE=gaussian GAUSSIAN_SIGMA=0.4 \
   $PY examples/delta_pdf.py
 
 # 45 K
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
-  PROC_FILE="data/processed/TbTi3Bi4_45K_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved_braggpunched_backfilled.h5" \
+  PROC_FILE="data/processed/TbTi3Bi4_45K_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved_braggpunched_backfilled_flattened.h5" \
   OUT_FILE="examples/_delta_pdf_45K.h5" \
-  SUBTRACT_BG="0,1.5,1.5" CROP_H=4 CROP_K=8 CROP_L=15 APODIZE=gaussian GAUSSIAN_SIGMA=0.4 \
+  CROP_H=4 CROP_K=8 CROP_L=15 APODIZE=gaussian GAUSSIAN_SIGMA=0.4 \
   $PY examples/delta_pdf.py
 
 # 100 K
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
-  PROC_FILE="data/processed/TbTi3Bi4_100K_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved_braggpunched_backfilled.h5" \
+  PROC_FILE="data/processed/TbTi3Bi4_100K_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved_braggpunched_backfilled_flattened.h5" \
   OUT_FILE="examples/_delta_pdf_100K.h5" \
-  SUBTRACT_BG="0,1.5,1.5" CROP_H=4 CROP_K=8 CROP_L=15 APODIZE=gaussian GAUSSIAN_SIGMA=0.4 \
+  CROP_H=4 CROP_K=8 CROP_L=15 APODIZE=gaussian GAUSSIAN_SIGMA=0.4 \
   $PY examples/delta_pdf.py
 ```
 
@@ -108,8 +111,11 @@ PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
 
 ### Multi-Temperature DeltaPDF Viewer (22 K / 45 K / 100 K)
 
-3 x 3 grid: rows = temperatures, columns = orthogonal cuts. All cut
-sliders are shared so the same real-space slice is shown for every temperature.
+3 x 3 grid: rows = temperatures, columns = orthogonal cuts. All cut sliders are
+shared so the same real-space slice is shown for every temperature. Each column
+uses a per-plane colour scale (temperatures comparable within a column) and the
+`contrast ×` slider rescales. With the pipeline outputs in `data/processed` the
+files are auto-detected — no paths needed:
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
@@ -118,11 +124,10 @@ PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
 
 | Variable | Default | Effect |
 |---|---|---|
-| `PDF_22K` | `examples/_delta_pdf_22K.h5` | 22 K ΔPDF file |
-| `PDF_45K` | `examples/_delta_pdf_45K.h5` | 45 K ΔPDF file |
-| `PDF_100K` | `examples/_delta_pdf_100K.h5` | 100 K ΔPDF file |
+| `PDF_22K` / `PDF_45K` / `PDF_100K` | auto-detect `data/processed/*{T}*_delta_pdf.h5` | override each ΔPDF file |
 | `RMAX` | `50` | Display half-window in Å |
-| `SHARED_SCALE` | `0` | `1` = lock all panels to the 22 K colour scale |
+| `PERCENTILE` | `98` | Per-plane colour-scale percentile at r>3 Å |
+| `CONTRAST_MIN` / `CONTRAST_MAX` | `0.1` / `20` | contrast-× slider range |
 
 ### Processed-Data QA Viewer
 

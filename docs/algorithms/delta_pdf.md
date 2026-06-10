@@ -130,5 +130,26 @@ envelope**, which is the highest-intensity region and so survives any threshold.
 It also adds hard-edge termination ripple and discards the negative excursions
 of `I_diffuse` (regions with *fewer* pairs than average), which a ΔPDF needs.
 
-**Use smooth-bg subtraction** (`subtract_smooth_bg` in `compute_delta_pdf`;
-`SUBTRACT_BG=<σ rlu>` in `examples/delta_pdf_plane.py` / `examples/delta_pdf.py`).
+Of the in-FFT options, **smooth-bg subtraction** (`subtract_smooth_bg` in
+`compute_delta_pdf`; `SUBTRACT_BG=<σ rlu>` in `examples/delta_pdf_plane.py` /
+`examples/delta_pdf.py`) is the one that removes the cross most completely.
+
+### Background removal in the pipeline: the radial flatten (step 4)
+
+The smooth-bg blur above removes the axis cross most completely, but the
+per-H-plane form (`σ_H=0`, e.g. `0,1.5,1.5`) does so by subtracting each H
+plane's integrated K–L intensity — which **is** the on-axis x_H Fourier
+component. So it also **destroys the H-direction signal** (real lattice-`a`
+peaks drop to ~1–3 %, for any σ; see the `radial_flatten` module and
+`flatten-vs-subtractbg`).
+
+The production pipeline (`examples/run_pipeline.py`) therefore removes the
+background with an **explicit step 4**, the isotropic radial flatten
+(`ndiff.preprocessing.flatten_radial_background`,
+`examples/flatten_background_3d.py`), and leaves the in-FFT `SUBTRACT_BG` **off**
+by default. The flatten subtracts a smooth `bg(|Q|)` per spherical shell without
+touching per-plane DC, so it **preserves the on-axis H signal** while still
+roughly halving the L=0 axis cross. The two are alternatives — never run both
+(double subtraction, and the blur re-introduces the H-axis loss). Robustness of
+the flatten is validated across 22/45/100 K by `examples/validate_flatten.py`.
+Judge the effect on the L=0 (H–K) plane, where the methods diverge.

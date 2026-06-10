@@ -6,9 +6,11 @@ Shows three rows (one per temperature) × three orthogonal real-space cuts:
     col 1: x_H – z_L  (at y_K = cut)
     col 2: y_K – z_L  (at x_H = cut)
 
-All nine panels share a single colour scale (global p99 of |ΔPDF| at r > 3 Å
-across all three datasets), so intensities are directly comparable across
-temperatures.  The contrast slider multiplies this global scale.
+Each column (plane) uses its own colour scale — p<PERCENTILE> of |ΔPDF| at
+r > 3 Å in that plane's central slice, pooled across the three temperatures — so
+the temperatures are directly comparable *within* a plane and every plane uses
+its full dynamic range (a single global scale washes the weaker planes out and
+saturates the stronger ones).  The contrast × slider multiplies these.
 
 Run::
 
@@ -16,12 +18,12 @@ Run::
       python3 examples/explore_delta_pdf_multi.py
 
 Env:
-    PDF_22K   path to 22 K ΔPDF .h5  (default: examples/_delta_pdf_22K.h5)
-    PDF_45K   path to 45 K ΔPDF .h5  (default: examples/_delta_pdf_45K.h5)
-    PDF_100K  path to 100 K ΔPDF .h5 (default: examples/_delta_pdf_100K.h5)
+    PDF_22K / PDF_45K / PDF_100K  explicit paths to each ΔPDF .h5.  If unset,
+              auto-detects the pipeline output data/processed/*{T}*_delta_pdf.h5
+              (newest match), falling back to examples/_delta_pdf_{T}.h5.
     RMAX      display half-window in Å for all axes (default: 50)
     PERCENTILE global colour-scale percentile at r > 3 Å (default: 98)
-    CONTRAST_MIN / CONTRAST_MAX  contrast slider range (default: 0.1 / 20)
+    CONTRAST_MIN / CONTRAST_MAX  contrast-× slider range (default: 0.1 / 20)
 """
 import os
 import sys
@@ -38,6 +40,7 @@ import numpy as np
 from matplotlib.widgets import CheckButtons, Slider
 
 HERE = Path(__file__).resolve().parent
+PROC = HERE.parent / "data" / "processed"
 
 TEMPS = ["22K", "45K", "100K"]
 PDF_ENVS = {"22K": "PDF_22K", "45K": "PDF_45K", "100K": "PDF_100K"}
@@ -47,15 +50,27 @@ PCT = float(os.environ.get("PERCENTILE", "98.0"))
 CMIN = float(os.environ.get("CONTRAST_MIN", "0.1"))
 CMAX = float(os.environ.get("CONTRAST_MAX", "20.0"))
 
+
+def _resolve(t):
+    """ΔPDF .h5 for temperature *t*: an explicit env var wins; otherwise
+    auto-detect the pipeline output (newest data/processed/*{t}*_delta_pdf.h5),
+    falling back to the legacy examples/_delta_pdf_{t}.h5."""
+    env = os.environ.get(PDF_ENVS[t])
+    if env:
+        return Path(env)
+    hits = sorted(PROC.glob(f"*{t}*_delta_pdf.h5"), key=lambda q: q.stat().st_mtime)
+    return hits[-1] if hits else HERE / f"_delta_pdf_{t}.h5"
+
+
 # ------------------------------------------------------------------
 # load all three ΔPDF files
 # ------------------------------------------------------------------
 datasets = {}
 for t in TEMPS:
-    default = HERE / f"_delta_pdf_{t}.h5"
-    p = Path(os.environ.get(PDF_ENVS[t], str(default)))
+    p = _resolve(t)
     if not p.exists():
-        sys.exit(f"{p} not found — run delta_pdf.py with OUT_FILE={p} first.")
+        sys.exit(f"no ΔPDF for {t}: set {PDF_ENVS[t]}=/path/to/file.h5, or run the "
+                 f"pipeline so data/processed/*{t}*_delta_pdf.h5 exists.")
     print(f"loading {t}: {p.name} ...", flush=True)
     with h5py.File(p, "r") as fh:
         data = fh["data"][...]
@@ -76,21 +91,6 @@ for t in TEMPS:
                        xw=x[mx], yw=y[my], zw=z[mz])
     print(f"  shape={data.shape}  apod={apod}", flush=True)
 
-# ------------------------------------------------------------------
-# global colour scale: p99 of |ΔPDF| at r > 3 Å across all datasets
-# ------------------------------------------------------------------
-print(f"computing global colour scale (p{PCT:.0f} at r>3 Å) ...", flush=True)
-_all_vals = []
-for t in TEMPS:
-    d = datasets[t]
-    x, y, z = d["x"], d["y"], d["z"]
-    r2 = x[:, None, None]**2 + y[None, :, None]**2 + z[None, None, :]**2
-    _all_vals.append(np.abs(d["data"][r2 > 9.0]))
-global_vmax = float(np.percentile(np.concatenate(_all_vals), PCT))
-del _all_vals
-print(f"  global vmax = ±{global_vmax:.4g}", flush=True)
-
-
 def nidx(ax, v):
     return int(np.argmin(np.abs(ax - v)))
 
@@ -103,6 +103,30 @@ def _slices(d, ix, iy, iz):
         data[np.ix_([ix], my, mz)][0, :, :],
     ]
 
+
+# ------------------------------------------------------------------
+# per-plane colour scale: p<PCT> of |ΔPDF| at r>3 Å in each plane's central
+# slice, pooled across the three temperatures.  Each column (plane) gets its own
+# scale, so the temperatures stay directly comparable *within* a plane and every
+# plane uses its full dynamic range — a single global scale washes the weaker
+# planes out and saturates the stronger ones.  The contrast × slider multiplies
+# these.  The central slices computed here are reused as the initial panels.
+# ------------------------------------------------------------------
+print(f"computing per-plane colour scale (p{PCT:.0f} at r>3 Å) ...", flush=True)
+central = {}
+_col_vals = [[], [], []]
+for t in TEMPS:
+    d = datasets[t]
+    central[t] = _slices(d, nidx(d["x"], 0.0), nidx(d["y"], 0.0), nidx(d["z"], 0.0))
+    a12 = [(d["xw"], d["yw"]), (d["xw"], d["zw"]), (d["yw"], d["zw"])]
+    for ci, (img, (a1, a2)) in enumerate(zip(central[t], a12)):
+        rr = np.hypot(a1[:, None], a2[None, :]) > 3.0
+        _col_vals[ci].append(np.abs(img[rr]))
+vmax_col = [max(float(np.percentile(np.concatenate(v), PCT)), 1e-6) for v in _col_vals]
+del _col_vals
+print("  per-plane vmax = "
+      + ", ".join(f"{p}±{vmax_col[i]:.4g}" for i, p in enumerate(["H-K", "H-L", "K-L"])),
+      flush=True)
 
 # use first dataset's axes for the shared cut sliders
 ref = datasets[TEMPS[0]]
@@ -122,10 +146,7 @@ panels = {}   # panels[temp][col] = AxesImage
 
 for ri, t in enumerate(TEMPS):
     d = datasets[t]
-    ix0 = nidx(d["x"], 0.0)
-    iy0 = nidx(d["y"], 0.0)
-    iz0 = nidx(d["z"], 0.0)
-    imgs0 = _slices(d, ix0, iy0, iz0)
+    imgs0 = central[t]
     a12 = [(d["xw"], d["yw"]), (d["xw"], d["zw"]), (d["yw"], d["zw"])]
 
     panels[t] = []
@@ -134,7 +155,7 @@ for ri, t in enumerate(TEMPS):
         ax = axes[ri][ci]
         im = ax.imshow(img.T, origin="lower", aspect="equal",
                        extent=[a1[0], a1[-1], a2[0], a2[-1]],
-                       cmap="RdBu_r", vmin=-global_vmax, vmax=global_vmax,
+                       cmap="RdBu_r", vmin=-vmax_col[ci], vmax=vmax_col[ci],
                        interpolation="bilinear")
         ax.set_title(f"{t}  {plane}", fontsize=10)
         ax.set_xlabel(xl, fontsize=8)
@@ -194,7 +215,7 @@ chk.on_clicked(_toggle_grid)
 
 
 def update(_):
-    vm = global_vmax * s_c.val
+    c = s_c.val
     for t in TEMPS:
         d = datasets[t]
         ix = nidx(d["x"], s_x.val)
@@ -206,9 +227,9 @@ def update(_):
             f"{t}  x_H–z_L  (y_K={d['y'][iy]:+.1f} Å)",
             f"{t}  y_K–z_L  (x_H={d['x'][ix]:+.1f} Å)",
         ]
-        for im, img, ttl in zip(panels[t], imgs, titles):
+        for ci, (im, img, ttl) in enumerate(zip(panels[t], imgs, titles)):
             im.set_data(img.T)
-            im.set_clim(-vm, vm)
+            im.set_clim(-vmax_col[ci] * c, vmax_col[ci] * c)   # per-plane scale × contrast
             im.axes.set_title(ttl, fontsize=10)
     fig.canvas.draw_idle()
 
@@ -217,8 +238,8 @@ for s in (s_x, s_y, s_z, s_c):
     s.on_changed(update)
 
 fig.suptitle(
-    f"3D-ΔPDF: 22 K / 45 K / 100 K  ·  ±{RMAX:.0f} Å  ·  "
-    f"global scale ±{global_vmax:.4g}  — drag sliders to move cuts",
+    f"3D-ΔPDF: 22 K / 45 K / 100 K  ·  ±{RMAX:.0f} Å  ·  per-plane scale "
+    "(temps comparable within a column)  — drag cut sliders; contrast × to rescale",
     y=0.975, fontsize=13,
 )
 
