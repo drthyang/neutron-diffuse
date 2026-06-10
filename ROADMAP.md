@@ -9,6 +9,7 @@
   1. Powder-ring subtraction        implemented, real-data QA active
   2. Bragg/satellite punch          implemented, real-data QA active
   3. Bragg-hole backfill            implemented, real-data QA active
+ 3b. Radial-background flatten      implemented (optional, FLATTEN=1)
   4. 3D-DeltaPDF Fourier transform  implemented, centring bug fixed
 ```
 
@@ -97,6 +98,30 @@ Open validation:
 - Check whether `q_shell` fill creates radial banding around large holes.
 - Decide whether search exclusions should be derived from known magnetic diffuse
   planes rather than passed manually.
+
+## Phase 3b — Radial-Background Flatten  Implemented (optional)
+
+Isotropic complement to the per-plane ring removal: sweeps spherical `|Q|`
+shells and subtracts a smooth, continuous per-shell background **floor** so the
+radial pedestal flattens to ≈0 while anisotropic diffuse and Bragg residuals are
+preserved.
+
+- `ndiff.preprocessing.flatten_radial_background` (`src/ndiff/preprocessing/radial_flatten.py`)
+- `examples/flatten_background_3d.py`; wired into `run_pipeline.py` behind `FLATTEN=1`
+  (auto-forces the ΔPDF `SUBTRACT_BG=0`).
+- Default estimator `floor` (p25); `mode` / `median` / `snip` also available.
+
+Validated on 22K (flatten preserves diffuse: ~94% of bright satellites retained;
+flattens the radial pedestal). **Use the flatten instead of a K-L `SUBTRACT_BG`
+blur, not with it** — the blur (σ_H=0) destroys the on-axis H-direction ΔPDF
+signal (real lattice-`a` peaks → ~1-3%, any σ), which the isotropic flatten
+preserves. Judge on the L=0 (H-K) plane.
+
+Open validation:
+
+- Tune `FLOOR_PCT` / `SMOOTH` per dataset; confirm on the 45K/100K volumes.
+- Optional future work: an H-aware residual-cross reduction that lowers the
+  leftover L=0 cross without harming the sharp H-axis peaks.
 
 ## Phase 4 — 3D-DeltaPDF  Implemented
 

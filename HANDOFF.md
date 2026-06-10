@@ -11,6 +11,23 @@ The full pipeline now runs end to end through the 3D-ΔPDF:
 1. Full-3D powder-ring subtraction via `examples/remove_rings_3d.py`.
 2. Guarded Bragg/satellite punch via `examples/punch_bragg_3d.py`.
 3. Bragg-hole backfill via `examples/backfill_bragg_3d.py`.
+3b. **Optional** isotropic radial-background flatten via
+   `examples/flatten_background_3d.py` (enable with `FLATTEN=1`). Sweeps
+   spherical `|Q|` shells from 0 to Qmax; in each shell it estimates a robust
+   background **floor** (low percentile / mode, default p25) that sits below the
+   diffuse and Bragg-residual high tail, smooths the per-shell levels into one
+   continuous `bg(|Q|)`, and subtracts it. The radial pedestal flattens to ≈0
+   while anisotropic diffuse and Bragg residuals are preserved. Feeds the ΔPDF
+   in place of the backfilled volume; `FLATTEN=1` auto-forces the ΔPDF
+   `SUBTRACT_BG=0`. **Use the flatten *instead of* a K-L `SUBTRACT_BG` blur, not
+   with it**: validated on 22K, the blur (σ_H=0, per-H-plane) destroys the
+   on-axis H-direction ΔPDF signal — it removes each H-plane's integrated
+   intensity, which is the x_H Fourier component (real lattice-`a` peaks dropped
+   to ~1-3%, for any σ). The isotropic flatten removes the background without
+   touching per-plane DC, so it preserves that signal. **Judge the effect on the
+   L=0 (H-K) plane** — the H=0 (K-L) plane barely differs between methods.
+   (Core: `flatten_radial_background` in
+   `src/ndiff/preprocessing/radial_flatten.py`.)
 4. 3D-ΔPDF transform via `examples/delta_pdf.py` (full 3D),
    `examples/delta_pdf_plane.py` (single reciprocal H-plane 2D), and the
    interactive viewers `examples/explore_delta_pdf_ortho.py` (recommended — all
@@ -85,16 +102,20 @@ Latest visual QA preference:
 ## One-Command Workflow
 
 `examples/run_pipeline.py` chains every stage end-to-end — raw `.nxs` → ring
-removal → Bragg punch → backfill → 3D-ΔPDF — then opens two interactive viewers:
-(5) the 4-panel KL cleanup QA viewer (`explore_slice.py`: data | ring removed |
-punched | backfilled, with H + vmin/vmax sliders) and (6) the ΔPDF orthoslice
-viewer (`explore_delta_pdf_ortho.py`).  Close each window to advance.  It uses
-the validated `cc_on` / clean-ΔPDF presets below.  Each compute stage is
-**skipped if its output already exists** (resume); pass `FORCE=1` or
-`FORCE_FROM=rings|punch|backfill|pdf` to recompute, `NO_VIEWER=1` to stop after
-the ΔPDF.  The ΔPDF stage is dataset-aware — it recomputes if the cached
-`_delta_pdf.h5` came from a different input.  Every individual stage's env vars
-still pass through and override the defaults.
+removal → Bragg punch → backfill → (optional radial flatten) → 3D-ΔPDF — then
+opens two interactive viewers: (5) the 4-panel KL cleanup QA viewer
+(`explore_slice.py`: data | ring removed | punched | backfilled, with H +
+vmin/vmax sliders) and (6) the ΔPDF orthoslice viewer
+(`explore_delta_pdf_ortho.py`).  Close each window to advance.  It uses the
+validated `cc_on` / clean-ΔPDF presets below.  Each compute stage is **skipped
+if its output already exists** (resume); pass `FORCE=1` or
+`FORCE_FROM=rings|punch|backfill|flatten|pdf` to recompute, `NO_VIEWER=1` to
+stop after the ΔPDF.  Set `FLATTEN=1` to insert the optional radial-background
+flatten before the ΔPDF (it auto-forces `SUBTRACT_BG=0`; an explicit
+`SUBTRACT_BG` still wins).  The ΔPDF stage is
+dataset-aware — it recomputes if the cached `_delta_pdf.h5` came from a
+different input (including switching the flatten on/off).  Every individual
+stage's env vars still pass through and override the defaults.
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \

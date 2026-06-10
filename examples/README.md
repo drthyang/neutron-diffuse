@@ -20,6 +20,7 @@ Regenerate those files by rerunning the scripts below.
 | `remove_rings_3d.py` | Remove powder rings from a raw Mantid HKL volume. |
 | `punch_bragg_3d.py` | Punch Bragg and satellite peaks from a ring-removed volume. |
 | `backfill_bragg_3d.py` | Fill Bragg-punched holes before the DeltaPDF transform. |
+| `flatten_background_3d.py` | Optional: flatten the isotropic radial background by `\|Q\|`-shell floor subtraction (`FLATTEN=1`). |
 | `delta_pdf.py` | Compute and save the full 3D-DeltaPDF (Bragg removed). |
 | `pdf_3d.py` | Compute and save the total-scattering 3D-PDF (Bragg kept). |
 
