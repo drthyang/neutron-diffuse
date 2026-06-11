@@ -13,8 +13,9 @@ viewers, and reproducible command recipes in more detail.
    intensity is estimated and subtracted.
 4. [Bragg cleanup](algorithms/bragg_cleanup.md) - integer-node Bragg punching,
    search-mode satellite punching, direct-beam handling, and backfill.
-5. [3D-DeltaPDF transform](algorithms/delta_pdf.md) - centred FFT recipe,
-   smooth-background subtraction, and real-space viewer assumptions.
+5. [3D-DeltaPDF transform](algorithms/delta_pdf.md) - centred FFT recipe, the
+   radial-background flatten (the default step-4 background removal), the
+   alternative smooth-background subtraction, and real-space viewer assumptions.
 6. [Interactive exploration](interactive.md) - cleanup QA viewers, DeltaPDF
    viewers, and plotting primitives.
 
@@ -39,7 +40,9 @@ Common generated files:
 | `data/processed/*_ringremoved.h5` | Powder-ring-subtracted reciprocal-space volume. |
 | `data/processed/*_braggpunched.h5` | Ring-removed volume with Bragg/satellite holes punched. |
 | `data/processed/*_braggpunched_backfilled.h5` | Cleaned diffuse volume after Bragg-hole backfill. |
+| `data/processed/*_backfilled_flattened.h5` | Background-removed diffuse volume (step-4 radial flatten; feeds the DeltaPDF). |
 | `data/processed/*_delta_pdf.h5` | Per-temperature 3D-DeltaPDF output. |
+| `data/processed/*_3dpdf.h5` | Total-scattering 3D-PDF output (Bragg kept; `run_pipeline_pdf.py`). |
 | `examples/_delta_pdf.h5` | Default cached 3D-DeltaPDF output when `OUT_FILE` is not set. |
 | `examples/_*.png` | Generated preview figures. |
 

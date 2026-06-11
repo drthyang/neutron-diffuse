@@ -15,12 +15,12 @@ Regenerate those files by rerunning the scripts below.
 
 | Script | Purpose |
 | --- | --- |
-| `run_pipeline.py` | End-to-end 3D-DeltaPDF workflow: ring removal, Bragg punch, backfill, 3D-DeltaPDF, and viewers. |
+| `run_pipeline.py` | End-to-end 3D-DeltaPDF workflow: ring removal, Bragg punch, backfill, radial-background flatten, 3D-DeltaPDF, and viewers. |
 | `run_pipeline_pdf.py` | End-to-end **3D-PDF** workflow — KEEP Bragg (no punch, no backfill): ring removal → 3D-PDF → viewer. |
 | `remove_rings_3d.py` | Remove powder rings from a raw Mantid HKL volume. |
 | `punch_bragg_3d.py` | Punch Bragg and satellite peaks from a ring-removed volume. |
 | `backfill_bragg_3d.py` | Fill Bragg-punched holes before the DeltaPDF transform. |
-| `flatten_background_3d.py` | Optional: flatten the isotropic radial background by `\|Q\|`-shell floor subtraction (`FLATTEN=1`). |
+| `flatten_background_3d.py` | Step-4 background removal: flatten the isotropic radial background by `\|Q\|`-shell floor subtraction; on by default (`FLATTEN=0` to skip). |
 | `delta_pdf.py` | Compute and save the full 3D-DeltaPDF (Bragg removed). |
 | `pdf_3d.py` | Compute and save the total-scattering 3D-PDF (Bragg kept). |
 
@@ -43,6 +43,7 @@ Regenerate those files by rerunning the scripts below.
 | `compare_delta_pdf_methods.py` | Compare DeltaPDF background-removal methods. |
 | `ring_linecut.py` | Inspect a Bragg-free linecut and ring positions. |
 | `investigate_bragg_diffuse.py` | Separate Bragg from co-located magnetic diffuse at the q=1/3 satellites: line-cut peak-shape fits, resolution `σ(\|Q\|)`, correlation length ξ, diffuse fraction, and a temperature series. |
+| `validate_flatten.py` | Robustness QA for the step-4 flatten (non-circular): background isotropy, feature-contrast retention, over-subtraction, high-`\|Q\|` coverage. |
 
 ## Typical Commands
 

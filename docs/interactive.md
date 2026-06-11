@@ -40,11 +40,12 @@ preservation before running the final 3D-DeltaPDF transform.
 
 ## 2. ΔPDF Real-Space Viewers (standard preview)
 
-Two interactive viewers preview the **real-space 3D-ΔPDF** (the FFT of the
-cleaned diffuse volume). Both read the cached `examples/_delta_pdf.h5` written by
-`examples/delta_pdf.py`; if it is missing, run that first to generate it.
-**Use these as the standard preview for ΔPDF results — do not build ad-hoc
-plotting scripts.**
+Three interactive viewers preview the **real-space 3D-ΔPDF** (the FFT of the
+cleaned diffuse volume): two single-temperature views (orthoslice and
+single-plane) that read the cached `examples/_delta_pdf.h5` written by
+`examples/delta_pdf.py` (run that first if it is missing), and a
+multi-temperature comparison view. **Use these as the standard preview for ΔPDF
+results — do not build ad-hoc plotting scripts.**
 
 ### Orthoslice viewer (recommended) — `examples/explore_delta_pdf_ortho.py`
 
@@ -94,6 +95,27 @@ Both use the `macosx` backend and block on `plt.show()` — launch with
 `run_in_background: true`; exit code 0 means the window was closed. For the
 static three-panel contact sheet (central cuts), `examples/delta_pdf.py` also
 writes `_delta_pdf_hk0/h0l/0kl.png`.
+
+### Multi-temperature comparison — `examples/explore_delta_pdf_multi.py`
+
+The 22 K / 45 K / 100 K comparison: three rows (one per temperature) × the three
+orthoslice planes, with shared `x_H / y_K / z_L` cut sliders, a `contrast ×`
+slider, and the unit-cell gridline toggle. Each plane (column) is scaled to its
+own level pooled across the three temperatures, so the temperatures are directly
+comparable *within* a plane. It **auto-detects** the pipeline's per-temperature
+`data/processed/*{T}*_delta_pdf.h5` outputs — no paths needed once the pipeline
+has run for all three temperatures.
+
+```bash
+PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl RMAX=28 \
+python3 examples/explore_delta_pdf_multi.py
+```
+
+- `PDF_22K` / `PDF_45K` / `PDF_100K` — override the auto-detected paths.
+- `RMAX` — display half-window (Å) for all axes (default 50).
+- `PERCENTILE` — per-plane colour-scale percentile at r>3 Å (default 98).
+- `CONTRAST_MIN` / `CONTRAST_MAX` — `contrast ×` slider range (default 0.1 .. 20).
+- `SMOKE=1` — render one frame to PNG headless (verification, no GUI).
 
 ## 3. Launching A General Plotting Session
 

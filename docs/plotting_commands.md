@@ -21,9 +21,11 @@ If your Python 3.10+ environment is already active, replace `$PY` with
 
 ## Full Pipeline: Raw Volume To DeltaPDF
 
-Runs all four processing stages (ring removal → Bragg punch → backfill →
-3D-DeltaPDF) and then opens the cleanup QA viewer and the DeltaPDF orthoslice
-viewer. Already-computed stages are skipped automatically.
+Runs all five processing stages (ring removal → Bragg punch → backfill →
+radial-background flatten → 3D-DeltaPDF) and then opens the cleanup QA viewer and
+the DeltaPDF orthoslice viewer. Already-computed stages are skipped automatically.
+Background removal is step 4 (the flatten, on by default); the transform's own
+Gaussian `SUBTRACT_BG` blur defaults off.
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
@@ -37,7 +39,8 @@ Key environment overrides:
 | `DATA_FILE=/path/to/file.nxs` | Override auto-detected input (default: 22 K `cc_sub_bkg`) |
 | `NO_VIEWER=1` | Stop after writing `_delta_pdf.h5`; skip GUI stages |
 | `FORCE=1` | Recompute every stage even if output exists |
-| `FORCE_FROM=rings\|punch\|backfill\|pdf` | Recompute from that stage onward |
+| `FORCE_FROM=rings\|punch\|backfill\|flatten\|pdf` | Recompute from that stage onward |
+| `FLATTEN=0` | Skip the radial-background flatten (step 4) |
 
 The script auto-detects the 22 K dataset in `data/raw/`. For other temperatures pass
 `DATA_FILE` explicitly:
