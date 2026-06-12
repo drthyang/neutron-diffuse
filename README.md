@@ -25,6 +25,22 @@ map) instead of the ΔPDF, use `examples/run_pipeline_pdf.py`, which skips the
 punch and backfill stages. To characterise magnetic diffuse that sits *at* the
 Bragg satellites, use `examples/investigate_bragg_diffuse.py`.
 
+## Web UI
+
+`neutron-diffuse` ships a browser-based front-end (FastAPI + React) that unifies
+the cleanup and 3D-ΔPDF viewers and can drive the whole pipeline from a raw
+`.nxs` with live progress:
+
+```bash
+pip install -e ".[web]"
+ndiff-web        # serves http://127.0.0.1:8000 and opens a browser
+```
+
+It has four tabs — reciprocal-space cleanup, 3D-ΔPDF orthoslices,
+multi-temperature comparison, and a pipeline runner — that replace the standalone
+`examples/explore_*.py` viewers (which remain as a fallback). See
+[docs/web.md](docs/web.md) for details and the development workflow.
+
 ## Install
 
 Requires Python 3.10 or newer.
@@ -267,7 +283,8 @@ Key pages:
 | [docs/algorithms/bragg_cleanup.md](docs/algorithms/bragg_cleanup.md) | Bragg/satellite detection, punching, and backfill. |
 | [docs/algorithms/delta_pdf.md](docs/algorithms/delta_pdf.md) | 3D-DeltaPDF transform, centring, and background subtraction. |
 | [docs/quick_start.md](docs/quick_start.md) | Concise workflow and plotting commands for 22 K, 45 K, and 100 K data. |
-| [docs/interactive.md](docs/interactive.md) | Viewer usage and visualization API. |
+| [docs/web.md](docs/web.md) | Browser UI (FastAPI + React): viewers and pipeline runner. |
+| [docs/interactive.md](docs/interactive.md) | Matplotlib viewer usage and visualization API. |
 | [docs/plotting_commands.md](docs/plotting_commands.md) | Reproducible plotting and multi-temperature command recipes. |
 
 ## Package Layout

@@ -26,12 +26,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+web = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "pydantic>=2",
+]
 dev = [
     "pytest>=7",
     "pytest-cov",
     "ruff",
     "mypy",
     "pre-commit",
+    "httpx",
 ]
 docs = [
     "sphinx",
@@ -39,11 +45,17 @@ docs = [
     "myst-parser",
 ]
 
+[project.scripts]
+ndiff-web = "ndiff.server.cli:main"
+
 [project.urls]
 Repository = "https://github.com/drthyang/neutron-diffuse"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"ndiff.server" = ["static/**/*"]
 
 [tool.ruff]
 line-length = 100
