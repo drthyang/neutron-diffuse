@@ -203,7 +203,7 @@ Two siblings to the ΔPDF path, added 2026-06-08:
 Open: decide "Phase B" — subtract the sharp core but keep the broad diffuse at
 the satellites, rather than punching them.
 
-## Phase 6 — Q-Space Bragg Punch  In Progress (Phase 0 done)
+## Phase 6 — Q-Space Bragg Punch  In Progress (Phases 0–1 done)
 
 Migrate the Bragg punch ([`src/ndiff/analysis/bragg.py`](src/ndiff/analysis/bragg.py))
 from HKL-axis radii to a **Q-space resolution-ellipsoid** described by one
@@ -229,7 +229,7 @@ Design — one kernel, multiple shape specs:
 | Phase | Scope | Status |
 |-------|-------|--------|
 | 0 | Characterization + spec tests (golden masters, equivalence invariants) | **done** |
-| 1 | Internal quadratic-form kernel routed through `A=diag(1/r²)`; prove equivalence | planned |
+| 1 | Internal quadratic-form kernel routed through `A=diag(1/r²)`; prove equivalence | **done** |
 | 2 | Opt-in Q-space spec (`punch_frame`, `punch_q_radius`, `punch_q_radii`); default = legacy | planned |
 | 3 | Unify φ-tail + shape-fit into `M` (fitter returns a 3×3 covariance) | planned |
 | 4 | Flip defaults to Q after T-series validation (optional, later) | planned |
@@ -239,6 +239,17 @@ Phase 0 (done): [`tests/test_bragg_qspace_phase0.py`](tests/test_bragg_qspace_ph
 (sha256 + per-mechanism punch counts) on a synthetic volume built on the real
 22 K UB; specification tests pin the HKL ↔ Q-axis equivalence the future kernel
 must satisfy. No production code changed.
+
+Phase 1 (done): the single shape kernel `_ellipsoid_inside(δ, radii | shape_matrix)`
+in [`src/ndiff/analysis/bragg.py`](src/ndiff/analysis/bragg.py). Both `_punch_one`
+and `_punch_origin_ellipsoid` now go through it. The `radii=` fast path keeps the
+exact `(d/r)²` arithmetic, so the Phase 0 golden masters pass **bit-identical** —
+production is unchanged. The `shape_matrix=` path is the general `δᵀ A δ ≤ 1` the
+Q-space work will drive (φ-tail + shape-fit stay as-is until Phase 3).
+[`tests/test_bragg_qspace_phase1.py`](tests/test_bragg_qspace_phase1.py) — 5 tests:
+the diagonal-matrix path matches the radii path (continuous values; masks differ
+only at boundary ties), `A = g/ρ²` reproduces the metric sphere, and an
+off-diagonal `A` tilts the ellipsoid.
 
 Two findings now encoded as tests / constraints:
 
@@ -267,6 +278,6 @@ Before treating the pipeline as a stable release candidate:
   reproduce.
 - Done: `scripts/check.sh` mirrors GitHub CI (`.github/workflows/ci.yml`) —
   pytest + `ruff check src/ tests/` + `mypy src/ndiff` — and can be installed as
-  a `pre-push` hook; the suite is at 140 passing tests.
+  a `pre-push` hook; the suite is at 145 passing tests.
 - Still open: add CI coverage that specifically exercises the Bragg
   guard/exclusion behavior, not just import/type checks.

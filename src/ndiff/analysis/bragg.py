@@ -57,6 +57,50 @@ class _PeakPunch:
         return self.ih, self.ik, self.il, self.intensity
 
 
+def _ellipsoid_inside(
+    dh: NDArray[np.float64],
+    dk: NDArray[np.float64],
+    dl: NDArray[np.float64],
+    *,
+    radii: tuple[float, float, float] | None = None,
+    shape_matrix: NDArray[np.float64] | None = None,
+) -> NDArray[np.bool_]:
+    """Boolean mask of voxels inside the punch quadratic form ``δᵀ A δ ≤ 1``.
+
+    ``δ = (dh, dk, dl)`` are HKL offsets from the peak centre.  This is the
+    single punch-shape kernel; the shape ``A`` is given one of two equivalent
+    ways:
+
+    - ``radii=(rh, rk, rl)`` — an axis-aligned ellipsoid, ``A = diag(1/r²)``.
+      Evaluated with the historical ``(d/r)²`` arithmetic so the punch is
+      *bit-identical* to the pre-Q-space kernel (the diagonal fast path).
+    - ``shape_matrix`` — a general 3×3 symmetric (SPD) ``A`` in HKL coordinates,
+      e.g. ``UBᵀ M UB`` for a Q-space resolution ellipsoid ``M`` (the
+      forward-looking general path; see ``ROADMAP.md`` → Phase 6).
+
+    Exactly one of ``radii`` / ``shape_matrix`` must be supplied.  The two
+    descriptions agree to floating-point tolerance when ``A = diag(1/r²)``; the
+    diagonal fast path is kept because it reproduces the old result exactly,
+    while general ``A`` may flip a voxel sitting exactly on the ``quad == 1``
+    boundary (different arithmetic path).
+    """
+    if (radii is None) == (shape_matrix is None):
+        raise ValueError("supply exactly one of radii / shape_matrix")
+    if radii is not None:
+        rh, rk, rl = radii
+        quad = (dh / rh) ** 2 + (dk / rk) ** 2 + (dl / rl) ** 2
+    else:
+        a = shape_matrix
+        assert a is not None  # narrowed by the xor check above
+        quad = (
+            a[0, 0] * dh * dh + a[1, 1] * dk * dk + a[2, 2] * dl * dl
+            + 2.0 * a[0, 1] * dh * dk
+            + 2.0 * a[0, 2] * dh * dl
+            + 2.0 * a[1, 2] * dk * dl
+        )
+    return quad <= 1.0
+
+
 @dataclass
 class BraggRemover:
     """Detect and punch Bragg reflections in an HKLVolume.
@@ -723,7 +767,7 @@ class BraggRemover:
         ls, le = max(0, il - wl), min(nl, il + wl + 1)
         HH, KK, LL = np.meshgrid(vol.h_axis[hs:he], vol.k_axis[ks:ke],
                                   vol.l_axis[ls:le], indexing="ij")
-        ellipsoid = (HH / rh) ** 2 + (KK / rk) ** 2 + (LL / rl) ** 2 <= 1.0
+        ellipsoid = _ellipsoid_inside(HH, KK, LL, radii=(rh, rk, rl))
         keep[hs:he, ks:ke, ls:le] &= ~ellipsoid
         return keep
 
@@ -764,8 +808,7 @@ class BraggRemover:
         HH, KK, LL = np.meshgrid(vol.h_axis[hs:he], vol.k_axis[ks:ke],
                                  vol.l_axis[ls:le], indexing="ij")
         dH, dK, dL = HH - ch, KK - ck, LL - cl
-        ell = (dH / rh) ** 2 + (dK / rk) ** 2 + (dL / rl) ** 2
-        punch = ell <= 1.0
+        punch = _ellipsoid_inside(dH, dK, dL, radii=(rh, rk, rl))
         if phi_tail > 0 and radial_tangent is not None:
             krad, lrad, ktan, ltan = radial_tangent
             d_rad = dK * krad + dL * lrad
