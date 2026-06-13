@@ -163,12 +163,13 @@ def flatten_radial_background(
         q0, q1 = float(q[valid].min()), float(q[valid].max())
     else:
         q0, q1 = float(q_range[0]), float(q_range[1])
-    # Annotated so the < 2-bin fallback (np.array, generic shape) stays
-    # assignment-compatible with the np.arange result (1-D shape) under numpy's
-    # shape-typed stubs.
-    edges: NDArray[np.float64] = np.arange(q0, q1 + qs, qs)
+    edges = np.arange(q0, q1 + qs, qs)
     if edges.size < 2:
-        edges = np.array([q0, q0 + qs])
+        # numpy's shape-typed stubs (which differ across the supported numpy
+        # versions) infer `edges` as 1-D from np.arange, so the generic-shape
+        # np.array fallback trips [assignment].  Behaviour is identical; the
+        # config disables unused-ignore, so this is safe on every version.
+        edges = np.array([q0, q0 + qs])  # type: ignore[assignment]
     q_grid = 0.5 * (edges[:-1] + edges[1:])
     nb = q_grid.size
     bin_idx = np.clip(np.digitize(q, edges) - 1, 0, nb - 1)
