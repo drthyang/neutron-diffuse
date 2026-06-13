@@ -315,6 +315,45 @@ button {
   white-space: nowrap;
 }
 
+/* editable readout: a small inline number input that snaps to the nearest point */
+.readout-edit {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.readout-edit input.value-input {
+  width: 72px;
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  appearance: textfield;
+  -moz-appearance: textfield;
+  transition: border-color 120ms ease;
+}
+.readout-edit input.value-input:hover {
+  border-color: var(--text-3);
+}
+.readout-edit input.value-input:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+.readout-edit input.value-input::-webkit-inner-spin-button,
+.readout-edit input.value-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 /* select */
 select {
   appearance: none;

@@ -1,7 +1,7 @@
 // Shared UI primitives for the console: labelled fields, sliders with value
 // readouts, switches, segmented controls, empty states, and the inline icon set.
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 /* ----------------------------------------------------------------- fields */
 
@@ -22,9 +22,57 @@ export function Field({
   );
 }
 
+// An editable readout: type a value and commit (Enter / blur) to snap to the
+// nearest data point.  Renders in place of the plain `readout` text.
+export interface ValueInputConfig {
+  value: number; // the real-space value shown when not being edited
+  onCommit: (v: number) => void; // caller snaps to the closest data point
+  prefix?: string; // e.g. "H ="
+  suffix?: string; // e.g. "r.l.u."
+}
+
+function fmtRlu(v: number): string {
+  return Number(v.toFixed(4)).toString();
+}
+
+function ValueInput({
+  value,
+  onCommit,
+  prefix,
+  suffix,
+  disabled,
+}: ValueInputConfig & { disabled?: boolean }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft === null) return;
+    const v = Number(draft);
+    if (draft.trim() !== "" && Number.isFinite(v)) onCommit(v);
+    setDraft(null);
+  };
+  return (
+    <span className="readout-edit">
+      {prefix && <span>{prefix}</span>}
+      <input
+        type="number"
+        className="value-input"
+        value={draft ?? fmtRlu(value)}
+        disabled={disabled}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit();
+          else if (e.key === "Escape") setDraft(null);
+        }}
+        onBlur={commit}
+      />
+      {suffix && <span>{suffix}</span>}
+    </span>
+  );
+}
+
 export function Slider({
   label,
   readout,
+  valueInput,
   value,
   min,
   max,
@@ -35,6 +83,7 @@ export function Slider({
 }: {
   label: ReactNode;
   readout?: string;
+  valueInput?: ValueInputConfig;
   value: number;
   min: number;
   max: number;
@@ -48,7 +97,11 @@ export function Slider({
     <div className={`field${grow ? " grow" : ""}`}>
       <div className="field-row">
         <span className="field-label">{label}</span>
-        {readout !== undefined && <span className="readout">{readout}</span>}
+        {valueInput ? (
+          <ValueInput {...valueInput} disabled={disabled} />
+        ) : readout !== undefined ? (
+          <span className="readout">{readout}</span>
+        ) : null}
       </div>
       <input
         type="range"

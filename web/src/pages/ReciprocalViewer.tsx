@@ -85,10 +85,14 @@ export function ReciprocalViewer() {
   const plane = AXIS_TO_PLANE[fixedAxis];
   const lut = COLORMAPS[colormap] ?? COLORMAPS.inferno;
 
-  // Fetch every stage's slice together so they share ONE global colour scale:
-  // vmin = 0, vmax = the largest per-stage robust level at this cut.  This keeps
-  // intensities directly comparable across the cleanup stages (otherwise each
-  // panel auto-scales independently and the same colour means different counts).
+  // Snap a typed cut value to the nearest available data point.
+  const commitCut = (v: number) => {
+    if (!axisInfo || axisInfo.step === 0) return;
+    const i = Math.round((v - axisInfo.min) / axisInfo.step);
+    setCutIndex(Math.max(0, Math.min(axisInfo.n - 1, i)));
+  };
+
+  // Displayed slices at the current cut (one per stage).
   const sliceResults = useQueries({
     queries: stages.map((s) => ({
       queryKey: ["slice", s.volume_id, plane, value, false],
@@ -98,8 +102,24 @@ export function ReciprocalViewer() {
     })),
   });
 
+  // One global colour scale, fixed per (dataset, axis): the pooled robust level
+  // of every stage at the CENTRE cut.  Keying it on the centre cut (not the
+  // displayed cut) means the scale stays put while the cut slider is dragged, so
+  // intensities stay comparable both across stages and across cut positions.
+  const centerValue = axisInfo
+    ? axisInfo.min + Math.floor(axisInfo.n / 2) * axisInfo.step
+    : 0;
+  const scaleResults = useQueries({
+    queries: stages.map((s) => ({
+      queryKey: ["slice", s.volume_id, plane, centerValue, false],
+      queryFn: () => fetchSlice(s.volume_id, plane, centerValue),
+      enabled: Boolean(axisInfo),
+      staleTime: Infinity,
+    })),
+  });
+
   let globalVmax = 0;
-  for (const r of sliceResults) {
+  for (const r of scaleResults) {
     const rm = r.data?.header.robust_max;
     if (rm && Number.isFinite(rm)) globalVmax = Math.max(globalVmax, rm);
   }
@@ -133,7 +153,17 @@ export function ReciprocalViewer() {
         <Slider
           grow
           label={`Cut along ${fixedAxis}`}
-          readout={axisInfo ? `${fixedAxis} = ${value.toFixed(3)} r.l.u.` : "—"}
+          readout={axisInfo ? undefined : "—"}
+          valueInput={
+            axisInfo
+              ? {
+                  value,
+                  prefix: `${fixedAxis} =`,
+                  suffix: "r.l.u.",
+                  onCommit: commitCut,
+                }
+              : undefined
+          }
           min={0}
           max={axisInfo ? axisInfo.n - 1 : 0}
           value={idx}
