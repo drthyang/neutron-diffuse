@@ -67,6 +67,7 @@ export interface Slice {
 export interface StageParamsIn {
   rings_n_patches?: number;
   rings_n_fourier?: number;
+  rings_slice_axis?: string;
   punch_min_intensity?: number;
   punch_search_n_mad?: number;
   punch_mode?: string;

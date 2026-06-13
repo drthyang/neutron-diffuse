@@ -54,6 +54,7 @@ class StageParamsIn(BaseModel):
 
     rings_n_patches: int | None = None
     rings_n_fourier: int | None = None
+    rings_slice_axis: str | None = None
     punch_min_intensity: float | None = None
     punch_search_n_mad: float | None = None
     punch_mode: str | None = None

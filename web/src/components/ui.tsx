@@ -288,6 +288,15 @@ export function IconFlow({ size = 17 }: IconProps) {
   );
 }
 
+/* play triangle — pipeline execution */
+export function IconRun({ size = 17 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 18 18" {...stroke}>
+      <path d="M5 3.6 14 9l-9 5.4z" />
+    </svg>
+  );
+}
+
 /* scattering brand glyph: centre beam + diffuse satellites */
 export function BrandGlyph({ size = 18 }: IconProps) {
   return (

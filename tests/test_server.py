@@ -251,13 +251,16 @@ def test_build_params_ring_overrides():
     defaults = build_params(PipelineRunRequest(dataset_id="x"))
     assert defaults.rings.n_patches == RingParams().n_patches
     assert defaults.rings.n_fourier == RingParams().n_fourier
+    assert defaults.rings.slice_axis == RingParams().slice_axis
 
     overridden = build_params(PipelineRunRequest(
         dataset_id="x",
-        params=StageParamsIn(rings_n_patches=48, rings_n_fourier=10),
+        params=StageParamsIn(rings_n_patches=48, rings_n_fourier=10,
+                             rings_slice_axis="L"),
     ))
     assert overridden.rings.n_patches == 48
     assert overridden.rings.n_fourier == 10
+    assert overridden.rings.slice_axis == "L"
     # an unrelated stage keeps its default
     from ndiff.pipeline import PunchParams
     assert overridden.punch.min_intensity == PunchParams().min_intensity

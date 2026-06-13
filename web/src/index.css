@@ -997,6 +997,98 @@ input[type="range"]::-moz-range-track {
   min-width: 0;
 }
 
+/* configure page: run toolbar above a masonry of per-stage cards */
+.config-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.config-toolbar {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 14px 18px;
+  padding: 14px 16px;
+}
+.config-toolbar .field.grow {
+  flex: 1 1 260px;
+}
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-left: auto;
+}
+.config-cards {
+  column-width: 330px;
+  column-gap: 16px;
+}
+.stage-card {
+  break-inside: avoid;
+  margin: 0 0 16px;
+}
+.stage-card .card-head h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.stage-card .card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* execution page: stepper card beside the log console */
+.exec-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.exec-grid {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 760px) {
+  .exec-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.exec-log-card .log {
+  height: 460px;
+}
+.card-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.btn-sm {
+  padding: 4px 11px;
+  font-size: 12px;
+}
+.nav-dot {
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 var(--accent-soft);
+  animation: nav-pulse 1.6s ease-out infinite;
+}
+@keyframes nav-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(79, 143, 247, 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(79, 143, 247, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(79, 143, 247, 0);
+  }
+}
+
 /* stage stepper */
 .stepper {
   list-style: none;
@@ -1130,6 +1222,12 @@ input[type="range"]::-moz-range-track {
   background: var(--red-soft);
   border-color: rgba(239, 106, 106, 0.35);
   color: var(--red);
+}
+.banner.muted {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text-2);
+  font-weight: 500;
 }
 
 /* log console */

@@ -7,55 +7,70 @@ import {
   IconLattice,
   IconLayers,
   IconOrbits,
+  IconRun,
 } from "./components/ui";
 import { DeltaPdfViewer } from "./pages/DeltaPdfViewer";
 import { MultiTempViewer } from "./pages/MultiTempViewer";
-import { PipelineRunner } from "./pages/PipelineRunner";
+import { PipelineConfig } from "./pages/PipelineConfig";
+import { PipelineExecution } from "./pages/PipelineExecution";
 import { ReciprocalViewer } from "./pages/ReciprocalViewer";
+import { usePipelineStore } from "./state/pipelineStore";
 
-type Tab = "reciprocal" | "dpdf" | "multi" | "pipeline";
+type Tab = "config" | "execution" | "reciprocal" | "dpdf" | "multi";
 
-const NAV: {
-  id: Tab;
-  label: string;
-  desc: string;
-  icon: ReactNode;
-  page: ReactNode;
-}[] = [
+const NAV: { id: Tab; label: string; desc: string; icon: ReactNode }[] = [
   {
-    id: "pipeline",
-    label: "Run pipeline",
-    desc: "Configure and execute the five-stage reduction from raw volume to 3D-ΔPDF.",
+    id: "config",
+    label: "Configure",
+    desc: "Set parameters for the five-stage reduction from raw volume to 3D-ΔPDF, then launch a run.",
     icon: <IconFlow />,
-    page: <PipelineRunner />,
+  },
+  {
+    id: "execution",
+    label: "Execution",
+    desc: "Track stage-by-stage progress and the live log for the current pipeline run.",
+    icon: <IconRun />,
   },
   {
     id: "reciprocal",
     label: "Reciprocal cleanup",
     desc: "Compare cleanup stages slice-by-slice across the reciprocal-space volume.",
     icon: <IconLattice />,
-    page: <ReciprocalViewer />,
   },
   {
     id: "dpdf",
     label: "3D-ΔPDF",
     desc: "Linked orthogonal real-space cuts through the difference pair-distribution function.",
     icon: <IconOrbits />,
-    page: <DeltaPdfViewer />,
   },
   {
     id: "multi",
     label: "Multi-temperature",
     desc: "ΔPDF orthoslices side by side across temperatures, with shared cuts and pooled colour scale.",
     icon: <IconLayers />,
-    page: <MultiTempViewer />,
   },
 ];
 
+function renderPage(tab: Tab, setTab: (t: Tab) => void): ReactNode {
+  switch (tab) {
+    case "config":
+      return <PipelineConfig onStarted={() => setTab("execution")} />;
+    case "execution":
+      return <PipelineExecution />;
+    case "reciprocal":
+      return <ReciprocalViewer />;
+    case "dpdf":
+      return <DeltaPdfViewer />;
+    case "multi":
+      return <MultiTempViewer />;
+  }
+}
+
 export function App() {
-  const [tab, setTab] = useState<Tab>("pipeline");
+  const [tab, setTab] = useState<Tab>("config");
   const health = useHealth();
   const apiUp = health.isSuccess;
+  const running = usePipelineStore((s) => s.running);
   const active = NAV.find((n) => n.id === tab) ?? NAV[0];
 
   return (
@@ -81,6 +96,9 @@ export function App() {
             >
               {n.icon}
               {n.label}
+              {n.id === "execution" && running && (
+                <span className="nav-dot" title="a job is running" />
+              )}
             </button>
           ))}
         </nav>
@@ -103,7 +121,7 @@ export function App() {
           <h2>{active.label}</h2>
           <p>{active.desc}</p>
         </header>
-        {active.page}
+        {renderPage(tab, setTab)}
       </main>
     </div>
   );
