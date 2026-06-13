@@ -25,14 +25,16 @@ build the frontend first (see below) — otherwise only the API is served.
 
 ## What it does
 
-Four tabs:
+A single-page console with a left sidebar; the four views (in sidebar order)
+replace the standalone `examples/explore_*.py` viewers, which remain as a
+fallback:
 
-| Tab | Replaces | What |
+| View | Replaces | What |
 | --- | --- | --- |
-| **Reciprocal cleanup** | `explore_slice.py` | One panel per HKLVolume stage (raw / ring-removed / Bragg-punched / backfilled / flattened) with shared H/K/L plane selector, cut slider, contrast, log, and colormap. |
-| **3D-ΔPDF** | `explore_delta_pdf_ortho.py` | Three linked real-space orthoslices (x_H–y_K, x_H–z_L, y_K–z_L) with movable cut sliders, contrast, and a unit-cell gridline toggle. |
-| **Multi-temperature** | `explore_delta_pdf_multi.py` | 22/45/100 K × the three planes, with a per-plane colour scale pooled across temperatures. |
-| **Run pipeline** | `run_pipeline.py` | Pick a dataset, tune the key stage parameters, and run all stages with a live per-stage progress log. Existing outputs are skipped unless *force* is ticked. |
+| **Run pipeline** | `run_pipeline.py` | Pick a dataset and tune the key parameters per stage — ring removal (azimuthal **patches** and texture **Fourier order**), punch, backfill, flatten, and ΔPDF — then run all stages with a live stage stepper and log. Existing outputs are skipped unless *force* is on. This is the default landing view. |
+| **Reciprocal cleanup** | `explore_slice.py` | One panel per HKLVolume stage (raw / ring-removed / Bragg-punched / backfilled / flattened) sharing an H/K/L plane selector, cut, contrast, log, and colormap. All panels share **one fixed global colour scale** (pooled from the centre cut), so stages are directly comparable and the scale stays put while you scrub. The cut readout is an **editable box** — type a value (e.g. `0.3333`) and it snaps to the nearest plane. |
+| **3D-ΔPDF** | `explore_delta_pdf_ortho.py` | Three linked real-space orthoslices (x_H–y_K, x_H–z_L, y_K–z_L) shown as square **windows** (adjustable size, default 80 Å), each with its own cut slider directly above it, plus contrast and a gray dashed unit-cell overlay. |
+| **Multi-temperature** | `explore_delta_pdf_multi.py` | 22 / 45 / 100 K × the three planes as a square grid, sharing the cut, window, and contrast; a per-plane colour scale pooled across temperatures. |
 
 ## Architecture
 
@@ -52,8 +54,9 @@ Browser (React/TS SPA)  ──HTTP/SSE──►  FastAPI (uvicorn)  ──►  n
 - **Pipeline runs** execute `ndiff.pipeline.run_pipeline` in a separate process
   (`multiprocessing` spawn), streaming progress over Server-Sent Events. Cancel
   terminates the worker.
-- Loaded volumes are kept in a small LRU cache so cut-slider scrubbing stays
-  responsive.
+- Loaded volumes are kept in an LRU cache sized to hold every cleanup stage of a
+  dataset at once, so the shared cut slider scrubs without re-reading the ~100 MB
+  volumes from disk.
 
 ## Endpoints
 

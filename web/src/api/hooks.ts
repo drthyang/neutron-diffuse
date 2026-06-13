@@ -8,7 +8,6 @@ import {
   fetchDpdfSlice,
   fetchHealth,
   fetchMeta,
-  fetchSlice,
 } from "./client";
 
 export function useHealth() {
@@ -29,20 +28,6 @@ export function useMeta(volumeId: string | undefined) {
     queryKey: ["meta", volumeId],
     queryFn: () => fetchMeta(volumeId as string),
     enabled: Boolean(volumeId),
-  });
-}
-
-export function useSlice(
-  volumeId: string | undefined,
-  plane: string,
-  value: number,
-  interp = false,
-) {
-  return useQuery({
-    queryKey: ["slice", volumeId, plane, value, interp],
-    queryFn: () => fetchSlice(volumeId as string, plane, value, interp),
-    enabled: Boolean(volumeId),
-    placeholderData: keepPreviousData,
   });
 }
 

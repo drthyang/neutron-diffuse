@@ -7,23 +7,26 @@ viewers, and reproducible command recipes in more detail.
 ## Recommended Reading Order
 
 1. [Repository README](../README.md) - installation and package overview.
-2. [Quick Start](quick_start.md) - concise 22 K, 45 K, and 100 K workflow and
-   plotting commands.
-3. [Powder ring removal](algorithms/powder_rings.md) - how smooth powder-ring
+2. [Quick Start](quick_start.md) - concise 22 K, 45 K, and 100 K workflow,
+   the browser-UI workflow, and plotting commands.
+3. [Web UI](web.md) - the browser console (FastAPI + React) that runs the
+   pipeline and unifies the cleanup and DeltaPDF viewers.
+4. [Powder ring removal](algorithms/powder_rings.md) - how smooth powder-ring
    intensity is estimated and subtracted.
-4. [Bragg cleanup](algorithms/bragg_cleanup.md) - integer-node Bragg punching,
+5. [Bragg cleanup](algorithms/bragg_cleanup.md) - integer-node Bragg punching,
    search-mode satellite punching, direct-beam handling, and backfill.
-5. [3D-DeltaPDF transform](algorithms/delta_pdf.md) - centred FFT recipe, the
+6. [3D-DeltaPDF transform](algorithms/delta_pdf.md) - centred FFT recipe, the
    radial-background flatten (the default step-4 background removal), the
    alternative smooth-background subtraction, and real-space viewer assumptions.
-6. [Interactive exploration](interactive.md) - cleanup QA viewers, DeltaPDF
-   viewers, and plotting primitives.
+7. [Interactive exploration](interactive.md) - the standalone matplotlib cleanup
+   QA viewers, DeltaPDF viewers, and plotting primitives.
 
 ## Pages
 
 | Page | Use it when you need to... |
 | --- | --- |
-| [quick_start.md](quick_start.md) | Run or view the current 22 K, 45 K, and 100 K workflow. |
+| [quick_start.md](quick_start.md) | Run or view the current 22 K, 45 K, and 100 K workflow (CLI or browser UI). |
+| [web.md](web.md) | Launch, use, or develop the browser UI (viewers + pipeline runner). |
 | [algorithms/powder_rings.md](algorithms/powder_rings.md) | Understand or tune powder-ring subtraction. |
 | [algorithms/bragg_cleanup.md](algorithms/bragg_cleanup.md) | Tune Bragg punching, satellite search, or q-shell backfill. |
 | [algorithms/delta_pdf.md](algorithms/delta_pdf.md) | Understand the FFT, centring, apodization, and background subtraction. |

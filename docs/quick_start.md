@@ -14,6 +14,42 @@ export MPLCONFIGDIR=/private/tmp/ndiff-mpl
 If you use a different Python 3.10+ environment with the package dependencies,
 replace `$PY` with that interpreter.
 
+## Web UI Workflow
+
+The browser console is the quickest way to run the pipeline and inspect the
+results; the CLI recipes further down remain for scripting and batch runs.
+Install the web extra once, then launch:
+
+```bash
+pip install -e ".[web]"
+ndiff-web                       # serves http://127.0.0.1:8000 and opens a browser
+# ndiff-web --data-root /path/to/data   # if raw/ + processed/ live elsewhere
+# ndiff-web --no-browser                # headless / remote
+```
+
+It reads `./data` by default (the `raw/` + `processed/` layout). The four views
+sit in the left sidebar; a typical session runs top to bottom:
+
+1. **Run pipeline** (the landing view) — pick a dataset (auto-discovered from
+   `data/raw/*.nxs` and `data/processed/`), optionally tune ring removal
+   (azimuthal **patches** and texture **Fourier order**), punch, backfill,
+   flatten, and ΔPDF parameters, then press **Run pipeline**. A stage stepper and
+   log stream live progress; stages whose outputs already exist are skipped
+   unless **force** is on. It writes the same `data/processed/*.h5` files as the
+   `run_pipeline.py` recipe below.
+2. **Reciprocal cleanup** — check the cleanup stage by stage (raw → ring-removed
+   → Bragg-punched → backfilled → flattened) on one shared H/K/L plane and cut.
+   All panels share **one fixed colour scale**, so the stages are directly
+   comparable; type a value (e.g. `0.3333`) into the cut box to jump to the
+   nearest plane.
+3. **3D-ΔPDF** — inspect the real-space result as three linked orthoslices in a
+   square window (default 80 Å). Each panel has its own cut slider above it;
+   toggle the gray dashed unit-cell overlay to read off correlation distances.
+4. **Multi-temperature** — compare 22 / 45 / 100 K side by side once each has a
+   ΔPDF output, with shared cut, window, and contrast.
+
+For the API, endpoints, and the Vite dev-server workflow, see [web.md](web.md).
+
 ## Full Workflow
 
 `examples/run_pipeline.py` runs:

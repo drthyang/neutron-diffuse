@@ -36,10 +36,11 @@ pip install -e ".[web]"
 ndiff-web        # serves http://127.0.0.1:8000 and opens a browser
 ```
 
-It has four tabs — reciprocal-space cleanup, 3D-ΔPDF orthoslices,
-multi-temperature comparison, and a pipeline runner — that replace the standalone
-`examples/explore_*.py` viewers (which remain as a fallback). See
-[docs/web.md](docs/web.md) for details and the development workflow.
+A sidebar console with four views — a pipeline runner (the default landing
+view), reciprocal-space cleanup, 3D-ΔPDF orthoslices, and a multi-temperature
+comparison — that replace the standalone `examples/explore_*.py` viewers (which
+remain as a fallback). See [docs/web.md](docs/web.md) for details and the
+development workflow.
 
 ## Install
 
