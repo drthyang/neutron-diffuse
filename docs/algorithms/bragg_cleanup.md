@@ -115,6 +115,45 @@ The ellipsoid is sized from H/K/L linecuts through the origin. The direct-beam
 backfill uses a special just-outside-`|Q|` shell so the fill does not sample the
 negative over-subtraction halo adjacent to the beam.
 
+## Punch Coordinate Space (HKL today; Q-space planned)
+
+The punch ellipsoid is currently defined in **fractional HKL**: a peak at
+`(h₀,k₀,l₀)` is removed where
+
+```text
+((H−h₀)/rh)² + ((K−k₀)/rk)² + ((L−l₀)/rl)² ≤ 1
+```
+
+with `punch_radii = (rh, rk, rl)` in r.l.u. This is convenient (it matches the
+grid axes) but the *physical* peak profile is a function of **Q** — instrument
+resolution plus size/strain/mosaic — and does not depend on the lattice
+constants. HKL radii therefore bake in the `b*` scaling: on TbTi3Bi4 the default
+`(0.09, 0.12, 0.45)` r.l.u. looks 5× anisotropic but is `≈(0.097, 0.072, 0.115)`
+Å⁻¹ — **near-isotropic in Q**. The factor-5 "L is broad" is almost entirely the
+small `c* = 0.25 Å⁻¹` and the coarse `ΔL = 0.15` r.l.u. sampling, not the peak.
+
+The metric `g = UBᵀUB` for these crystals is diagonal to ~0.5% (orthorhombic),
+so an axis-aligned ellipsoid in Q is — to that precision — the same set of voxels
+as today's HKL punch. The motivation to move to Q is therefore not this dataset's
+masks but capability: correct off-axis peak orientation (radial vs tangential),
+oblique crystals (where an HKL-axis ellipsoid shears relative to the resolution
+ellipsoid), and parameters in Å⁻¹ that transfer across temperatures and samples.
+
+**Planned migration (see `ROADMAP.md` → Phase 6).** A single quadratic-form
+kernel `δhklᵀ A δhkl ≤ 1` subsumes all current shapes and the Q-space upgrade:
+
+| Shape spec | `A` |
+|------------|-----|
+| legacy HKL radii `(rh,rk,rl)` | `diag(1/rh², 1/rk², 1/rl²)` |
+| Q isotropic radius `ρ` (Å⁻¹) | `g / ρ²` |
+| Q resolution ellipsoid `M` | `UBᵀ M UB` (φ-tail becomes a rank-1 modification) |
+
+`punch_radii` stays supported (it maps to a diagonal `A`), so existing configs
+and saved pipelines are unaffected. Phase 0 (characterization + specification
+tests) is in `tests/test_bragg_qspace_phase0.py`; note that HKL- and Q-axis
+punches are bit-identical only for an *exactly* diagonal metric — on the real
+(~0.5%-sheared) UB they differ at a handful of boundary voxels.
+
 ## Backfill Modes
 
 `backfill_bragg` supports:

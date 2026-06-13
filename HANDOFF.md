@@ -1,6 +1,6 @@
 # Hand-off Notes — neutron-diffuse
 
-**Date:** 2026-06-09
+**Date:** 2026-06-13
 **Repo:** `neutron-diffuse`
 **Current branch:** `main`
 
@@ -210,6 +210,15 @@ Bragg punch:
   position-locked to integer nodes, so it never touches the q=1/3 diffuse.
   Validated on 45K: catches ~372k extra Bragg voxels and spares ~178k on the
   higher-order thirds planes, with thirds-plane diffuse punching unchanged.
+- **Q-space punch migration underway (ROADMAP Phase 6, Phase 0 done).** The punch
+  ellipsoid is defined in HKL today; it is being moved to a Q-space
+  resolution-ellipsoid (one quadratic form `δhklᵀ A δhkl ≤ 1`) because the peak
+  profile is a function of Q, not the lattice constants. On TbTi3Bi4 the metric
+  is diagonal to ~0.5%, so the default radii are already near-isotropic in Q
+  (`(0.09,0.12,0.45)` rlu ≈ `(0.097,0.072,0.115)` Å⁻¹). `punch_radii` stays
+  supported (maps to a diagonal `A`); defaults are unchanged. Phase 0 is the
+  characterization/spec suite `tests/test_bragg_qspace_phase0.py`. See
+  `docs/algorithms/bragg_cleanup.md` → "Punch Coordinate Space".
 
 Backfill:
 
@@ -256,9 +265,10 @@ PYTHONPATH=src python3 \
   -m pytest -o addopts=''
 ```
 
-Expected current result: `97 passed` (includes the ΔPDF centring guard
+Expected current result: `140 passed` (includes the ΔPDF centring guard
 `test_delta_pdf_centring_positive_peak`, the `peak_profile` diagnostic tests,
-and the flatten robustness guards in `test_radial_flatten.py`).
+the flatten robustness guards in `test_radial_flatten.py`, and the Q-space punch
+Phase 0 characterization/spec suite `test_bragg_qspace_phase0.py`).
 
 `scripts/check.sh` runs the same three checks as GitHub CI (`.github/workflows/ci.yml`)
 — pytest, `ruff check src/ tests/`, and `mypy src/ndiff` — and is the recommended

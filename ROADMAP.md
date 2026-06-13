@@ -203,6 +203,58 @@ Two siblings to the ΔPDF path, added 2026-06-08:
 Open: decide "Phase B" — subtract the sharp core but keep the broad diffuse at
 the satellites, rather than punching them.
 
+## Phase 6 — Q-Space Bragg Punch  In Progress (Phase 0 done)
+
+Migrate the Bragg punch ([`src/ndiff/analysis/bragg.py`](src/ndiff/analysis/bragg.py))
+from HKL-axis radii to a **Q-space resolution-ellipsoid** described by one
+quadratic form `δhklᵀ A δhkl ≤ 1`. Motivation: the peak profile is a function of
+**Q** (instrument resolution + size/strain/mosaic), not of the lattice constants;
+HKL radii bake in the `b*` scaling and rotate the wrong way off-axis.
+
+Key finding (TbTi3Bi4 22/45/100 K): the reciprocal metric `g = UBᵀUB` is diagonal
+to ~0.5% (orthorhombic). The default `punch_radii=(0.09,0.12,0.45)` rlu — a 5×
+HKL anisotropy — is `≈(0.097,0.072,0.115)` Å⁻¹, i.e. **near-isotropic in Q**
+(max/min < 1.6). So for this data a Q-axis punch is mathematically the current
+punch in different units; the genuine gain is off-axis peaks, oblique crystals,
+and lattice-/temperature-portable parameters in Å⁻¹.
+
+Design — one kernel, multiple shape specs:
+
+| Shape spec | `A` |
+|------------|-----|
+| legacy HKL radii `(rh,rk,rl)` | `diag(1/rh², 1/rk², 1/rl²)` |
+| Q isotropic radius `ρ` (Å⁻¹) | `g / ρ²` |
+| Q resolution ellipsoid `M` (radial/tangential) | `UBᵀ M UB`; φ-tail = rank-1 mod of `M` |
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 0 | Characterization + spec tests (golden masters, equivalence invariants) | **done** |
+| 1 | Internal quadratic-form kernel routed through `A=diag(1/r²)`; prove equivalence | planned |
+| 2 | Opt-in Q-space spec (`punch_frame`, `punch_q_radius`, `punch_q_radii`); default = legacy | planned |
+| 3 | Unify φ-tail + shape-fit into `M` (fitter returns a 3×3 covariance) | planned |
+| 4 | Flip defaults to Q after T-series validation (optional, later) | planned |
+
+Phase 0 (done): [`tests/test_bragg_qspace_phase0.py`](tests/test_bragg_qspace_phase0.py)
+— 9 tests. Golden masters freeze the current default `punch_bragg` keep-mask
+(sha256 + per-mechanism punch counts) on a synthetic volume built on the real
+22 K UB; specification tests pin the HKL ↔ Q-axis equivalence the future kernel
+must satisfy. No production code changed.
+
+Two findings now encoded as tests / constraints:
+
+- **"Bit-identical" has a caveat.** The real UB is orthogonal only to ~0.5%, so
+  HKL- and Q-axis punches differ at up to ~10 boundary voxels on real data;
+  bit-identical masks hold only for an *exactly* diagonal metric.
+- **Phase-1 design constraint:** kernel-equivalence checks must compare
+  **continuous quadratic values with a tolerance**, not thresholded boolean
+  masks — boundary ties (`quad == 1`) flip a couple of voxels purely from
+  floating-point path differences, even under an exact rotation.
+
+Backward compatibility (a hard requirement): `punch_radii` keeps working forever
+(converts to a diagonal `A`), preserving the existing bragg tests, saved
+pipelines, and the web Run-pipeline ring/punch controls. Defaults move only in
+Phase 4.
+
 ## Phase 5 — Release Hygiene  In Progress
 
 Before treating the pipeline as a stable release candidate:
@@ -215,6 +267,6 @@ Before treating the pipeline as a stable release candidate:
   reproduce.
 - Done: `scripts/check.sh` mirrors GitHub CI (`.github/workflows/ci.yml`) —
   pytest + `ruff check src/ tests/` + `mypy src/ndiff` — and can be installed as
-  a `pre-push` hook; the suite is at 97 passing tests.
+  a `pre-push` hook; the suite is at 140 passing tests.
 - Still open: add CI coverage that specifically exercises the Bragg
   guard/exclusion behavior, not just import/type checks.
