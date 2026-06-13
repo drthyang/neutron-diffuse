@@ -30,6 +30,10 @@ async function fetchEnvelope(url: string): Promise<Slice> {
   return { header, data };
 }
 
+export function fetchHealth(): Promise<{ status: string }> {
+  return getJSON<{ status: string }>("/api/health");
+}
+
 export function fetchDatasets(): Promise<Dataset[]> {
   return getJSON<Dataset[]>("/api/datasets");
 }

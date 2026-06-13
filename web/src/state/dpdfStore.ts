@@ -11,6 +11,7 @@ interface DpdfState {
   cutZ: number;
   contrast: number;
   gridlines: boolean;
+  windowFull: number; // square real-space window width in Å (shared by both viewers)
   centered: boolean;
   setDataset: (id: string) => void;
   setCutX: (i: number) => void;
@@ -18,6 +19,7 @@ interface DpdfState {
   setCutZ: (i: number) => void;
   setContrast: (c: number) => void;
   setGridlines: (b: boolean) => void;
+  setWindowFull: (w: number) => void;
   center: (x: number, y: number, z: number) => void;
 }
 
@@ -27,6 +29,7 @@ export const useDpdfStore = create<DpdfState>((set) => ({
   cutZ: 0,
   contrast: 1,
   gridlines: false,
+  windowFull: 80,
   centered: false,
   setDataset: (datasetId) => set({ datasetId }),
   setCutX: (cutX) => set({ cutX }),
@@ -34,5 +37,6 @@ export const useDpdfStore = create<DpdfState>((set) => ({
   setCutZ: (cutZ) => set({ cutZ }),
   setContrast: (contrast) => set({ contrast }),
   setGridlines: (gridlines) => set({ gridlines }),
+  setWindowFull: (windowFull) => set({ windowFull }),
   center: (cutX, cutY, cutZ) => set({ cutX, cutY, cutZ, centered: true }),
 }));

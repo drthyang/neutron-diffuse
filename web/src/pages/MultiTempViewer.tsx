@@ -11,6 +11,7 @@ import { fetchDpdfSlice } from "../api/client";
 import { useDatasets, useDpdfMeta } from "../api/hooks";
 import { COLORMAPS, DIVERGING_NAME } from "../colormaps/luts";
 import { SliceCanvas } from "../components/SliceCanvas";
+import { EmptyState, Slider } from "../components/ui";
 import { useDpdfStore } from "../state/dpdfStore";
 
 const PLANES = [
@@ -18,11 +19,14 @@ const PLANES = [
   { key: "xz", label: "x_H – z_L" },
   { key: "yz", label: "y_K – z_L" },
 ];
-const CELL = 220;
 
 function tempNum(t: string | null): number {
   const m = t?.match(/(\d+)/);
   return m ? Number(m[1]) : 1e9;
+}
+
+function tempLabel(t: string | null, fallback: string): string {
+  return t ? t.replace(/K$/i, " K") : fallback;
 }
 
 function axisValue(
@@ -48,12 +52,15 @@ export function MultiTempViewer() {
   const cutY = useDpdfStore((s) => s.cutY);
   const cutZ = useDpdfStore((s) => s.cutZ);
   const contrast = useDpdfStore((s) => s.contrast);
+  const windowFull = useDpdfStore((s) => s.windowFull);
   const centered = useDpdfStore((s) => s.centered);
   const setCutX = useDpdfStore((s) => s.setCutX);
   const setCutY = useDpdfStore((s) => s.setCutY);
   const setCutZ = useDpdfStore((s) => s.setCutZ);
   const setContrast = useDpdfStore((s) => s.setContrast);
+  const setWindowFull = useDpdfStore((s) => s.setWindowFull);
   const center = useDpdfStore((s) => s.center);
+  const halfWindow = windowFull / 2;
 
   const firstVolId = temps[0]?.stages.find((s) => s.name === "delta_pdf")?.volume_id;
   const meta = useDpdfMeta(firstVolId).data;
@@ -101,38 +108,69 @@ export function MultiTempViewer() {
   const lut = COLORMAPS[DIVERGING_NAME];
 
   return (
-    <div className="viewer">
-      <div className="controls">
-        <label className="grow">
-          x_H {meta ? `= ${xVal.toFixed(1)} Å` : ""}
-          <input type="range" min={0} max={meta ? meta.shape[0] - 1 : 0} value={cutX}
-                 disabled={!meta} onChange={(e) => setCutX(Number(e.target.value))} />
-        </label>
-        <label className="grow">
-          y_K {meta ? `= ${yVal.toFixed(1)} Å` : ""}
-          <input type="range" min={0} max={meta ? meta.shape[1] - 1 : 0} value={cutY}
-                 disabled={!meta} onChange={(e) => setCutY(Number(e.target.value))} />
-        </label>
-        <label className="grow">
-          z_L {meta ? `= ${zVal.toFixed(1)} Å` : ""}
-          <input type="range" min={0} max={meta ? meta.shape[2] - 1 : 0} value={cutZ}
-                 disabled={!meta} onChange={(e) => setCutZ(Number(e.target.value))} />
-        </label>
-        <label>
-          contrast ×{contrast.toFixed(1)}
-          <input type="range" min={0.1} max={20} step={0.1} value={contrast}
-                 onChange={(e) => setContrast(Number(e.target.value))} />
-        </label>
+    <div className="page-body">
+      <div className="toolbar">
+        <Slider
+          grow
+          label="x_H"
+          readout={meta ? `${xVal.toFixed(1)} Å` : "—"}
+          min={0}
+          max={meta ? meta.shape[0] - 1 : 0}
+          value={cutX}
+          disabled={!meta}
+          onChange={setCutX}
+        />
+        <Slider
+          grow
+          label="y_K"
+          readout={meta ? `${yVal.toFixed(1)} Å` : "—"}
+          min={0}
+          max={meta ? meta.shape[1] - 1 : 0}
+          value={cutY}
+          disabled={!meta}
+          onChange={setCutY}
+        />
+        <Slider
+          grow
+          label="z_L"
+          readout={meta ? `${zVal.toFixed(1)} Å` : "—"}
+          min={0}
+          max={meta ? meta.shape[2] - 1 : 0}
+          value={cutZ}
+          disabled={!meta}
+          onChange={setCutZ}
+        />
+        <Slider
+          label="Window"
+          readout={`${windowFull.toFixed(0)} Å`}
+          min={10}
+          max={160}
+          step={2}
+          value={windowFull}
+          onChange={setWindowFull}
+        />
+        <Slider
+          label="Contrast"
+          readout={`× ${contrast.toFixed(1)}`}
+          min={0.1}
+          max={20}
+          step={0.1}
+          value={contrast}
+          onChange={setContrast}
+        />
       </div>
 
-      {temps.length === 0 && (
-        <div className="status">no ΔPDF outputs found for any temperature.</div>
+      {datasetsQ.isSuccess && temps.length === 0 && (
+        <EmptyState
+          title="No ΔPDF outputs found"
+          hint="Run the pipeline through the ΔPDF stage for at least one temperature to compare them here."
+        />
       )}
 
       {temps.length > 0 && (
         <div
           className="multi-grid"
-          style={{ gridTemplateColumns: `70px repeat(${PLANES.length}, ${CELL}px)` }}
+          style={{ gridTemplateColumns: `64px repeat(${PLANES.length}, 1fr)` }}
         >
           <div className="corner" />
           {PLANES.map((p) => (
@@ -142,7 +180,9 @@ export function MultiTempViewer() {
           ))}
           {temps.map((t, ri) => (
             <Fragment key={t.id}>
-              <div className="row-head">{t.temperature ?? t.stem}</div>
+              <div className="row-head">
+                <span className="temp-badge">{tempLabel(t.temperature, t.stem)}</span>
+              </div>
               {PLANES.map((p, ci) => {
                 const data = results[ri * PLANES.length + ci]?.data;
                 return (
@@ -154,10 +194,10 @@ export function MultiTempViewer() {
                         vmax={contrast * pooled[p.key]}
                         log={false}
                         diverging
-                        width={CELL}
+                        windowA={halfWindow}
                       />
                     ) : (
-                      <div className="placeholder" style={{ width: CELL, height: CELL }} />
+                      <div className="cell-skeleton skeleton" />
                     )}
                   </div>
                 );

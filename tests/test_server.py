@@ -20,6 +20,7 @@ from ndiff.server import deltapdf as dpdf_mod
 from ndiff.server import volumes as vol_mod
 from ndiff.server.app import create_app
 from ndiff.server.config import ServerConfig
+from ndiff.server.datasets import discover_datasets
 from ndiff.visualization import extract_slice
 
 UB = 2 * np.pi * np.eye(3) / 4.0
@@ -77,6 +78,33 @@ def test_list_datasets_reflects_disk(env):
     # volume ids are addressable
     vid = {s["name"]: s["volume_id"] for s in ds["stages"]}
     assert vid["ringremoved"] == f"{SLUG}.ringremoved"
+
+
+@pytest.mark.parametrize("dpdf_name", ["full_chain", "short_legacy", "both"])
+def test_discovery_no_phantom_from_delta_pdf_names(tmp_path, dpdf_name):
+    """``*_delta_pdf.h5`` files attach to their dataset instead of spawning a
+    phantom one — whether named with the full pipeline chain
+    (``…_backfilled_delta_pdf.h5``) or the short legacy stem
+    (``{stem}_delta_pdf.h5``).  Regression: both names previously slipped past
+    the seeding skip-check (in opposite directions) and created a duplicate
+    dataset carrying only the ΔPDF stage."""
+    (tmp_path / "raw").mkdir()
+    proc = tmp_path / "processed"
+    proc.mkdir()
+    paths = pipeline_paths(tmp_path / "raw" / f"{STEM}.nxs", proc_dir=proc)
+    ndiff.save(_vol(), paths.ringremoved)
+    ndiff.save(_vol(), paths.backfilled)
+    if dpdf_name in ("full_chain", "both"):
+        _write_dpdf(paths.delta_pdf)               # …_backfilled_delta_pdf.h5
+    if dpdf_name in ("short_legacy", "both"):
+        _write_dpdf(proc / f"{STEM}_delta_pdf.h5")  # short legacy name
+
+    datasets = discover_datasets(ServerConfig(data_root=tmp_path))
+
+    assert len(datasets) == 1
+    ds = datasets[0]
+    assert ds.id == SLUG
+    assert next(s for s in ds.stages if s.name == "delta_pdf").exists is True
 
 
 def test_volume_meta(env):
@@ -209,6 +237,30 @@ def test_dpdf_endpoint_rejects_hkl_volume(env):
 def test_hkl_endpoint_rejects_dpdf_volume(dpdf_env):
     client, *_ = dpdf_env
     assert client.get(f"/api/volumes/{SLUG}.delta_pdf/slice").status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# request → PipelineParams mapping
+# ---------------------------------------------------------------------------
+def test_build_params_ring_overrides():
+    """Ring-removal overrides reach RingParams; omitted ones keep the defaults."""
+    from ndiff.pipeline import RingParams
+    from ndiff.server.routers.pipeline import build_params
+    from ndiff.server.schemas import PipelineRunRequest, StageParamsIn
+
+    defaults = build_params(PipelineRunRequest(dataset_id="x"))
+    assert defaults.rings.n_patches == RingParams().n_patches
+    assert defaults.rings.n_fourier == RingParams().n_fourier
+
+    overridden = build_params(PipelineRunRequest(
+        dataset_id="x",
+        params=StageParamsIn(rings_n_patches=48, rings_n_fourier=10),
+    ))
+    assert overridden.rings.n_patches == 48
+    assert overridden.rings.n_fourier == 10
+    # an unrelated stage keeps its default
+    from ndiff.pipeline import PunchParams
+    assert overridden.punch.min_intensity == PunchParams().min_intensity
 
 
 # ---------------------------------------------------------------------------

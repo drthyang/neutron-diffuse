@@ -52,6 +52,8 @@ class DeltaPdfMetaOut(BaseModel):
 class StageParamsIn(BaseModel):
     """Curated, optional per-stage overrides (None = use the validated default)."""
 
+    rings_n_patches: int | None = None
+    rings_n_fourier: int | None = None
     punch_min_intensity: float | None = None
     punch_search_n_mad: float | None = None
     backfill_method: str | None = None

@@ -6,9 +6,19 @@ import {
   fetchDatasets,
   fetchDpdfMeta,
   fetchDpdfSlice,
+  fetchHealth,
   fetchMeta,
   fetchSlice,
 } from "./client";
+
+export function useHealth() {
+  return useQuery({
+    queryKey: ["health"],
+    queryFn: fetchHealth,
+    refetchInterval: 15_000,
+    retry: false,
+  });
+}
 
 export function useDatasets() {
   return useQuery({ queryKey: ["datasets"], queryFn: fetchDatasets });

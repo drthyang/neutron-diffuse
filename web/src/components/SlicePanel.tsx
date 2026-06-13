@@ -1,57 +1,62 @@
-// One stage panel: fetches its slice and renders it with the shared controls.
+// One reciprocal-space stage panel (presentational).  The parent fetches every
+// stage's slice together and pools one global colour scale, so each panel just
+// renders the slice it is handed with the shared vmin/vmax.
 
-import { useSlice } from "../api/hooks";
+import type { Slice } from "../api/types";
 import { SliceCanvas } from "./SliceCanvas";
 
 interface Props {
   title: string;
-  volumeId: string;
-  plane: string;
-  value: number;
+  data?: Slice;
+  isFetching?: boolean;
+  isError?: boolean;
+  error?: Error | null;
   lut: Uint8ClampedArray;
-  contrast: number;
+  vmax: number;
+  vmin?: number;
   log: boolean;
   width?: number;
 }
 
 export function SlicePanel({
   title,
-  volumeId,
-  plane,
-  value,
+  data,
+  isFetching,
+  isError,
+  error,
   lut,
-  contrast,
+  vmax,
+  vmin = 0,
   log,
   width = 320,
 }: Props) {
-  const { data, isFetching, isError, error } = useSlice(volumeId, plane, value);
-
   return (
-    <div className="panel">
-      <div className="panel-title">
-        {title}
-        {isFetching && <span className="spinner"> ·</span>}
+    <div className="panel-card">
+      <div className="panel-head">
+        <span className="panel-title">{title}</span>
+        {isFetching && <span className="spin" />}
       </div>
-      {isError ? (
-        <div className="error" style={{ width, height: width }}>
-          {(error as Error).message}
-        </div>
-      ) : data ? (
-        <>
+      <div className="panel-body">
+        {isError ? (
+          <div className="panel-err" style={{ width, height: width }}>
+            {error?.message}
+          </div>
+        ) : data ? (
           <SliceCanvas
             slice={data}
             lut={lut}
-            vmax={contrast * data.header.robust_max}
+            vmax={vmax}
+            vmin={vmin}
             log={log}
             width={width}
           />
-          <div className="panel-meta">
-            {data.header.x_label} × {data.header.y_label}
-          </div>
-        </>
-      ) : (
-        <div className="placeholder" style={{ width, height: width }} />
-      )}
+        ) : (
+          <div className="skeleton" style={{ width, height: width }} />
+        )}
+      </div>
+      <div className="panel-foot">
+        {data ? `${data.header.x_label} × ${data.header.y_label}` : " "}
+      </div>
     </div>
   );
 }

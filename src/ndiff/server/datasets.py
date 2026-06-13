@@ -63,6 +63,32 @@ def _detect_temp(stem: str) -> str | None:
     return f"{m.group(1)}K" if m else None
 
 
+def _find_delta_pdf(proc_dir: Path, stem: str, expected: Path) -> Path:
+    """Return the best delta_pdf path for *stem*, falling back to prefix-match.
+
+    Files produced by the old example scripts use a shortened name
+    (``{short_stem}_delta_pdf.h5``) instead of the full chained pipeline name.
+    We accept any ``*_delta_pdf.h5`` in *proc_dir* whose base name is a prefix
+    of *stem*, preferring the longest prefix match (most specific file) and then
+    newest mtime among ties.
+    """
+    if expected.exists():
+        return expected
+    if not proc_dir.is_dir():
+        return expected
+    best: Path | None = None
+    best_len = -1
+    for p in proc_dir.glob("*_delta_pdf.h5"):
+        base = p.name[: -len("_delta_pdf.h5")]
+        if stem.startswith(base) and len(base) > best_len:
+            best, best_len = p, len(base)
+        elif stem.startswith(base) and len(base) == best_len:
+            # tie-break by mtime (newest wins)
+            if best is None or p.stat().st_mtime > best.stat().st_mtime:
+                best = p
+    return best if best is not None else expected
+
+
 def discover_datasets(cfg: ServerConfig) -> list[Dataset]:
     """Enumerate datasets and the on-disk status of each pipeline stage."""
     stems: dict[str, Path] = {}
@@ -73,6 +99,18 @@ def discover_datasets(cfg: ServerConfig) -> list[Dataset]:
         for p in sorted(cfg.processed_dir.glob("*_ringremoved*.h5")):
             base = p.name.split("_ringremoved")[0]
             stems.setdefault(base, cfg.raw_dir / f"{base}.nxs")
+        # Also seed from standalone *_delta_pdf.h5 files (e.g. short names from
+        # old scripts) — but only when no known stem already subsumes them.  Such
+        # a file is attached to its real dataset by _find_delta_pdf (exact path or
+        # prefix match), so seeding it again would create a phantom dataset with
+        # only the ΔPDF stage.  Its base relates to the stem in either direction:
+        # a short name is a *prefix* of the stem (``TbTi3Bi4_22K``), while a full
+        # chained name *extends* it (``…_backfilled``); skip both.
+        for p in sorted(cfg.processed_dir.glob("*_delta_pdf.h5")):
+            base = p.name[: -len("_delta_pdf.h5")]
+            if any(known.startswith(base) or base.startswith(known) for known in stems):
+                continue
+            stems.setdefault(base, cfg.raw_dir / f"{base}.nxs")
 
     datasets: list[Dataset] = []
     for stem in sorted(stems):
@@ -81,7 +119,11 @@ def discover_datasets(cfg: ServerConfig) -> list[Dataset]:
         stages = [StageStatus("raw", raw.exists(), raw, "hkl")]
         for name, attr in _STAGE_ATTRS.items():
             path: Path = getattr(paths, attr)
-            kind = "delta_pdf" if name in _DELTA_PDF_STAGES else "hkl"
+            if name in _DELTA_PDF_STAGES:
+                path = _find_delta_pdf(cfg.processed_dir, stem, path)
+                kind = "delta_pdf"
+            else:
+                kind = "hkl"
             stages.append(StageStatus(name, path.exists(), path, kind))
         datasets.append(Dataset(
             id=_slug(stem), stem=stem, temperature=_detect_temp(stem),

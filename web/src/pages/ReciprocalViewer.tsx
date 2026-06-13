@@ -4,9 +4,22 @@
 
 import { useEffect, useMemo } from "react";
 
+import { keepPreviousData, useQueries } from "@tanstack/react-query";
+
+import { fetchSlice } from "../api/client";
 import { useDatasets, useMeta } from "../api/hooks";
 import { COLORMAPS, SEQUENTIAL_NAMES } from "../colormaps/luts";
 import { SlicePanel } from "../components/SlicePanel";
+import {
+  ColormapBar,
+  EmptyState,
+  Field,
+  IconAlert,
+  MetaStrip,
+  Segmented,
+  Slider,
+  Switch,
+} from "../components/ui";
 import {
   AXIS_INDEX,
   AXIS_TO_PLANE,
@@ -16,11 +29,11 @@ import {
 
 const STAGE_ORDER = ["raw", "ringremoved", "braggpunched", "backfilled", "flattened"];
 const STAGE_LABELS: Record<string, string> = {
-  raw: "raw",
-  ringremoved: "ring-removed",
+  raw: "Raw",
+  ringremoved: "Ring-removed",
   braggpunched: "Bragg-punched",
-  backfilled: "backfilled",
-  flattened: "flattened",
+  backfilled: "Backfilled",
+  flattened: "Flattened",
 };
 const AXES: FixedAxis[] = ["H", "K", "L"];
 
@@ -72,65 +85,75 @@ export function ReciprocalViewer() {
   const plane = AXIS_TO_PLANE[fixedAxis];
   const lut = COLORMAPS[colormap] ?? COLORMAPS.inferno;
 
+  // Fetch every stage's slice together so they share ONE global colour scale:
+  // vmin = 0, vmax = the largest per-stage robust level at this cut.  This keeps
+  // intensities directly comparable across the cleanup stages (otherwise each
+  // panel auto-scales independently and the same colour means different counts).
+  const sliceResults = useQueries({
+    queries: stages.map((s) => ({
+      queryKey: ["slice", s.volume_id, plane, value, false],
+      queryFn: () => fetchSlice(s.volume_id, plane, value),
+      enabled: Boolean(axisInfo),
+      placeholderData: keepPreviousData,
+    })),
+  });
+
+  let globalVmax = 0;
+  for (const r of sliceResults) {
+    const rm = r.data?.header.robust_max;
+    if (rm && Number.isFinite(rm)) globalVmax = Math.max(globalVmax, rm);
+  }
+  globalVmax = globalVmax || 1;
+  const vmax = contrast * globalVmax;
+
   return (
-    <div className="viewer">
-      <div className="controls">
-        <label>
-          dataset
-          <select value={datasetId ?? ""} onChange={(e) => setDataset(e.target.value)}>
+    <div className="page-body">
+      <div className="toolbar">
+        <Field label="Dataset">
+          <select
+            value={datasetId ?? ""}
+            onChange={(e) => setDataset(e.target.value)}
+          >
             {datasets.map((d) => (
-              <option key={d.id} value={d.id}>
+              <option key={d.id} value={d.id} title={d.raw_name}>
                 {d.temperature ?? d.stem}
               </option>
             ))}
           </select>
-        </label>
+        </Field>
 
-        <div className="axis-group">
-          <span>fixed axis</span>
-          {AXES.map((a) => (
-            <button
-              key={a}
-              className={a === fixedAxis ? "active" : ""}
-              onClick={() => setFixedAxis(a)}
-            >
-              {a}
-            </button>
-          ))}
-        </div>
-
-        <label className="grow">
-          {axisInfo ? `${fixedAxis} = ${value.toFixed(3)} r.l.u.` : "cut"}
-          <input
-            type="range"
-            min={0}
-            max={axisInfo ? axisInfo.n - 1 : 0}
-            step={1}
-            value={idx}
-            disabled={!axisInfo}
-            onChange={(e) => setCutIndex(Number(e.target.value))}
+        <Field label="Fixed axis">
+          <Segmented
+            options={AXES}
+            value={fixedAxis}
+            onChange={(a) => setFixedAxis(a as FixedAxis)}
           />
-        </label>
+        </Field>
 
-        <label>
-          contrast ×{contrast.toFixed(1)}
-          <input
-            type="range"
-            min={0.1}
-            max={20}
-            step={0.1}
-            value={contrast}
-            onChange={(e) => setContrast(Number(e.target.value))}
-          />
-        </label>
+        <Slider
+          grow
+          label={`Cut along ${fixedAxis}`}
+          readout={axisInfo ? `${fixedAxis} = ${value.toFixed(3)} r.l.u.` : "—"}
+          min={0}
+          max={axisInfo ? axisInfo.n - 1 : 0}
+          value={idx}
+          disabled={!axisInfo}
+          onChange={setCutIndex}
+        />
 
-        <label className="check">
-          <input type="checkbox" checked={log} onChange={(e) => setLog(e.target.checked)} />
-          log
-        </label>
+        <Slider
+          label="Contrast"
+          readout={`× ${contrast.toFixed(1)}`}
+          min={0.1}
+          max={20}
+          step={0.1}
+          value={contrast}
+          onChange={setContrast}
+        />
 
-        <label>
-          colormap
+        <Switch label="Log scale" checked={log} onChange={setLog} />
+
+        <Field label="Colormap">
           <select value={colormap} onChange={(e) => setColormap(e.target.value)}>
             {SEQUENTIAL_NAMES.map((c) => (
               <option key={c} value={c}>
@@ -138,38 +161,60 @@ export function ReciprocalViewer() {
               </option>
             ))}
           </select>
-        </label>
+          <ColormapBar lut={lut} />
+        </Field>
       </div>
 
-      {datasetsQ.isLoading && <div className="status">loading datasets…</div>}
-      {datasetsQ.isError && <div className="status error">backend unreachable</div>}
+      {datasetsQ.isLoading && (
+        <EmptyState title="Loading datasets…" />
+      )}
+      {datasetsQ.isError && (
+        <EmptyState
+          error
+          icon={<IconAlert />}
+          title="Backend unreachable"
+          hint="Start the API server (ndiff-web or uvicorn on port 8000) and reload."
+        />
+      )}
       {dataset && stages.length === 0 && (
-        <div className="status">
-          no processed stages for this dataset — run the pipeline first.
-        </div>
+        <EmptyState
+          title="No processed stages for this dataset"
+          hint="Run the pipeline first — the Run pipeline tab will produce the cleanup stages shown here."
+        />
       )}
 
-      <div className="panels">
-        {stages.map((s) => (
+      <div className="panel-grid">
+        {stages.map((s, i) => (
           <SlicePanel
             key={s.volume_id}
             title={STAGE_LABELS[s.name] ?? s.name}
-            volumeId={s.volume_id}
-            plane={plane}
-            value={value}
+            data={sliceResults[i]?.data}
+            isFetching={sliceResults[i]?.isFetching}
+            isError={sliceResults[i]?.isError}
+            error={sliceResults[i]?.error as Error | null}
             lut={lut}
-            contrast={contrast}
+            vmax={vmax}
             log={log}
           />
         ))}
       </div>
 
       {meta && (
-        <div className="footer">
-          {dataset?.raw_name} · plane {plane} · lattice a=
-          {meta.lattice.a?.toFixed(2)} b={meta.lattice.b?.toFixed(2)} c=
-          {meta.lattice.c?.toFixed(2)} Å
-        </div>
+        <MetaStrip
+          items={[
+            { key: "Source", value: dataset?.raw_name },
+            { key: "Plane", value: plane },
+            {
+              key: "Colour scale",
+              value: `global · 0 … ${vmax.toPrecision(3)}${log ? " (log)" : ""}`,
+            },
+            {
+              key: "Lattice",
+              value: `a=${meta.lattice.a?.toFixed(2)}  b=${meta.lattice.b?.toFixed(2)}  c=${meta.lattice.c?.toFixed(2)} Å`,
+            },
+            { key: "Grid", value: meta.shape.join(" × ") },
+          ]}
+        />
       )}
     </div>
   );

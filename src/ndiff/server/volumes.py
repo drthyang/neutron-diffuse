@@ -33,7 +33,13 @@ from ndiff.visualization.slices import _ALIASES, _PLANE
 #: Plane keys accepted by the slice endpoint (principal pairs + Mantid aliases).
 PLANES: tuple[str, ...] = tuple(_PLANE.keys()) + tuple(_ALIASES.keys())
 
-_CACHE_MAX = 3
+# The reciprocal-space viewer displays every cleanup stage of one dataset at
+# once (raw → ring-removed → Bragg-punched → backfilled → flattened = up to 5
+# HKLVolumes), all sharing one cut slider.  The cache must hold all of them
+# simultaneously or each slider move evicts and re-loads ~130 MB volumes from
+# disk, stalling the panels.  6 keeps a full dataset warm with one slot of
+# headroom (~0.8 GB worst case).
+_CACHE_MAX = 6
 _cache: OrderedDict[tuple[str, float], HKLVolume] = OrderedDict()
 _lock = threading.Lock()
 

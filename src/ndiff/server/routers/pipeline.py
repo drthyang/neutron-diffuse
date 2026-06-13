@@ -25,6 +25,10 @@ def build_params(req: PipelineRunRequest) -> PipelineParams:
     p = PipelineParams(flatten_enabled=req.flatten_enabled)
     sp = req.params
 
+    if sp.rings_n_patches is not None:
+        p.rings = dataclasses.replace(p.rings, n_patches=sp.rings_n_patches)
+    if sp.rings_n_fourier is not None:
+        p.rings = dataclasses.replace(p.rings, n_fourier=sp.rings_n_fourier)
     if sp.punch_min_intensity is not None:
         p.punch = dataclasses.replace(p.punch, min_intensity=sp.punch_min_intensity)
     if sp.punch_search_n_mad is not None:

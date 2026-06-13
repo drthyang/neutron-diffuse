@@ -1,54 +1,49 @@
-// Light unit-cell gridline overlay (SVG) at integer multiples of the lattice
-// spacing along each displayed axis.  Drawn over a SliceCanvas of the same size.
+// Unit-cell gridline overlay (SVG) for the ΔPDF square-window viewer.  Draws
+// gray dashed lines at integer multiples of the direct-lattice spacing along each
+// displayed axis, over a square [-half, +half] Å window mapped to a `size` px box.
 
 interface Props {
-  width: number;
-  height: number;
-  xAxis: number[];
-  yAxis: number[];
+  size: number; // square box side in px
+  half: number; // half-window in Å (box spans [-half, +half] on both axes)
   latX: number | null;
   latY: number | null;
 }
 
-function multiplesPx(
-  lat: number | null,
-  axis: number[],
-  toPx: (v: number) => number,
-): number[] {
-  if (!lat || lat <= 0 || axis.length < 2) return [];
-  const lo = axis[0];
-  const hi = axis[axis.length - 1];
+// Lattice-multiple positions (in Å) that fall inside [-half, +half].
+function multiples(lat: number | null, half: number): number[] {
+  if (!lat || lat <= 0) return [];
   const out: number[] = [];
-  for (let k = Math.ceil(lo / lat); k <= Math.floor(hi / lat); k++) {
-    out.push(toPx(k * lat));
+  for (let k = Math.ceil(-half / lat); k <= Math.floor(half / lat); k++) {
+    out.push(k * lat);
   }
   return out;
 }
 
-export function UnitCellGrid({ width, height, xAxis, yAxis, latX, latY }: Props) {
-  const xMin = xAxis[0];
-  const xMax = xAxis[xAxis.length - 1];
-  const yMin = yAxis[0];
-  const yMax = yAxis[yAxis.length - 1];
-  const toPxX = (v: number) => ((v - xMin) / (xMax - xMin)) * width;
+export function UnitCellGrid({ size, half, latX, latY }: Props) {
+  const toPxX = (v: number) => ((v + half) / (2 * half)) * size;
   // canvas y is flipped (smallest y at the bottom), so mirror here too.
-  const toPxY = (v: number) => height - ((v - yMin) / (yMax - yMin)) * height;
+  const toPxY = (v: number) => size - ((v + half) / (2 * half)) * size;
 
-  const vx = multiplesPx(latX, xAxis, toPxX);
-  const hy = multiplesPx(latY, yAxis, toPxY);
+  const vx = multiples(latX, half).map(toPxX);
+  const hy = multiples(latY, half).map(toPxY);
 
   return (
     <svg
-      width={width}
-      height={height}
+      width={size}
+      height={size}
       style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none" }}
     >
-      <g stroke="rgba(255,255,255,0.22)" strokeWidth={0.5}>
+      <g
+        stroke="rgba(150, 158, 172, 0.6)"
+        strokeWidth={1}
+        strokeDasharray="4 3"
+        shapeRendering="crispEdges"
+      >
         {vx.map((px, i) => (
-          <line key={`v${i}`} x1={px} y1={0} x2={px} y2={height} />
+          <line key={`v${i}`} x1={px} y1={0} x2={px} y2={size} />
         ))}
         {hy.map((py, i) => (
-          <line key={`h${i}`} x1={0} y1={py} x2={width} y2={py} />
+          <line key={`h${i}`} x1={0} y1={py} x2={size} y2={py} />
         ))}
       </g>
     </svg>
