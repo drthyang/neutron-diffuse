@@ -163,7 +163,10 @@ def flatten_radial_background(
         q0, q1 = float(q[valid].min()), float(q[valid].max())
     else:
         q0, q1 = float(q_range[0]), float(q_range[1])
-    edges = np.arange(q0, q1 + qs, qs)
+    # Annotated so the < 2-bin fallback (np.array, generic shape) stays
+    # assignment-compatible with the np.arange result (1-D shape) under numpy's
+    # shape-typed stubs.
+    edges: NDArray[np.float64] = np.arange(q0, q1 + qs, qs)
     if edges.size < 2:
         edges = np.array([q0, q0 + qs])
     q_grid = 0.5 * (edges[:-1] + edges[1:])
