@@ -17,7 +17,6 @@ or launch IPython with ``--matplotlib=macosx``.  See ``docs/interactive.md``.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -38,10 +37,11 @@ _AXIS_TO_PLANE = {"H": "0kl", "K": "h0l", "L": "hk0"}
 _KEY_TO_AXIS = {"kl": "H", "lk": "H", "hl": "K", "lh": "K", "hk": "L", "kh": "L"}
 
 
-def _take_plane(vol: HKLVolume, key: str, value: float) -> SimpleNamespace:
+def _take_plane(vol: HKLVolume, key: str, value: float) -> SliceData:
     """Cheap nearest-plane extraction (masks only the 2D plane, not the whole
     volume like :func:`extract_slice`) — used while scrubbing the cut slider so
-    moving through a 300-plane volume stays responsive."""
+    moving through a 300-plane volume stays responsive.  Returns the same
+    :class:`SliceData` shape as :func:`extract_slice`."""
     fixed_attr, array_dim, y_attr, x_attr, y_label, x_label, transpose = _PLANE[key]
     fixed_axis = getattr(vol, fixed_attr)
     idx = int(np.argmin(np.abs(fixed_axis - value)))
@@ -52,7 +52,7 @@ def _take_plane(vol: HKLVolume, key: str, value: float) -> SimpleNamespace:
     if transpose:
         data2d = data2d.T
     name = fixed_attr[0].upper()
-    return SimpleNamespace(
+    return SliceData(
         data=data2d, x_axis=getattr(vol, x_attr), y_axis=getattr(vol, y_attr),
         x_label=x_label, y_label=y_label,
         cut_label=f"{name} = {actual:.4g} r.l.u.",
@@ -132,7 +132,7 @@ def interactive_slices(
         "plane": plane,
     }
 
-    def panel_slice(v: HKLVolume, val: float) -> SimpleNamespace | SliceData:
+    def panel_slice(v: HKLVolume, val: float) -> SliceData:
         if value_slider:
             return _take_plane(v, str(state["key"]), val)
         return extract_slice(v, plane=str(state["plane"]), value=val, interp=interp)

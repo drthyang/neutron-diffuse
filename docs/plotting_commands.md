@@ -134,8 +134,11 @@ PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
 
 ### Processed-Data QA Viewer
 
-4-panel K-L slice viewer (raw → ring-removed → punched → backfilled) with
-H-value and vmin/vmax sliders.
+4-panel slice viewer (raw → ring-removed → punched → backfilled) with an
+**H/K/L plane selector**, a cut-position slider, and vmin/vmax sliders. The
+selector retargets the slider to the chosen fixed axis and redraws the panels as
+0kl, h0l, or hk0 slices. Set the initial orientation with `VIEW_AXIS=H|K|L`
+(default `H`) and the initial cut with `{H,K,L}_VALUE`.
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \

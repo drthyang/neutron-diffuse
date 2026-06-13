@@ -17,7 +17,8 @@ panels, a dashboard, Mantid-side hooks) should build on these same primitives.
 ## 1. Cleanup QA Viewer
 
 The current real-data QA entry point is `examples/explore_slice.py`. It processes
-all H planes, then opens a four-panel viewer with an H slider:
+all H planes, then opens a four-panel viewer with an **H/K/L plane selector** and
+a cut-position slider:
 
 ```bash
 env PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl USE_BACKGROUND=0 \
@@ -34,6 +35,16 @@ Panels:
 - `Removed ring`
 - `Punched`
 - `Backfilled`
+
+The H/K/L radio selector (bottom-left, above the linear/log toggle) retargets the
+slider to the matching fixed axis and redraws all four panels as `0kl`, `h0l`, or
+`hk0` slices. Set the initial orientation with `VIEW_AXIS=H|K|L` (default `H`)
+and the initial cut with `{H,K,L}_VALUE` (default `0.3333` for H, else `0.0`).
+
+> The selector only changes how the volumes are **displayed**. The in-script
+> ring-removal compute path always works along H (`0kl` planes); to ring-remove
+> along K or L, process the volume with `remove_rings_3d.py SLICE_AXIS=K|L` and
+> load the result via `RING_FILE`.
 
 Use this viewer to inspect integer-H Bragg cleanup and fractional-H diffuse
 preservation before running the final 3D-DeltaPDF transform.
@@ -280,11 +291,13 @@ import matplotlib; matplotlib.use("Agg")
   `preprocessing.powder_rings` math rather than duplicating it. Keep this split
   as more views are added.
 - **Implemented interactive front-ends** (see sections 1–2):
-  - cleanup before/after panel wired to the pipeline with an H slider
-    (`examples/explore_slice.py`);
+  - cleanup before/after panel wired to the pipeline with an H/K/L plane
+    selector and a cut slider (`examples/explore_slice.py`);
   - linked ΔPDF real-space views — single-plane `x_H`-slider viewer
     (`examples/explore_delta_pdf.py`) and the three-plane orthoslice viewer
-    with movable cuts (`examples/explore_delta_pdf_ortho.py`).
+    with movable cuts (`examples/explore_delta_pdf_ortho.py`);
+  - temperature-comparison grid with shared cuts and a global colour scale
+    (`examples/explore_delta_pdf_multi.py`).
 - **Still planned:**
   - live `|Q|`-shell scrubbing for the azimuthal/ring texture views;
   - migrating the standalone viewers onto the `ndiff.visualization` primitives

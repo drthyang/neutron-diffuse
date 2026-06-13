@@ -1,18 +1,30 @@
 """Interactive cleanup viewer for principal HKL slices.
 
-Fast 2D development harness: extracts the H=0 plane and runs Step 2
-(``PatchedRadialRingModel``, plane='0kl') — non-parametric per-patch radial
-background subtraction — then punches Bragg/satellite peaks and backfills the
-holes.  The viewer shows the four processing states and includes an H/K/L
-selector for browsing 0kl, h0l, or hk0 slices:
+Fast 2D development harness.  When the cleaned volumes are not supplied via
+RING_FILE / PUNCH_FILE / BACKFILL_FILE, it computes them here: every H plane is
+ring-removed with Step 2 (``PatchedRadialRingModel``, plane='0kl', a
+non-parametric per-patch radial background subtraction), then Bragg/satellite
+peaks are punched and the holes backfilled.  The viewer shows the four
+processing states
 
-    (1) data, (2) ring removed, (3) punched, (4) backfilled.
+    (1) data, (2) ring removed, (3) punched, (4) backfilled
+
+and carries an H/K/L selector for browsing 0kl, h0l, or hk0 slices of the same
+volumes.
+
+Note on axes — the H/K/L selector only changes how the volumes are *displayed*.
+The in-script ring-removal compute path always works along H (0kl planes); to
+ring-remove along K or L, process the volume with ``remove_rings_3d.py
+SLICE_AXIS=K`` (or ``L``) and load the result via RING_FILE.
 
 Run with an interactive backend, e.g.::
 
     PYTHONPATH=src python examples/explore_slice.py
     # or, to keep an IPython prompt afterwards:
     PYTHONPATH=src ipython --matplotlib=macosx -i examples/explore_slice.py
+
+Env: VIEW_AXIS=H|K|L sets the initial slice orientation (default H); the cut
+value comes from {H,K,L}_VALUE (default 0.3333 for H, else 0.0).
 """
 import matplotlib
 

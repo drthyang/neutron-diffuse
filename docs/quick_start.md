@@ -32,7 +32,10 @@ everything, or `FORCE_FROM=punch` to recompute from one stage onward. Valid
 
 Ring removal processes H-slices/KL planes by default. To process the same volume
 as K-slices/HL planes or L-slices/HK planes, add `SLICE_AXIS=K` or
-`SLICE_AXIS=L` to the pipeline command. The default is `SLICE_AXIS=H`.
+`SLICE_AXIS=L` to the pipeline command. The default is `SLICE_AXIS=H`. The
+ring-removed filename does not encode the axis, so when re-running the same
+dataset with a different `SLICE_AXIS`, add `FORCE_FROM=rings` to recompute
+instead of reusing the cached output.
 
 ```bash
 # 22 K
