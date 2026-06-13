@@ -33,6 +33,20 @@ def build_params(req: PipelineRunRequest) -> PipelineParams:
         p.punch = dataclasses.replace(p.punch, min_intensity=sp.punch_min_intensity)
     if sp.punch_search_n_mad is not None:
         p.punch = dataclasses.replace(p.punch, search_n_mad=sp.punch_search_n_mad)
+    if sp.punch_mode is not None:
+        p.punch = dataclasses.replace(p.punch, mode=sp.punch_mode)
+    if any(v is not None for v in
+           (sp.punch_radius_h, sp.punch_radius_k, sp.punch_radius_l)):
+        cur = p.punch.punch_radii
+        p.punch = dataclasses.replace(p.punch, punch_radii=(
+            sp.punch_radius_h if sp.punch_radius_h is not None else cur[0],
+            sp.punch_radius_k if sp.punch_radius_k is not None else cur[1],
+            sp.punch_radius_l if sp.punch_radius_l is not None else cur[2],
+        ))
+    if sp.punch_margin is not None:
+        p.punch = dataclasses.replace(p.punch, margin=sp.punch_margin)
+    if sp.punch_phi_tail_hkl is not None:
+        p.punch = dataclasses.replace(p.punch, phi_tail_hkl=sp.punch_phi_tail_hkl)
     if sp.backfill_method is not None:
         p.backfill = dataclasses.replace(p.backfill, method=sp.backfill_method)
     if sp.flatten_estimator is not None:

@@ -263,6 +263,37 @@ def test_build_params_ring_overrides():
     assert overridden.punch.min_intensity == PunchParams().min_intensity
 
 
+def test_build_params_punch_overrides():
+    """Punch overrides reach PunchParams; per-axis radii fall back to defaults."""
+    from ndiff.pipeline import PunchParams
+    from ndiff.server.routers.pipeline import build_params
+    from ndiff.server.schemas import PipelineRunRequest, StageParamsIn
+
+    base = PunchParams()
+    overridden = build_params(PipelineRunRequest(
+        dataset_id="x",
+        params=StageParamsIn(
+            punch_mode="search",
+            punch_radius_h=0.2,
+            punch_radius_l=0.6,
+            punch_margin=0.05,
+            punch_phi_tail_hkl=0.3,
+        ),
+    )).punch
+
+    assert overridden.mode == "search"
+    # h and l overridden; k untouched keeps its default
+    assert overridden.punch_radii == (0.2, base.punch_radii[1], 0.6)
+    assert overridden.margin == 0.05
+    assert overridden.phi_tail_hkl == 0.3
+
+    # omitting every punch field leaves PunchParams untouched
+    defaults = build_params(PipelineRunRequest(dataset_id="x")).punch
+    assert defaults.mode == base.mode
+    assert defaults.punch_radii == base.punch_radii
+    assert defaults.phi_tail_hkl == base.phi_tail_hkl
+
+
 # ---------------------------------------------------------------------------
 # pipeline job execution (real worker process)
 # ---------------------------------------------------------------------------

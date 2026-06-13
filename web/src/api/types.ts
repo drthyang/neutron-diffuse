@@ -69,6 +69,12 @@ export interface StageParamsIn {
   rings_n_fourier?: number;
   punch_min_intensity?: number;
   punch_search_n_mad?: number;
+  punch_mode?: string;
+  punch_radius_h?: number;
+  punch_radius_k?: number;
+  punch_radius_l?: number;
+  punch_margin?: number;
+  punch_phi_tail_hkl?: number;
   backfill_method?: string;
   flatten_estimator?: string;
   flatten_floor_percentile?: number;

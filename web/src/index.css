@@ -775,11 +775,28 @@ input[type="range"]::-moz-range-track {
   border-top: 1px solid var(--border);
 }
 .config-section-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   font-size: 10.5px;
   font-weight: 650;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-3);
+}
+.config-step-no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  color: var(--text-2);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 .config-grid {
   display: grid;
@@ -790,6 +807,177 @@ input[type="range"]::-moz-range-track {
 .config-section input[type="number"] {
   width: 100%;
   max-width: none;
+}
+.config-section select:disabled,
+.config-section input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ring-model illustration (pie = patches, ring = Fourier texture) */
+.ring-viz {
+  display: block;
+  width: 154px;
+  height: 154px;
+  margin: 4px auto 0;
+}
+.ring-viz-pie .even {
+  fill: var(--surface-2);
+}
+.ring-viz-pie .odd {
+  fill: var(--surface-3);
+}
+.ring-viz-pie path {
+  stroke: var(--bg);
+  stroke-width: 0.6;
+}
+.ring-viz-hub {
+  fill: var(--surface);
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.ring-viz-count {
+  fill: var(--text);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+}
+.ring-viz-cap {
+  margin-top: 6px;
+  text-align: center;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--text-3);
+}
+.ring-viz-cap b {
+  color: var(--text-2);
+  font-weight: 650;
+}
+
+/* sub-heading + 3-column grid used by the Bragg-punch parameter group */
+.config-sub-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  opacity: 0.85;
+}
+.config-grid-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+}
+
+/* Bragg-punch footprint illustration (pie analogue for the punch stage) */
+.punch-viz {
+  margin-top: 6px;
+}
+.punch-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.punch-tabs button {
+  flex: 1;
+  padding: 4px 0;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.punch-tabs button:hover {
+  color: var(--text-2);
+  border-color: var(--border-strong);
+}
+.punch-tabs button.on {
+  color: var(--accent-hi);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.punch-viz svg {
+  display: block;
+  width: 100%;
+  max-width: 220px;
+  margin: 0 auto;
+}
+.punch-grid {
+  stroke: var(--border);
+  stroke-width: 0.7;
+}
+.punch-node {
+  fill: var(--text-2);
+}
+.punch-fp {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+  stroke-width: 1;
+}
+.punch-margin {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 0.8;
+  stroke-dasharray: 2 2;
+  opacity: 0.5;
+}
+.punch-tail {
+  fill: var(--accent);
+  opacity: 0.12;
+}
+.punch-ib {
+  fill: var(--amber-soft);
+  stroke: var(--amber);
+  stroke-width: 1.1;
+}
+.punch-sat {
+  fill: var(--green-soft);
+  stroke: var(--green);
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+}
+.punch-sat-node {
+  fill: var(--green);
+}
+.punch-axis {
+  fill: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-style: italic;
+}
+.punch-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.punch-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.punch-legend .sw {
+  width: 13px;
+  height: 9px;
+  border-radius: 5px;
+  display: inline-block;
+}
+.punch-legend .sw.fp {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+}
+.punch-legend .sw.ib {
+  background: var(--amber-soft);
+  border: 1px solid var(--amber);
+}
+.punch-legend .sw.sat {
+  background: var(--green-soft);
+  border: 1px solid var(--green);
 }
 .config-actions {
   display: flex;
