@@ -59,7 +59,7 @@ export function DpdfPanel({
               size={size}
             />
             {gridlines && (
-              <UnitCellGrid size={size} half={windowA} latX={latX} latY={latY} />
+              <UnitCellGrid half={windowA} latX={latX} latY={latY} />
             )}
           </div>
         ) : (

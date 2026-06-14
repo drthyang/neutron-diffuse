@@ -114,7 +114,17 @@ export function SliceCanvas({
     style =
       size != null
         ? { width: size, height: size, imageRendering: "auto" }
-        : { width: "100%", height: "100%", imageRendering: "auto" };
+        : {
+            // Responsive square: fill the column width and force a 1:1 box
+            // (overriding the raster's native aspect) so the physical window
+            // renders square and in-flow — same region as the fixed-size ΔPDF
+            // panels, without collapsing the grid track.
+            width: "100%",
+            height: "auto",
+            aspectRatio: "1 / 1",
+            display: "block",
+            imageRendering: "auto",
+          };
   } else if (fit) {
     style = { maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto" };
   } else {

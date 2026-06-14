@@ -11,7 +11,8 @@ import { fetchDpdfSlice } from "../api/client";
 import { useDatasets, useDpdfMeta } from "../api/hooks";
 import { COLORMAPS, DIVERGING_NAME } from "../colormaps/luts";
 import { SliceCanvas } from "../components/SliceCanvas";
-import { EmptyState, Slider } from "../components/ui";
+import { UnitCellGrid } from "../components/UnitCellGrid";
+import { EmptyState, MetaStrip, Slider, Switch } from "../components/ui";
 import { useDpdfStore } from "../state/dpdfStore";
 
 const PLANES = [
@@ -53,17 +54,28 @@ export function MultiTempViewer() {
   const cutZ = useDpdfStore((s) => s.cutZ);
   const contrast = useDpdfStore((s) => s.contrast);
   const windowFull = useDpdfStore((s) => s.windowFull);
+  const gridlines = useDpdfStore((s) => s.gridlines);
   const centered = useDpdfStore((s) => s.centered);
   const setCutX = useDpdfStore((s) => s.setCutX);
   const setCutY = useDpdfStore((s) => s.setCutY);
   const setCutZ = useDpdfStore((s) => s.setCutZ);
   const setContrast = useDpdfStore((s) => s.setContrast);
   const setWindowFull = useDpdfStore((s) => s.setWindowFull);
+  const setGridlines = useDpdfStore((s) => s.setGridlines);
   const center = useDpdfStore((s) => s.center);
   const halfWindow = windowFull / 2;
 
   const firstVolId = temps[0]?.stages.find((s) => s.name === "delta_pdf")?.volume_id;
   const meta = useDpdfMeta(firstVolId).data;
+  const a = meta?.lattice.a ?? null;
+  const b = meta?.lattice.b ?? null;
+  const c = meta?.lattice.c ?? null;
+  // Direct-lattice spacings shown on each plane's two axes (a≈b≈c across temps).
+  const planeLat: Record<string, [number | null, number | null]> = {
+    xy: [a, b],
+    xz: [a, c],
+    yz: [b, c],
+  };
 
   useEffect(() => {
     if (meta && !centered) {
@@ -158,6 +170,7 @@ export function MultiTempViewer() {
           value={contrast}
           onChange={setContrast}
         />
+        <Switch label="Unit cells" checked={gridlines} onChange={setGridlines} />
       </div>
 
       {datasetsQ.isSuccess && temps.length === 0 && (
@@ -188,14 +201,23 @@ export function MultiTempViewer() {
                 return (
                   <div key={p.key} className="cell">
                     {data ? (
-                      <SliceCanvas
-                        slice={data}
-                        lut={lut}
-                        vmax={contrast * pooled[p.key]}
-                        log={false}
-                        diverging
-                        windowA={halfWindow}
-                      />
+                      <div className="cell-inner">
+                        <SliceCanvas
+                          slice={data}
+                          lut={lut}
+                          vmax={contrast * pooled[p.key]}
+                          log={false}
+                          diverging
+                          windowA={halfWindow}
+                        />
+                        {gridlines && (
+                          <UnitCellGrid
+                            half={halfWindow}
+                            latX={planeLat[p.key][0]}
+                            latY={planeLat[p.key][1]}
+                          />
+                        )}
+                      </div>
                     ) : (
                       <div className="cell-skeleton skeleton" />
                     )}
@@ -205,6 +227,22 @@ export function MultiTempViewer() {
             </Fragment>
           ))}
         </div>
+      )}
+
+      {meta && temps.length > 0 && (
+        <MetaStrip
+          items={[
+            { key: "Temperatures", value: `${temps.length}` },
+            {
+              key: "Window",
+              value: `${windowFull.toFixed(0)} × ${windowFull.toFixed(0)} Å`,
+            },
+            {
+              key: "Lattice",
+              value: `a=${a?.toFixed(2)}  b=${b?.toFixed(2)}  c=${c?.toFixed(2)} Å`,
+            },
+          ]}
+        />
       )}
     </div>
   );
