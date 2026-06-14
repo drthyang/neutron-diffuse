@@ -325,6 +325,13 @@ def test_build_params_qspace_punch_overrides():
     assert base.punch_frame == "hkl"
     assert base.punch_q_radius is None and base.punch_q_radii is None
 
+    # Phase 3 covariance-fit toggle
+    cov = build_params(PipelineRunRequest(
+        dataset_id="x", params=StageParamsIn(punch_fit_covariance=True),
+    )).punch
+    assert cov.integer_fit_covariance is True
+    assert base.integer_fit_covariance is False
+
 
 # ---------------------------------------------------------------------------
 # pipeline job execution (real worker process)

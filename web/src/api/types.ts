@@ -82,6 +82,7 @@ export interface StageParamsIn {
   punch_q_radius_a?: number;
   punch_q_radius_b?: number;
   punch_q_radius_c?: number;
+  punch_fit_covariance?: boolean;
   backfill_method?: string;
   flatten_estimator?: string;
   flatten_floor_percentile?: number;

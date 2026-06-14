@@ -48,6 +48,12 @@ The integer path is lattice-aware:
 5. Optionally fit peak position and anisotropic shape:
    - `integer_optimize_position=True`
    - `integer_optimize_shape=True`
+   - `integer_fit_covariance=True` (Phase 3) fits a **tilted** 3×3 resolution
+     ellipsoid following the peak's real orientation (a full weighted covariance,
+     eigen-clipped to the base/max bounds) instead of three axis-aligned radii,
+     and folds the φ-tail into it as a rank-1 tangential inflation rather than a
+     separate unioned ellipsoid. Default off; reduces exactly to the diagonal
+     radii fit for an axis-aligned peak.
 6. Punch a continuous-HKL ellipsoid at the fitted centre.
 
 Useful guards:
@@ -147,7 +153,7 @@ subsumes all current shapes and the Q-space upgrade:
 | legacy HKL radii `(rh,rk,rl)` | `diag(1/rh², 1/rk², 1/rl²)` |
 | Q isotropic radius `ρ` (Å⁻¹) | `g / ρ²` |
 | Q per-axis radii `(ra,rb,rc)` (Å⁻¹) | `Pᵀ diag(1/r²) P`, `P = ê·UB` |
-| Q resolution ellipsoid `M` (Phase 3) | `UBᵀ M UB` (φ-tail becomes a rank-1 mod) |
+| fitted resolution ellipsoid (Phase 3) | per-peak 3×3 `A` from the covariance (φ-tail = rank-1 mod) |
 
 **Using the Q-space punch (opt-in).** Set `punch_frame="q"` and either
 `punch_q_radius` (isotropic, Å⁻¹) or `punch_q_radii` (along a*, b*, c*, Å⁻¹) on

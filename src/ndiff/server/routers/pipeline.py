@@ -61,6 +61,9 @@ def build_params(req: PipelineRunRequest) -> PipelineParams:
             sp.punch_q_radius_b if sp.punch_q_radius_b is not None else cur[1],
             sp.punch_q_radius_c if sp.punch_q_radius_c is not None else cur[2],
         ))
+    if sp.punch_fit_covariance is not None:
+        p.punch = dataclasses.replace(
+            p.punch, integer_fit_covariance=sp.punch_fit_covariance)
     if sp.backfill_method is not None:
         p.backfill = dataclasses.replace(p.backfill, method=sp.backfill_method)
     if sp.flatten_estimator is not None:

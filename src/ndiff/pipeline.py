@@ -117,6 +117,7 @@ class PunchParams:
     integer_q_step: float | None = None
     integer_optimize_position: bool = True
     integer_optimize_shape: bool = True
+    integer_fit_covariance: bool = False
     integer_fit_threshold_frac: float = 0.35
     integer_fit_radius_n_sigma: float = 2.5
     integer_fit_max_radius_hkl: tuple[float, float, float] | None = None
@@ -339,6 +340,7 @@ def punch_bragg(vol: HKLVolume, params: PunchParams | None = None, *,
         integer_n_mad=p.integer_n_mad, integer_q_step=p.integer_q_step,
         integer_optimize_position=p.integer_optimize_position,
         integer_optimize_shape=p.integer_optimize_shape,
+        integer_fit_covariance=p.integer_fit_covariance,
         integer_fit_threshold_frac=p.integer_fit_threshold_frac,
         integer_fit_radius_n_sigma=p.integer_fit_radius_n_sigma,
         integer_fit_max_radius_hkl=p.integer_fit_max_radius_hkl,

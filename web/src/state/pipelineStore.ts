@@ -42,6 +42,7 @@ interface PipelineConfig {
   punchMode: string;
   punchFrame: string; // "hkl" (radii below) | "q" (reciprocal Å⁻¹)
   punchQRadius: string; // isotropic Q radius, Å⁻¹ (used when punchFrame === "q")
+  punchFitCovariance: boolean; // fit a tilted 3×3 resolution ellipsoid per peak
   punchRH: string;
   punchRK: string;
   punchRL: string;
@@ -86,6 +87,7 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
   punchMode: "",
   punchFrame: "hkl",
   punchQRadius: "",
+  punchFitCovariance: false,
   punchRH: "",
   punchRK: "",
   punchRL: "",
@@ -123,6 +125,7 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
       params.punch_frame = "q";
       if (s.punchQRadius) params.punch_q_radius = Number(s.punchQRadius);
     }
+    if (s.punchFitCovariance) params.punch_fit_covariance = true;
     if (s.backfillMethod) params.backfill_method = s.backfillMethod;
     if (s.flattenEstimator) params.flatten_estimator = s.flattenEstimator;
     if (s.pdfApod) params.pdf_apodization = s.pdfApod;

@@ -203,7 +203,7 @@ Two siblings to the ΔPDF path, added 2026-06-08:
 Open: decide "Phase B" — subtract the sharp core but keep the broad diffuse at
 the satellites, rather than punching them.
 
-## Phase 6 — Q-Space Bragg Punch  In Progress (Phases 0–2 done)
+## Phase 6 — Q-Space Bragg Punch  In Progress (Phases 0–3 done)
 
 Migrate the Bragg punch ([`src/ndiff/analysis/bragg.py`](src/ndiff/analysis/bragg.py))
 from HKL-axis radii to a **Q-space resolution-ellipsoid** described by one
@@ -231,7 +231,7 @@ Design — one kernel, multiple shape specs:
 | 0 | Characterization + spec tests (golden masters, equivalence invariants) | **done** |
 | 1 | Internal quadratic-form kernel routed through `A=diag(1/r²)`; prove equivalence | **done** |
 | 2 | Opt-in Q-space spec (`punch_frame`, `punch_q_radius`, `punch_q_radii`); default = legacy | **done** |
-| 3 | Unify φ-tail + shape-fit into `M` (fitter returns a 3×3 covariance) | planned |
+| 3 | Unify φ-tail + shape-fit into `M` (fitter returns a 3×3 covariance) | **done** |
 | 4 | Flip defaults to Q after T-series validation (optional, later) | planned |
 
 Phase 0 (done): [`tests/test_bragg_qspace_phase0.py`](tests/test_bragg_qspace_phase0.py)
@@ -262,6 +262,18 @@ Phase 3). Threaded through `PunchParams` → `punch_bragg`, the server
 (metric-sphere punch, diagonal-metric equivalence to the converted HKL punch,
 per-axis anisotropy) plus a server `build_params` Q-override test.
 
+Phase 3 (done): the per-peak integer-node fit can return a full 3×3 HKL
+covariance (a *tilted* resolution ellipsoid following the peak's real
+orientation) instead of three axis-aligned radii, and the φ-tail is folded in as
+a rank-1 tangential inflation of that matrix — replacing the union-of-two-
+ellipsoids. Opt-in via `integer_fit_covariance` (default off → diagonal-radii fit
++ union φ-tail bit-identical). The covariance fit reduces *exactly* to the
+diagonal radii for an axis-aligned peak. Threaded through `PunchParams`, the
+server `punch_fit_covariance`, and a web punch-card toggle.
+[`tests/test_bragg_qspace_phase3.py`](tests/test_bragg_qspace_phase3.py) — 7 tests
+(diagonal reduction, tilted orientation, φ-tail tangent-only inflation, fit
+integration) plus a server `build_params` test.
+
 Two findings now encoded as tests / constraints:
 
 - **"Bit-identical" has a caveat.** The real UB is orthogonal only to ~0.5%, so
@@ -289,6 +301,6 @@ Before treating the pipeline as a stable release candidate:
   reproduce.
 - Done: `scripts/check.sh` mirrors GitHub CI (`.github/workflows/ci.yml`) —
   pytest + `ruff check src/ tests/` + `mypy src/ndiff` — and can be installed as
-  a `pre-push` hook; the suite is at 153 passing tests.
+  a `pre-push` hook; the suite is at 160 passing tests.
 - Still open: add CI coverage that specifically exercises the Bragg
   guard/exclusion behavior, not just import/type checks.

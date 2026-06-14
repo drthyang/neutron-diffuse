@@ -69,6 +69,8 @@ class StageParamsIn(BaseModel):
     punch_q_radius_a: float | None = None
     punch_q_radius_b: float | None = None
     punch_q_radius_c: float | None = None
+    # Phase 3: fit a tilted 3×3 resolution ellipsoid (covariance) per Bragg peak
+    punch_fit_covariance: bool | None = None
     backfill_method: str | None = None
     flatten_estimator: str | None = None
     flatten_floor_percentile: float | None = None

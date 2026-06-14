@@ -50,6 +50,9 @@ class _PeakPunch:
     intensity: float
     center_hkl: tuple[float, float, float]
     radii_hkl: tuple[float, float, float] | None = None
+    # Per-peak 3×3 HKL shape matrix A (punch where δᵀAδ ≤ 1).  Set by the
+    # covariance fit (Phase 3); supersedes ``radii_hkl`` and folds in the φ-tail.
+    shape_hkl: NDArray[np.float64] | None = None
     source_node_hkl: tuple[int, int, int] | None = None
     local_background: float = float("nan")
 
@@ -227,6 +230,11 @@ class BraggRemover:
     integer_local_min_prominence: float = 0.0
     integer_optimize_position: bool = False
     integer_optimize_shape: bool = False
+    # Phase 3: fit a full 3×3 HKL covariance (a tilted ellipsoid following the
+    # peak's real orientation) instead of three axis-aligned radii, and fold the
+    # φ-tail into it as a tangential inflation.  Requires ``integer_optimize_shape``.
+    # Default False keeps the diagonal-radii fit + union φ-tail (bit-identical).
+    integer_fit_covariance: bool = False
     integer_fit_threshold_frac: float = 0.35
     integer_fit_radius_n_sigma: float = 2.5
     integer_fit_max_radius_hkl: tuple[float, float, float] | None = None
@@ -324,6 +332,76 @@ class BraggRemover:
         if peak.source_node_hkl is None or self.integer_h_guard_hkl is None:
             return None
         return (float(peak.source_node_hkl[0]), float(self.integer_h_guard_hkl))
+
+    @staticmethod
+    def _shape_from_covariance(
+        cov: NDArray[np.float64],
+        steps: tuple[float, ...],
+        base: tuple[float, ...],
+        max_r: tuple[float, ...],
+        n_sigma: float,
+    ) -> NDArray[np.float64]:
+        """HKL shape matrix ``A`` from a weighted second-moment covariance.
+
+        The ellipsoid is built in the covariance eigenbasis: each eigen-radius is
+        ``n_sigma·σ`` plus a half-voxel pad, then clipped to the base/max bounds
+        *projected onto that eigenvector* (so the bound is anisotropy-aware).  For
+        an axis-aligned peak the eigenvectors are the HKL axes and this reduces
+        exactly to the diagonal ``_fit_integer_peak`` radii — the covariance fit
+        is a strict generalisation.
+        """
+        lam, vecs = np.linalg.eigh(cov)  # ascending eigenvalues, orthonormal cols
+        lam = np.clip(lam, 0.0, None)
+        st = np.abs(np.asarray(steps, dtype=float))
+        bs = np.asarray(base, dtype=float)
+        mx = np.asarray(max_r, dtype=float)
+        inv_r2 = np.empty(3)
+        for k in range(3):
+            v = vecs[:, k]
+            pad = 0.5 * float(np.sqrt(np.sum((v * st) ** 2)))
+            r = n_sigma * float(np.sqrt(lam[k])) + pad
+            r_floor = float(np.sqrt(np.sum((v * bs) ** 2)))
+            r_ceil = float(np.sqrt(np.sum((v * mx) ** 2)))
+            r = min(max(r, r_floor), r_ceil)
+            inv_r2[k] = 1.0 / (r * r)
+        return np.asarray(vecs @ np.diag(inv_r2) @ vecs.T, dtype=np.float64)
+
+    def _fold_phi_tail(
+        self,
+        vol: HKLVolume,
+        shape_matrix: NDArray[np.float64],
+        center_hkl: tuple[float, float, float],
+        phi_tail: float,
+    ) -> NDArray[np.float64]:
+        """Inflate ``A`` along the local K-L ring tangent by ``phi_tail`` (a rank-1
+        modification of the covariance), replacing the legacy union-of-ellipsoids.
+
+        The half-extent of ``δᵀAδ ≤ 1`` along unit ``u`` is ``sqrt(uᵀ A⁻¹ u)``;
+        adding ``(2·h_t·φ + φ²)·t̂t̂ᵀ`` to ``A⁻¹`` grows the tangential half-extent
+        from ``h_t`` to ``h_t + φ`` and leaves orthogonal extents unchanged.
+        """
+        if phi_tail <= 0:
+            return shape_matrix
+        rt = self._kl_ring_directions(vol, center_hkl)
+        if rt is None:
+            return shape_matrix
+        _, _, ktan, ltan = rt
+        t = np.array([0.0, ktan, ltan])  # unit K-L tangent (H component 0)
+        cov = np.linalg.inv(shape_matrix)
+        h_t = float(np.sqrt(max(float(t @ cov @ t), 0.0)))
+        tau = 2.0 * h_t * phi_tail + phi_tail * phi_tail
+        return np.asarray(np.linalg.inv(cov + tau * np.outer(t, t)), dtype=np.float64)
+
+    @staticmethod
+    def _inflate_isotropic(
+        shape_matrix: NDArray[np.float64], margin: float,
+    ) -> NDArray[np.float64]:
+        """Grow every half-radius of ``δᵀAδ ≤ 1`` by ``margin`` (guard band)."""
+        if margin <= 0:
+            return shape_matrix
+        lam, vecs = np.linalg.eigh(shape_matrix)
+        r = 1.0 / np.sqrt(np.clip(lam, 1e-300, None)) + margin
+        return np.asarray(vecs @ np.diag(1.0 / (r * r)) @ vecs.T, dtype=np.float64)
 
     @staticmethod
     def _steps(vol: HKLVolume) -> tuple[float, float, float]:
@@ -496,8 +574,9 @@ class BraggRemover:
                 float(vol.l_axis[pl]),
             )
             radii_hkl = None
+            shape_hkl = None
             if self.integer_optimize_position or self.integer_optimize_shape:
-                center_hkl, radii_hkl = self._fit_integer_peak(
+                center_hkl, radii_hkl, shape_hkl = self._fit_integer_peak(
                     vol, wv, wval, (hs, ks, ls), local_bg, peak,
                 )
                 ph = int(np.argmin(np.abs(vol.h_axis - center_hkl[0])))
@@ -505,9 +584,10 @@ class BraggRemover:
                 pl = int(np.argmin(np.abs(vol.l_axis - center_hkl[2])))
                 if not self.integer_optimize_shape:
                     radii_hkl = None
+                    shape_hkl = None
             out.append(_PeakPunch(
                 ih=ph, ik=pk, il=pl, intensity=peak,
-                center_hkl=center_hkl, radii_hkl=radii_hkl,
+                center_hkl=center_hkl, radii_hkl=radii_hkl, shape_hkl=shape_hkl,
                 source_node_hkl=(h, k, l), local_background=local_bg,
             ))
         return out
@@ -520,30 +600,36 @@ class BraggRemover:
         origin: tuple[int, int, int],
         local_bg: float,
         peak: float,
-    ) -> tuple[tuple[float, float, float], tuple[float, float, float] | None]:
-        """Fit a local integer-node peak by robust moments in HKL coordinates."""
+    ) -> tuple[
+        tuple[float, float, float],
+        tuple[float, float, float] | None,
+        NDArray[np.float64] | None,
+    ]:
+        """Fit a local integer-node peak by robust moments in HKL coordinates.
+
+        Returns ``(center, radii, shape)``.  In the default (diagonal) mode
+        ``radii`` is the three axis-aligned half-radii and ``shape`` is ``None``;
+        with ``integer_fit_covariance`` it returns ``radii=None`` and ``shape`` a
+        full 3×3 HKL shape matrix (a tilted ellipsoid following the real peak).
+        """
         hs, ks, ls = origin
         excess = np.where(valid, window - local_bg, 0.0)
         peak_excess = max(peak - local_bg, 0.0)
-        if peak_excess <= 0:
+
+        def _argmax_center() -> tuple[float, float, float]:
             off = np.unravel_index(int(np.nanargmax(window)), window.shape)
-            return (
-                (float(vol.h_axis[hs + off[0]]), float(vol.k_axis[ks + off[1]]),
-                 float(vol.l_axis[ls + off[2]])),
-                None,
-            )
+            return (float(vol.h_axis[hs + off[0]]), float(vol.k_axis[ks + off[1]]),
+                    float(vol.l_axis[ls + off[2]]))
+
+        if peak_excess <= 0:
+            return _argmax_center(), None, None
 
         threshold = max(0.0, float(self.integer_fit_threshold_frac)) * peak_excess
         fit_mask = valid & (excess >= threshold)
         if int(fit_mask.sum()) < 3:
             fit_mask = valid & (excess > 0)
         if int(fit_mask.sum()) < 3:
-            off = np.unravel_index(int(np.nanargmax(window)), window.shape)
-            return (
-                (float(vol.h_axis[hs + off[0]]), float(vol.k_axis[ks + off[1]]),
-                 float(vol.l_axis[ls + off[2]])),
-                None,
-            )
+            return _argmax_center(), None, None
 
         H, K, L = np.meshgrid(
             vol.h_axis[hs:hs + window.shape[0]],
@@ -554,12 +640,7 @@ class BraggRemover:
         weights = np.where(fit_mask, excess, 0.0)
         wsum = float(weights.sum())
         if wsum <= 0:
-            off = np.unravel_index(int(np.nanargmax(window)), window.shape)
-            return (
-                (float(vol.h_axis[hs + off[0]]), float(vol.k_axis[ks + off[1]]),
-                 float(vol.l_axis[ls + off[2]])),
-                None,
-            )
+            return _argmax_center(), None, None
 
         center = (
             float((weights * H).sum() / wsum),
@@ -567,26 +648,37 @@ class BraggRemover:
             float((weights * L).sum() / wsum),
         )
         if not self.integer_optimize_shape:
-            return center, None
+            return center, None, None
 
-        sigmas = (
-            float(np.sqrt(max((weights * (H - center[0]) ** 2).sum() / wsum, 0.0))),
-            float(np.sqrt(max((weights * (K - center[1]) ** 2).sum() / wsum, 0.0))),
-            float(np.sqrt(max((weights * (L - center[2]) ** 2).sum() / wsum, 0.0))),
-        )
-        dh, dk, dl = (abs(s) for s in self._steps(vol))
+        steps = tuple(abs(s) for s in self._steps(vol))
         base = self._radii()
         if self.integer_fit_max_radius_hkl is None:
             max_r = tuple(float(r) * float(self.max_radius_scale) for r in base)
         else:
             max_r = tuple(float(r) for r in self.integer_fit_max_radius_hkl)
         n_sigma = max(float(self.integer_fit_radius_n_sigma), 0.0)
+
+        d = [H - center[0], K - center[1], L - center[2]]
+        if self.integer_fit_covariance:
+            cov = np.empty((3, 3))
+            for i in range(3):
+                for j in range(i, 3):
+                    cov[i, j] = cov[j, i] = float((weights * d[i] * d[j]).sum() / wsum)
+            shape = self._shape_from_covariance(cov, steps, base, max_r, n_sigma)
+            return center, None, shape
+
+        dh, dk, dl = steps
+        sigmas = (
+            float(np.sqrt(max((weights * d[0] ** 2).sum() / wsum, 0.0))),
+            float(np.sqrt(max((weights * d[1] ** 2).sum() / wsum, 0.0))),
+            float(np.sqrt(max((weights * d[2] ** 2).sum() / wsum, 0.0))),
+        )
         fitted = (
             min(max(n_sigma * sigmas[0] + 0.5 * dh, base[0]), max_r[0]),
             min(max(n_sigma * sigmas[1] + 0.5 * dk, base[1]), max_r[1]),
             min(max(n_sigma * sigmas[2] + 0.5 * dl, base[2]), max_r[2]),
         )
-        return center, fitted
+        return center, fitted, None
 
     @staticmethod
     def _q_shell_thresholds(
@@ -758,8 +850,23 @@ class BraggRemover:
             if q_shape is not None:
                 # Q-space: scaling the radii by s scales the matrix by 1/s²; the
                 # local window is sized from the matrix's HKL bounding box.  The
-                # φ-tail and per-peak HKL shape-fit are not applied here (Phase 3).
+                # φ-tail and per-peak HKL shape-fit are not applied here.
                 a = q_shape / (s * s)
+                self._punch_one(
+                    vol, keep, center, self._ellipsoid_bounding_radii(a), 0.0,
+                    center_hkl=peak_rec.center_hkl,
+                    h_guard=self._h_guard_for(peak_rec),
+                    shape_matrix=a,
+                )
+                continue
+            if peak_rec.shape_hkl is not None:
+                # Phase 3 covariance fit: one tilted ellipsoid with the φ-tail and
+                # margin folded into the shape matrix (no union of two ellipsoids).
+                a = peak_rec.shape_hkl / (s * s)
+                a = self._fold_phi_tail(
+                    vol, a, peak_rec.center_hkl,
+                    max(0.0, float(self.phi_tail_hkl)) * s)
+                a = self._inflate_isotropic(a, self.margin)
                 self._punch_one(
                     vol, keep, center, self._ellipsoid_bounding_radii(a), 0.0,
                     center_hkl=peak_rec.center_hkl,

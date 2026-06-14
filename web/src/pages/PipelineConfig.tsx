@@ -355,6 +355,7 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
       punchMode: st.punchMode,
       punchFrame: st.punchFrame,
       punchQRadius: st.punchQRadius,
+      punchFitCovariance: st.punchFitCovariance,
       punchRH: st.punchRH,
       punchRK: st.punchRK,
       punchRL: st.punchRL,
@@ -602,6 +603,16 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
               />
             </Field>
           </div>
+          <Switch
+            label="Fit resolution ellipsoid (tilted, covariance)"
+            checked={s.punchFitCovariance}
+            onChange={(v) => patch({ punchFitCovariance: v })}
+          />
+          <p className="config-note">
+            Fit a tilted 3×3 ellipsoid to each Bragg peak (following its real
+            orientation) and fold the φ-tail into it, instead of three axis-aligned
+            half-radii plus a separate tail.
+          </p>
           <PunchShapeViz
             method={s.punchMethod}
             geom={punchGeom}
