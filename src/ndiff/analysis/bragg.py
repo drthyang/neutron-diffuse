@@ -244,6 +244,16 @@ class BraggRemover:
     incident_beam_sphere_radius_hkl: float | None = None
     force_origin: bool | None = None
     phi_tail_hkl: float = 0.0
+    # --- Q-space punch (opt-in; ROADMAP Phase 6 / Phase 2) ---
+    # ``punch_frame="q"`` describes the Bragg punch shape in reciprocal Å^-1
+    # rather than fractional HKL, via the quadratic-form kernel
+    # ``δhklᵀ A δhkl ≤ 1`` with ``A`` built from the UB metric (see
+    # ``_q_shape_matrix``).  Default ``"hkl"`` keeps the legacy radii path
+    # untouched.  In Q-mode the per-peak HKL shape-fit and the φ-tail are not
+    # applied (that unification is Phase 3); intensity scaling still applies.
+    punch_frame: str = "hkl"
+    punch_q_radius: float | None = None  # isotropic, Å^-1  (A = g / ρ²)
+    punch_q_radii: tuple[float, float, float] | None = None  # per a*,b*,c*, Å^-1
     # --- search mode (|Q|-shell outlier detection) ---
     search_q_step: float = 0.05
     search_n_mad: float = 8.0
@@ -263,6 +273,57 @@ class BraggRemover:
             return tuple(float(r) for r in self.punch_radii)  # type: ignore[return-value]
         r = float(self.punch_radius_hkl)
         return r, r, r
+
+    def _q_shape_matrix(self, vol: HKLVolume) -> NDArray[np.float64] | None:
+        """HKL shape matrix ``A`` for the Q-space punch, or ``None`` in hkl mode.
+
+        The punch is ``δhklᵀ A δhkl ≤ 1`` (see :func:`_ellipsoid_inside`).  With
+        the metric ``g = UBᵀUB``:
+
+        - ``punch_q_radius`` ρ (Å^-1, isotropic) → ``A = g / ρ²`` — a true Q-sphere
+          ``|δQ| ≤ ρ`` for any crystal system.
+        - ``punch_q_radii`` (ra, rb, rc) (Å^-1, along the reciprocal axes
+          a*, b*, c*) → ``A = Pᵀ diag(1/r²) P`` with ``P = ê·UB`` (``ê`` = unit
+          reciprocal-axis directions), the anisotropic generalisation.
+        """
+        if str(self.punch_frame).lower() != "q":
+            return None
+        ub = vol.ub_matrix
+        if self.punch_q_radii is not None:
+            ra, rb, rc = (float(r) for r in self.punch_q_radii)
+            if min(ra, rb, rc) <= 0:
+                raise ValueError("punch_q_radii must be positive")
+            unit = ub / np.linalg.norm(ub, axis=0)  # columns = unit recip-axis dirs
+            p = unit.T @ ub
+            d = np.diag([1.0 / ra**2, 1.0 / rb**2, 1.0 / rc**2])
+            return p.T @ d @ p
+        if self.punch_q_radius is not None:
+            rho = float(self.punch_q_radius)
+            if rho <= 0:
+                raise ValueError("punch_q_radius must be positive")
+            return (ub.T @ ub) / rho**2
+        raise ValueError('punch_frame="q" requires punch_q_radius or punch_q_radii')
+
+    @staticmethod
+    def _ellipsoid_bounding_radii(
+        shape_matrix: NDArray[np.float64],
+    ) -> tuple[float, float, float]:
+        """HKL half-extents of ``δᵀAδ ≤ 1`` (for local-window sizing).
+
+        The extent along HKL axis ``i`` is ``sqrt((A⁻¹)_ii)``.
+        """
+        inv = np.linalg.inv(shape_matrix)
+        return (
+            float(np.sqrt(max(inv[0, 0], 0.0))),
+            float(np.sqrt(max(inv[1, 1], 0.0))),
+            float(np.sqrt(max(inv[2, 2], 0.0))),
+        )
+
+    def _h_guard_for(self, peak: _PeakPunch) -> tuple[float, float] | None:
+        """Integer-H guard slab for a peak, or ``None`` if disabled."""
+        if peak.source_node_hkl is None or self.integer_h_guard_hkl is None:
+            return None
+        return (float(peak.source_node_hkl[0]), float(self.integer_h_guard_hkl))
 
     @staticmethod
     def _steps(vol: HKLVolume) -> tuple[float, float, float]:
@@ -684,6 +745,7 @@ class BraggRemover:
         """Punch an anisotropic, intensity-scaled ellipsoid at each peak centre,
         in place on *keep* (local windows only)."""
         rh0, rk0, rl0 = self._radii()
+        q_shape = self._q_shape_matrix(vol)  # None in legacy (hkl) mode
 
         ref = self.intensity_ref
         if self.intensity_scale and ref is None:
@@ -692,6 +754,19 @@ class BraggRemover:
 
         for peak_rec in peaks:
             s = self._scale_factor(peak_rec.intensity, ref if ref is not None else 1.0)
+            center = (peak_rec.ih, peak_rec.ik, peak_rec.il)
+            if q_shape is not None:
+                # Q-space: scaling the radii by s scales the matrix by 1/s²; the
+                # local window is sized from the matrix's HKL bounding box.  The
+                # φ-tail and per-peak HKL shape-fit are not applied here (Phase 3).
+                a = q_shape / (s * s)
+                self._punch_one(
+                    vol, keep, center, self._ellipsoid_bounding_radii(a), 0.0,
+                    center_hkl=peak_rec.center_hkl,
+                    h_guard=self._h_guard_for(peak_rec),
+                    shape_matrix=a,
+                )
+                continue
             rh_base, rk_base, rl_base = peak_rec.radii_hkl or (rh0, rk0, rl0)
             radii = (
                 rh_base * s + self.margin,
@@ -699,17 +774,10 @@ class BraggRemover:
                 rl_base * s + self.margin,
             )
             self._punch_one(
-                vol, keep, (peak_rec.ih, peak_rec.ik, peak_rec.il), radii,
+                vol, keep, center, radii,
                 max(0.0, float(self.phi_tail_hkl)) * s,
                 center_hkl=peak_rec.center_hkl,
-                h_guard=(
-                    (float(peak_rec.source_node_hkl[0]), float(self.integer_h_guard_hkl))
-                    if (
-                        peak_rec.source_node_hkl is not None
-                        and self.integer_h_guard_hkl is not None
-                    )
-                    else None
-                ),
+                h_guard=self._h_guard_for(peak_rec),
             )
         return keep
 
@@ -780,8 +848,15 @@ class BraggRemover:
         phi_tail: float,
         center_hkl: tuple[float, float, float] | None = None,
         h_guard: tuple[float, float] | None = None,
+        shape_matrix: NDArray[np.float64] | None = None,
     ) -> NDArray[np.bool_]:
-        """Punch one ellipsoid, optionally stretched along the local K-L tangent."""
+        """Punch one ellipsoid, optionally stretched along the local K-L tangent.
+
+        ``shape_matrix`` (Q-space mode) overrides the axis-aligned ``radii``
+        ellipsoid with the general quadratic form ``δhklᵀ A δhkl ≤ 1``; ``radii``
+        is then only the HKL bounding box used to size the local window, and the
+        φ-tail is not added.
+        """
         dh, dk, dl = self._steps(vol)
         nh, nk, nl = vol.shape
         ih, ik, il = center
@@ -808,8 +883,11 @@ class BraggRemover:
         HH, KK, LL = np.meshgrid(vol.h_axis[hs:he], vol.k_axis[ks:ke],
                                  vol.l_axis[ls:le], indexing="ij")
         dH, dK, dL = HH - ch, KK - ck, LL - cl
-        punch = _ellipsoid_inside(dH, dK, dL, radii=(rh, rk, rl))
-        if phi_tail > 0 and radial_tangent is not None:
+        if shape_matrix is not None:
+            punch = _ellipsoid_inside(dH, dK, dL, shape_matrix=shape_matrix)
+        else:
+            punch = _ellipsoid_inside(dH, dK, dL, radii=(rh, rk, rl))
+        if shape_matrix is None and phi_tail > 0 and radial_tangent is not None:
             krad, lrad, ktan, ltan = radial_tangent
             d_rad = dK * krad + dL * lrad
             d_tan = dK * ktan + dL * ltan

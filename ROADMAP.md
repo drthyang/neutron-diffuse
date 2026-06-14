@@ -203,7 +203,7 @@ Two siblings to the ΔPDF path, added 2026-06-08:
 Open: decide "Phase B" — subtract the sharp core but keep the broad diffuse at
 the satellites, rather than punching them.
 
-## Phase 6 — Q-Space Bragg Punch  In Progress (Phases 0–1 done)
+## Phase 6 — Q-Space Bragg Punch  In Progress (Phases 0–2 done)
 
 Migrate the Bragg punch ([`src/ndiff/analysis/bragg.py`](src/ndiff/analysis/bragg.py))
 from HKL-axis radii to a **Q-space resolution-ellipsoid** described by one
@@ -230,7 +230,7 @@ Design — one kernel, multiple shape specs:
 |-------|-------|--------|
 | 0 | Characterization + spec tests (golden masters, equivalence invariants) | **done** |
 | 1 | Internal quadratic-form kernel routed through `A=diag(1/r²)`; prove equivalence | **done** |
-| 2 | Opt-in Q-space spec (`punch_frame`, `punch_q_radius`, `punch_q_radii`); default = legacy | planned |
+| 2 | Opt-in Q-space spec (`punch_frame`, `punch_q_radius`, `punch_q_radii`); default = legacy | **done** |
 | 3 | Unify φ-tail + shape-fit into `M` (fitter returns a 3×3 covariance) | planned |
 | 4 | Flip defaults to Q after T-series validation (optional, later) | planned |
 
@@ -250,6 +250,17 @@ Q-space work will drive (φ-tail + shape-fit stay as-is until Phase 3).
 the diagonal-matrix path matches the radii path (continuous values; masks differ
 only at boundary ties), `A = g/ρ²` reproduces the metric sphere, and an
 off-diagonal `A` tilts the ellipsoid.
+
+Phase 2 (done): opt-in Q-space punch. `BraggRemover` gains `punch_frame`
+(`"hkl"` default / `"q"`), `punch_q_radius` (isotropic Å⁻¹ → `A = g/ρ²`), and
+`punch_q_radii` (per a*,b*,c* Å⁻¹ → `A = Pᵀ diag(1/r²) P`); `_punch_one` punches
+via `shape_matrix` in Q-mode (φ-tail + per-peak HKL fit stay legacy-only until
+Phase 3). Threaded through `PunchParams` → `punch_bragg`, the server
+`StageParamsIn`/`build_params`, and the web Run-pipeline **Frame** selector
+(HKL ↔ Q-space, Å⁻¹ radius). Default behaviour unchanged.
+[`tests/test_bragg_qspace_phase2.py`](tests/test_bragg_qspace_phase2.py) — 7 tests
+(metric-sphere punch, diagonal-metric equivalence to the converted HKL punch,
+per-axis anisotropy) plus a server `build_params` Q-override test.
 
 Two findings now encoded as tests / constraints:
 
@@ -278,6 +289,6 @@ Before treating the pipeline as a stable release candidate:
   reproduce.
 - Done: `scripts/check.sh` mirrors GitHub CI (`.github/workflows/ci.yml`) —
   pytest + `ruff check src/ tests/` + `mypy src/ndiff` — and can be installed as
-  a `pre-push` hook; the suite is at 145 passing tests.
+  a `pre-push` hook; the suite is at 153 passing tests.
 - Still open: add CI coverage that specifically exercises the Bragg
   guard/exclusion behavior, not just import/type checks.

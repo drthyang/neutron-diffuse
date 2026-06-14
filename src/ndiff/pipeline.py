@@ -139,6 +139,12 @@ class PunchParams:
         0.15, 0.50, 1.00,
     )
     incident_beam_sphere_radius_hkl: float | None = None
+    # Q-space punch (opt-in; ROADMAP Phase 6).  Default "hkl" keeps the radii
+    # path above; "q" describes the Bragg punch in reciprocal Å^-1 (isotropic
+    # punch_q_radius, or per-a*,b*,c* punch_q_radii).
+    punch_frame: str = "hkl"
+    punch_q_radius: float | None = None
+    punch_q_radii: tuple[float, float, float] | None = None
 
 
 @dataclass
@@ -351,6 +357,8 @@ def punch_bragg(vol: HKLVolume, params: PunchParams | None = None, *,
         search_exclude_h_centers=p.search_exclude_h_centers,
         search_exclude_h_half_width=p.search_exclude_h_half_width,
         search_exclude_h_fractions=p.search_exclude_h_fractions,
+        punch_frame=p.punch_frame, punch_q_radius=p.punch_q_radius,
+        punch_q_radii=p.punch_q_radii,
     )
     peaks = remover.detect_peaks(vol)
     keep = remover.build_mask(vol)

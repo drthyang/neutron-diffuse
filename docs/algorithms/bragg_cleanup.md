@@ -139,20 +139,28 @@ masks but capability: correct off-axis peak orientation (radial vs tangential),
 oblique crystals (where an HKL-axis ellipsoid shears relative to the resolution
 ellipsoid), and parameters in Å⁻¹ that transfer across temperatures and samples.
 
-**Planned migration (see `ROADMAP.md` → Phase 6).** A single quadratic-form
-kernel `δhklᵀ A δhkl ≤ 1` subsumes all current shapes and the Q-space upgrade:
+**A single quadratic-form kernel** `δhklᵀ A δhkl ≤ 1` (`_ellipsoid_inside`)
+subsumes all current shapes and the Q-space upgrade:
 
 | Shape spec | `A` |
 |------------|-----|
 | legacy HKL radii `(rh,rk,rl)` | `diag(1/rh², 1/rk², 1/rl²)` |
 | Q isotropic radius `ρ` (Å⁻¹) | `g / ρ²` |
-| Q resolution ellipsoid `M` | `UBᵀ M UB` (φ-tail becomes a rank-1 modification) |
+| Q per-axis radii `(ra,rb,rc)` (Å⁻¹) | `Pᵀ diag(1/r²) P`, `P = ê·UB` |
+| Q resolution ellipsoid `M` (Phase 3) | `UBᵀ M UB` (φ-tail becomes a rank-1 mod) |
 
-`punch_radii` stays supported (it maps to a diagonal `A`), so existing configs
-and saved pipelines are unaffected. Phase 0 (characterization + specification
-tests) is in `tests/test_bragg_qspace_phase0.py`; note that HKL- and Q-axis
-punches are bit-identical only for an *exactly* diagonal metric — on the real
-(~0.5%-sheared) UB they differ at a handful of boundary voxels.
+**Using the Q-space punch (opt-in).** Set `punch_frame="q"` and either
+`punch_q_radius` (isotropic, Å⁻¹) or `punch_q_radii` (along a*, b*, c*, Å⁻¹) on
+`PunchParams` / `BraggRemover`, or pick **Frame → Q-space (Å⁻¹)** in the web
+Run-pipeline panel. The punch becomes a true Q-sphere/ellipsoid built from the UB
+metric — lattice- and temperature-independent. `punch_frame="hkl"` (default)
+keeps the radii path above, so existing configs and saved pipelines are
+unaffected. In Q-mode the φ-tail and the per-peak HKL shape-fit are not applied
+(that unification is Phase 3); intensity scaling still applies.
+
+Phase 0/1/2 tests live in `tests/test_bragg_qspace_phase{0,1,2}.py`. Note that
+HKL- and Q-axis punches are bit-identical only for an *exactly* diagonal metric —
+on the real (~0.5%-sheared) UB they differ at a handful of boundary voxels.
 
 ## Backfill Modes
 

@@ -295,6 +295,35 @@ def test_build_params_punch_overrides():
     assert defaults.mode == base.mode
     assert defaults.punch_radii == base.punch_radii
     assert defaults.phi_tail_hkl == base.phi_tail_hkl
+    # the Q-space frame defaults to legacy "hkl"
+    assert defaults.punch_frame == "hkl"
+
+
+def test_build_params_qspace_punch_overrides():
+    """Q-space punch overrides (frame + isotropic / per-axis radii) reach PunchParams."""
+    from ndiff.pipeline import PunchParams
+    from ndiff.server.routers.pipeline import build_params
+    from ndiff.server.schemas import PipelineRunRequest, StageParamsIn
+
+    base = PunchParams()
+    iso = build_params(PipelineRunRequest(
+        dataset_id="x",
+        params=StageParamsIn(punch_frame="q", punch_q_radius=0.1),
+    )).punch
+    assert iso.punch_frame == "q"
+    assert iso.punch_q_radius == 0.1
+
+    # per-axis: a and c overridden, b falls back to the (0.1) seed default
+    anis = build_params(PipelineRunRequest(
+        dataset_id="x",
+        params=StageParamsIn(punch_frame="q",
+                             punch_q_radius_a=0.08, punch_q_radius_c=0.2),
+    )).punch
+    assert anis.punch_q_radii == (0.08, 0.1, 0.2)
+
+    # untouched by default
+    assert base.punch_frame == "hkl"
+    assert base.punch_q_radius is None and base.punch_q_radii is None
 
 
 # ---------------------------------------------------------------------------

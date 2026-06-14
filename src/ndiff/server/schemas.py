@@ -63,6 +63,12 @@ class StageParamsIn(BaseModel):
     punch_radius_l: float | None = None
     punch_margin: float | None = None
     punch_phi_tail_hkl: float | None = None
+    # Q-space punch (opt-in): frame "q" + isotropic or per-a*,b*,c* radius (Å^-1)
+    punch_frame: str | None = None
+    punch_q_radius: float | None = None
+    punch_q_radius_a: float | None = None
+    punch_q_radius_b: float | None = None
+    punch_q_radius_c: float | None = None
     backfill_method: str | None = None
     flatten_estimator: str | None = None
     flatten_floor_percentile: float | None = None

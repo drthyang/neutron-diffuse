@@ -76,6 +76,12 @@ export interface StageParamsIn {
   punch_radius_l?: number;
   punch_margin?: number;
   punch_phi_tail_hkl?: number;
+  // Q-space punch (opt-in): frame "q" + isotropic / per-a*,b*,c* radius (Å⁻¹)
+  punch_frame?: string;
+  punch_q_radius?: number;
+  punch_q_radius_a?: number;
+  punch_q_radius_b?: number;
+  punch_q_radius_c?: number;
   backfill_method?: string;
   flatten_estimator?: string;
   flatten_floor_percentile?: number;

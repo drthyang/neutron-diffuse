@@ -40,6 +40,8 @@ interface PipelineConfig {
   punchMinI: string;
   punchMethod: string;
   punchMode: string;
+  punchFrame: string; // "hkl" (radii below) | "q" (reciprocal Å⁻¹)
+  punchQRadius: string; // isotropic Q radius, Å⁻¹ (used when punchFrame === "q")
   punchRH: string;
   punchRK: string;
   punchRL: string;
@@ -82,6 +84,8 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
   punchMinI: "",
   punchMethod: "ellipsoid",
   punchMode: "",
+  punchFrame: "hkl",
+  punchQRadius: "",
   punchRH: "",
   punchRK: "",
   punchRL: "",
@@ -115,6 +119,10 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
     if (s.punchRL) params.punch_radius_l = Number(s.punchRL);
     if (s.punchMargin) params.punch_margin = Number(s.punchMargin);
     if (s.punchPhiTail) params.punch_phi_tail_hkl = Number(s.punchPhiTail);
+    if (s.punchFrame === "q") {
+      params.punch_frame = "q";
+      if (s.punchQRadius) params.punch_q_radius = Number(s.punchQRadius);
+    }
     if (s.backfillMethod) params.backfill_method = s.backfillMethod;
     if (s.flattenEstimator) params.flatten_estimator = s.flattenEstimator;
     if (s.pdfApod) params.pdf_apodization = s.pdfApod;

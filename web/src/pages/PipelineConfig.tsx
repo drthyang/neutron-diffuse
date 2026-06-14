@@ -353,6 +353,8 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
       punchMinI: st.punchMinI,
       punchMethod: st.punchMethod,
       punchMode: st.punchMode,
+      punchFrame: st.punchFrame,
+      punchQRadius: st.punchQRadius,
       punchRH: st.punchRH,
       punchRK: st.punchRK,
       punchRL: st.punchRL,
@@ -477,15 +479,27 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
         </StageCard>
 
         <StageCard title={STAGE_LABELS.punch} step={STAGE_NO.punch}>
-          <Field label="Method">
-            <select
-              value={s.punchMethod}
-              title="Bragg-punch algorithm (more shapes coming)"
-              onChange={(e) => patch({ punchMethod: e.target.value })}
-            >
-              <option value="ellipsoid">Ellipsoid</option>
-            </select>
-          </Field>
+          <div className="config-grid">
+            <Field label="Method">
+              <select
+                value={s.punchMethod}
+                title="Bragg-punch algorithm (more shapes coming)"
+                onChange={(e) => patch({ punchMethod: e.target.value })}
+              >
+                <option value="ellipsoid">Ellipsoid</option>
+              </select>
+            </Field>
+            <Field label="Frame">
+              <select
+                value={s.punchFrame}
+                title="Describe the punch in fractional HKL or in reciprocal Å⁻¹ (Q-space)"
+                onChange={(e) => patch({ punchFrame: e.target.value })}
+              >
+                <option value="hkl">HKL (r.l.u.)</option>
+                <option value="q">Q-space (Å⁻¹)</option>
+              </select>
+            </Field>
+          </div>
           <div className="config-grid">
             <Field label="Min I">
               <input
@@ -509,6 +523,28 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
               </select>
             </Field>
           </div>
+          {s.punchFrame === "q" ? (
+            <>
+              <span className="config-sub-title">Q-sphere radius (Å⁻¹)</span>
+              <div className="config-grid">
+                <Field label="r·Q">
+                  <input
+                    type="number"
+                    step="0.005"
+                    min="0"
+                    placeholder="0.10"
+                    value={s.punchQRadius}
+                    title="Isotropic Bragg punch radius in reciprocal Å⁻¹ (|δQ| ≤ r·Q)"
+                    onChange={(e) => patch({ punchQRadius: e.target.value })}
+                  />
+                </Field>
+              </div>
+              <p className="config-note">
+                Lattice-independent: the punch is a true Q-sphere built from the UB
+                metric. The HKL half-radii below are ignored in this frame.
+              </p>
+            </>
+          ) : null}
           <span className="config-sub-title">Ellipsoid half-radii (HKL)</span>
           <div className="config-grid-3">
             <Field label="r·H">
