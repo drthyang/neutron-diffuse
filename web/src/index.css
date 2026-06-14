@@ -998,6 +998,11 @@ input[type="range"]::-moz-range-track {
   background: var(--green-soft);
   border: 1px solid var(--green);
 }
+.punch-legend .punch-legend-unit {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  color: var(--text-2);
+}
 .config-actions {
   display: flex;
   gap: 10px;

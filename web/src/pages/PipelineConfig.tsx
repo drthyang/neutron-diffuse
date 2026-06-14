@@ -170,23 +170,28 @@ const PUNCH_PLANES: { id: PunchPlane; xl: string; yl: string }[] = [
 const PUNCH_IB = { h: 0.15, k: 0.5, l: 1.0 };
 
 interface PunchGeom {
-  rh: number;
-  rk: number;
-  rl: number;
+  // r0/r1/r2 are the footprint half-radii along the three axes, in the active
+  // frame's units (r.l.u. for HKL, Å⁻¹ for Q).
+  r0: number;
+  r1: number;
+  r2: number;
   margin: number;
   phiTail: number;
   mode: string;
+  isQ: boolean;
+  unit: string;
+  ax: [string, string, string]; // axis labels, e.g. [H,K,L] or [a*,b*,c*]
 }
 
 function planeRadii(p: PunchPlane, g: PunchGeom): [number, number] {
-  if (p === "hk") return [g.rh, g.rk];
-  if (p === "hl") return [g.rh, g.rl];
-  return [g.rk, g.rl];
+  if (p === "hk") return [g.r0, g.r1];
+  if (p === "hl") return [g.r0, g.r2];
+  return [g.r1, g.r2];
 }
-function planeIB(p: PunchPlane): [number, number] {
-  if (p === "hk") return [PUNCH_IB.h, PUNCH_IB.k];
-  if (p === "hl") return [PUNCH_IB.h, PUNCH_IB.l];
-  return [PUNCH_IB.k, PUNCH_IB.l];
+function planeAxes(p: PunchPlane, ax: [string, string, string]): [string, string] {
+  if (p === "hk") return [ax[0], ax[1]];
+  if (p === "hl") return [ax[0], ax[2]];
+  return [ax[1], ax[2]];
 }
 
 function EllipsoidPunchViz({
@@ -200,12 +205,26 @@ function EllipsoidPunchViz({
 }) {
   const PV = 200; // viewBox
   const C = 100; // centre
-  const SP = 34; // px per HKL unit
+  const SP = 34; // px per reciprocal-lattice step
   const N = 2; // nodes span −N..N
-  const pl = PUNCH_PLANES.find((p) => p.id === plane)!;
+  const [axX, axY] = planeAxes(plane, geom.ax);
   const [rx, ry] = planeRadii(plane, geom);
-  const [ibx, iby] = planeIB(plane);
-  const showTail = plane === "kl" && geom.phiTail > 0;
+  // The footprint is anisotropic and its absolute size is unit-dependent, so we
+  // auto-scale: the larger semi-axis fills ~42% of a lattice cell.  The drawing
+  // shows the punch *shape* relative to the reciprocal lattice, not true scale.
+  const fp = (0.42 * SP) / Math.max(rx, ry, 1e-6);
+  // incident beam: HKL has its own ellipsoid radii; Q shows it ≈2× the floor.
+  const ib: [number, number] = geom.isQ
+    ? [rx * 2, ry * 2]
+    : plane === "hk"
+      ? [PUNCH_IB.h, PUNCH_IB.k]
+      : plane === "hl"
+        ? [PUNCH_IB.h, PUNCH_IB.l]
+        : [PUNCH_IB.k, PUNCH_IB.l];
+  // margin (guard band) and φ-tail are r.l.u. concepts — drawn only in HKL so the
+  // Q view stays a clean resolution ellipsoid (they still apply numerically).
+  const showTail = !geom.isQ && plane === "kl" && geom.phiTail > 0;
+  const showMargin = !geom.isQ && geom.margin > 0;
   const showSat = geom.mode !== "integer";
 
   const grid: ReactNode[] = [];
@@ -223,7 +242,7 @@ function EllipsoidPunchViz({
       const k = `${i},${j}`;
       if (i === 0 && j === 0) {
         marks.push(
-          <ellipse key={`ib-${k}`} cx={cx} cy={cy} rx={ibx * SP} ry={iby * SP} className="punch-ib" />,
+          <ellipse key={`ib-${k}`} cx={cx} cy={cy} rx={ib[0] * fp} ry={ib[1] * fp} className="punch-ib" />,
         );
       } else {
         if (showTail) {
@@ -233,27 +252,27 @@ function EllipsoidPunchViz({
               key={`tl-${k}`}
               cx={cx}
               cy={cy}
-              rx={(geom.rk + geom.phiTail) * SP}
-              ry={geom.rk * SP}
+              rx={(geom.r1 + geom.phiTail) * fp}
+              ry={geom.r1 * fp}
               transform={`rotate(${ang.toFixed(1)} ${cx} ${cy})`}
               className="punch-tail"
             />,
           );
         }
-        if (geom.margin > 0) {
+        if (showMargin) {
           marks.push(
             <ellipse
               key={`mg-${k}`}
               cx={cx}
               cy={cy}
-              rx={(rx + geom.margin) * SP}
-              ry={(ry + geom.margin) * SP}
+              rx={(rx + geom.margin) * fp}
+              ry={(ry + geom.margin) * fp}
               className="punch-margin"
             />,
           );
         }
         marks.push(
-          <ellipse key={`fp-${k}`} cx={cx} cy={cy} rx={rx * SP} ry={ry * SP} className="punch-fp" />,
+          <ellipse key={`fp-${k}`} cx={cx} cy={cy} rx={rx * fp} ry={ry * fp} className="punch-fp" />,
         );
       }
       marks.push(<circle key={`nd-${k}`} cx={cx} cy={cy} r={1.6} className="punch-node" />);
@@ -267,37 +286,40 @@ function EllipsoidPunchViz({
   return (
     <div className="punch-viz">
       <div className="punch-tabs" role="tablist">
-        {PUNCH_PLANES.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            role="tab"
-            aria-selected={p.id === plane}
-            className={p.id === plane ? "on" : ""}
-            onClick={() => onPlane(p.id)}
-          >
-            {p.xl}–{p.yl}
-          </button>
-        ))}
+        {PUNCH_PLANES.map((p) => {
+          const [x, y] = planeAxes(p.id, geom.ax);
+          return (
+            <button
+              key={p.id}
+              type="button"
+              role="tab"
+              aria-selected={p.id === plane}
+              className={p.id === plane ? "on" : ""}
+              onClick={() => onPlane(p.id)}
+            >
+              {x}–{y}
+            </button>
+          );
+        })}
       </div>
       <svg
         viewBox={`0 0 ${PV} ${PV}`}
         role="img"
-        aria-label={`Bragg punch ellipsoid cross-section in the ${pl.xl}-${pl.yl} plane`}
+        aria-label={`Bragg punch ellipsoid cross-section in the ${axX}-${axY} plane (${geom.unit})`}
       >
         <g>{grid}</g>
         {showSat && (
           <g>
-            <ellipse cx={satX} cy={satY} rx={rx * SP} ry={ry * SP} className="punch-sat" />
+            <ellipse cx={satX} cy={satY} rx={rx * fp} ry={ry * fp} className="punch-sat" />
             <circle cx={satX} cy={satY} r={1.6} className="punch-sat-node" />
           </g>
         )}
         <g>{marks}</g>
         <text x={PV - 12} y={C - 5} textAnchor="end" className="punch-axis">
-          {pl.xl}
+          {axX}
         </text>
         <text x={C + 5} y={20} className="punch-axis">
-          {pl.yl}
+          {axY}
         </text>
       </svg>
       <div className="punch-legend">
@@ -312,6 +334,7 @@ function EllipsoidPunchViz({
             <span className="sw sat" />satellite
           </span>
         )}
+        <span className="punch-legend-unit">{geom.unit}</span>
       </div>
     </div>
   );
@@ -354,7 +377,9 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
       punchMethod: st.punchMethod,
       punchMode: st.punchMode,
       punchFrame: st.punchFrame,
-      punchQRadius: st.punchQRadius,
+      punchQA: st.punchQA,
+      punchQB: st.punchQB,
+      punchQC: st.punchQC,
       punchFitCovariance: st.punchFitCovariance,
       punchRH: st.punchRH,
       punchRK: st.punchRK,
@@ -378,13 +403,20 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
 
   const vizPatches = clampInt(s.ringNPatches, 36, 4, 96);
   const vizFourier = clampInt(s.ringNFourier, 6, 0, 40);
+  const isQ = s.punchFrame === "q";
   const punchGeom: PunchGeom = {
-    rh: clampFloat(s.punchRH, 0.09, 0.01, 1.2),
-    rk: clampFloat(s.punchRK, 0.12, 0.01, 1.2),
-    rl: clampFloat(s.punchRL, 0.45, 0.01, 1.5),
+    r0: isQ ? clampFloat(s.punchQA, 0.097, 0.005, 0.6)
+      : clampFloat(s.punchRH, 0.09, 0.01, 1.2),
+    r1: isQ ? clampFloat(s.punchQB, 0.072, 0.005, 0.6)
+      : clampFloat(s.punchRK, 0.12, 0.01, 1.2),
+    r2: isQ ? clampFloat(s.punchQC, 0.115, 0.005, 0.6)
+      : clampFloat(s.punchRL, 0.45, 0.01, 1.5),
     margin: clampFloat(s.punchMargin, 0.02, 0, 0.5),
     phiTail: clampFloat(s.punchPhiTail, 0.12, 0, 1.0),
     mode: s.punchMode || "both",
+    isQ,
+    unit: isQ ? "Å⁻¹" : "r.l.u.",
+    ax: isQ ? ["a*", "b*", "c*"] : ["H", "K", "L"],
   };
 
   const onRun = async () => {
@@ -526,62 +558,88 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
           </div>
           {s.punchFrame === "q" ? (
             <>
-              <span className="config-sub-title">Q-sphere radius (Å⁻¹)</span>
-              <div className="config-grid">
-                <Field label="r·Q">
+              <span className="config-sub-title">
+                Resolution floor along a*, b*, c* (Å⁻¹)
+              </span>
+              <div className="config-grid-3">
+                <Field label="r·a*">
                   <input
                     type="number"
                     step="0.005"
                     min="0"
-                    placeholder="0.10"
-                    value={s.punchQRadius}
-                    title="Isotropic Bragg punch radius in reciprocal Å⁻¹ (|δQ| ≤ r·Q)"
-                    onChange={(e) => patch({ punchQRadius: e.target.value })}
+                    placeholder="0.097"
+                    value={s.punchQA}
+                    title="Punch half-radius along a* in reciprocal Å⁻¹"
+                    onChange={(e) => patch({ punchQA: e.target.value })}
+                  />
+                </Field>
+                <Field label="r·b*">
+                  <input
+                    type="number"
+                    step="0.005"
+                    min="0"
+                    placeholder="0.072"
+                    value={s.punchQB}
+                    title="Punch half-radius along b* in reciprocal Å⁻¹"
+                    onChange={(e) => patch({ punchQB: e.target.value })}
+                  />
+                </Field>
+                <Field label="r·c*">
+                  <input
+                    type="number"
+                    step="0.005"
+                    min="0"
+                    placeholder="0.115"
+                    value={s.punchQC}
+                    title="Punch half-radius along c* in reciprocal Å⁻¹"
+                    onChange={(e) => patch({ punchQC: e.target.value })}
                   />
                 </Field>
               </div>
               <p className="config-note">
-                Default frame: the punch footprint is the reciprocal-Å⁻¹
-                resolution floor (lattice-independent, per a*/b*/c*), still
-                modulated by the per-peak fit. Leave r·Q blank for the default
-                anisotropic resolution; set it for an isotropic Q-sphere. The HKL
-                half-radii below are ignored in this frame.
+                The punch footprint in reciprocal Å⁻¹ — a lattice- and
+                temperature-independent resolution floor, still modulated by the
+                per-peak fit. Leave blank to use the validated default
+                (0.097, 0.072, 0.115).
               </p>
             </>
-          ) : null}
-          <span className="config-sub-title">Ellipsoid half-radii (HKL)</span>
-          <div className="config-grid-3">
-            <Field label="r·H">
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0.09"
-                value={s.punchRH}
-                onChange={(e) => patch({ punchRH: e.target.value })}
-              />
-            </Field>
-            <Field label="r·K">
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0.12"
-                value={s.punchRK}
-                onChange={(e) => patch({ punchRK: e.target.value })}
-              />
-            </Field>
-            <Field label="r·L">
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0.45"
-                value={s.punchRL}
-                onChange={(e) => patch({ punchRL: e.target.value })}
-              />
-            </Field>
-          </div>
+          ) : (
+            <>
+              <span className="config-sub-title">Ellipsoid half-radii (r.l.u.)</span>
+              <div className="config-grid-3">
+                <Field label="r·H">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.09"
+                    value={s.punchRH}
+                    onChange={(e) => patch({ punchRH: e.target.value })}
+                  />
+                </Field>
+                <Field label="r·K">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.12"
+                    value={s.punchRK}
+                    onChange={(e) => patch({ punchRK: e.target.value })}
+                  />
+                </Field>
+                <Field label="r·L">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.45"
+                    value={s.punchRL}
+                    onChange={(e) => patch({ punchRL: e.target.value })}
+                  />
+                </Field>
+              </div>
+            </>
+          )}
           <div className="config-grid">
             <Field label="Margin">
               <input
@@ -623,8 +681,9 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
             onPlane={(p) => patch({ punchPlane: p })}
           />
           <div className="ring-viz-cap">
-            r = (<b>{punchGeom.rh}</b>, <b>{punchGeom.rk}</b>, <b>{punchGeom.rl}</b>) ·
-            margin <b>{punchGeom.margin}</b> · φ-tail <b>{punchGeom.phiTail}</b> · mode{" "}
+            r = (<b>{punchGeom.r0}</b>, <b>{punchGeom.r1}</b>, <b>{punchGeom.r2}</b>){" "}
+            {punchGeom.unit} along {punchGeom.ax.join("/")} · margin{" "}
+            <b>{punchGeom.margin}</b> · φ-tail <b>{punchGeom.phiTail}</b> · mode{" "}
             <b>{punchGeom.mode}</b>
           </div>
         </StageCard>

@@ -41,7 +41,10 @@ interface PipelineConfig {
   punchMethod: string;
   punchMode: string;
   punchFrame: string; // "hkl" (radii below) | "q" (reciprocal Å⁻¹)
-  punchQRadius: string; // isotropic Q radius, Å⁻¹ (used when punchFrame === "q")
+  // Q-space resolution floor along a*, b*, c* (Å⁻¹); blank = backend default
+  punchQA: string;
+  punchQB: string;
+  punchQC: string;
   punchFitCovariance: boolean; // fit a tilted 3×3 resolution ellipsoid per peak
   punchRH: string;
   punchRK: string;
@@ -86,7 +89,9 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
   punchMethod: "ellipsoid",
   punchMode: "",
   punchFrame: "q", // Q-space is the default punch frame (Phase 4)
-  punchQRadius: "",
+  punchQA: "",
+  punchQB: "",
+  punchQC: "",
   punchFitCovariance: false,
   punchRH: "",
   punchRK: "",
@@ -124,8 +129,11 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
     // Always send the frame so the dropdown selection is honoured regardless of
     // the backend default (which is now "q").
     params.punch_frame = s.punchFrame;
-    if (s.punchFrame === "q" && s.punchQRadius)
-      params.punch_q_radius = Number(s.punchQRadius);
+    if (s.punchFrame === "q") {
+      if (s.punchQA) params.punch_q_radius_a = Number(s.punchQA);
+      if (s.punchQB) params.punch_q_radius_b = Number(s.punchQB);
+      if (s.punchQC) params.punch_q_radius_c = Number(s.punchQC);
+    }
     if (s.punchFitCovariance) params.punch_fit_covariance = true;
     if (s.backfillMethod) params.backfill_method = s.backfillMethod;
     if (s.flattenEstimator) params.flatten_estimator = s.flattenEstimator;
