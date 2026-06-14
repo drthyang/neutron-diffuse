@@ -158,11 +158,18 @@ subsumes all current shapes and the Q-space upgrade:
 **Using the Q-space punch (opt-in).** Set `punch_frame="q"` and either
 `punch_q_radius` (isotropic, Å⁻¹) or `punch_q_radii` (along a*, b*, c*, Å⁻¹) on
 `PunchParams` / `BraggRemover`, or pick **Frame → Q-space (Å⁻¹)** in the web
-Run-pipeline panel. The punch becomes a true Q-sphere/ellipsoid built from the UB
-metric — lattice- and temperature-independent. `punch_frame="hkl"` (default)
-keeps the radii path above, so existing configs and saved pipelines are
-unaffected. In Q-mode the φ-tail and the per-peak HKL shape-fit are not applied
-(that unification is Phase 3); intensity scaling still applies.
+Run-pipeline panel. The Q radii are the **resolution floor** in Å⁻¹ (lattice- and
+temperature-independent). `punch_frame="hkl"` (default) keeps the radii path
+above, so existing configs and saved pipelines are unaffected.
+
+In Q-mode the punch is **adaptive**, not fixed: the per-peak shape-fit is floored
+to the Q resolution and then punches through the same mechanism as the HKL path
+(axis-aligned ellipsoid + union φ-tail, intensity-scaled), so the Q frame only
+relocates the floor from r.l.u. to Å⁻¹ — it does not discard the fit or the
+φ-tail. Off-integer search peaks (no per-peak fit) use the fixed Q metric
+ellipsoid. Validated against the production HKL punch at Jaccard ≈ 0.89–0.93 on
+the 22/45/100 K series (see `examples/compare_punch_frames.py`); the matched
+isotropic radius ρ ≈ 0.093 Å⁻¹ is temperature-invariant.
 
 Phase 0/1/2 tests live in `tests/test_bragg_qspace_phase{0,1,2}.py`. Note that
 HKL- and Q-axis punches are bit-identical only for an *exactly* diagonal metric —

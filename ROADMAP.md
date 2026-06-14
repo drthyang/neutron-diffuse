@@ -203,7 +203,7 @@ Two siblings to the ΔPDF path, added 2026-06-08:
 Open: decide "Phase B" — subtract the sharp core but keep the broad diffuse at
 the satellites, rather than punching them.
 
-## Phase 6 — Q-Space Bragg Punch  In Progress (Phases 0–3 done)
+## Phase 6 — Q-Space Bragg Punch  In Progress (Phases 0–3 done; 4 validating)
 
 Migrate the Bragg punch ([`src/ndiff/analysis/bragg.py`](src/ndiff/analysis/bragg.py))
 from HKL-axis radii to a **Q-space resolution-ellipsoid** described by one
@@ -232,7 +232,7 @@ Design — one kernel, multiple shape specs:
 | 1 | Internal quadratic-form kernel routed through `A=diag(1/r²)`; prove equivalence | **done** |
 | 2 | Opt-in Q-space spec (`punch_frame`, `punch_q_radius`, `punch_q_radii`); default = legacy | **done** |
 | 3 | Unify φ-tail + shape-fit into `M` (fitter returns a 3×3 covariance) | **done** |
-| 4 | Flip defaults to Q after T-series validation (optional, later) | planned |
+| 4 | Validate HKL vs Q on real data, make Q-mode adaptive, then flip the default | **in progress** |
 
 Phase 0 (done): [`tests/test_bragg_qspace_phase0.py`](tests/test_bragg_qspace_phase0.py)
 — 9 tests. Golden masters freeze the current default `punch_bragg` keep-mask
@@ -270,9 +270,25 @@ ellipsoids. Opt-in via `integer_fit_covariance` (default off → diagonal-radii 
 + union φ-tail bit-identical). The covariance fit reduces *exactly* to the
 diagonal radii for an axis-aligned peak. Threaded through `PunchParams`, the
 server `punch_fit_covariance`, and a web punch-card toggle.
-[`tests/test_bragg_qspace_phase3.py`](tests/test_bragg_qspace_phase3.py) — 7 tests
+[`tests/test_bragg_qspace_phase3.py`](tests/test_bragg_qspace_phase3.py) — 8 tests
 (diagonal reduction, tilted orientation, φ-tail tangent-only inflation, fit
-integration) plus a server `build_params` test.
+integration, Q-mode adaptivity) plus a server `build_params` test.
+
+Phase 4 (validating): real-data HKL-vs-Q comparison via
+[`examples/compare_punch_frames.py`](examples/compare_punch_frames.py). Findings on
+22/45/100 K: the volume-matched Q radius **ρ ≈ 0.093 Å⁻¹ is T-invariant**
+(portability confirmed); isotropic Q differs ~22–27% from HKL because the peaks
+are ~1.6× anisotropic in Q (so a single ρ is not justified). Two fixes landed:
+(a) Q-mode was silently ignoring `margin` — now applied; (b) Q-mode was
+*fixed-shape* (bypassing the per-peak fit + φ-tail), which would under-punch ~41%
+vs the validated ~6% punch — Q-mode is now **adaptive** (`_fit_base_radii` floors
+the per-peak fit to the Q resolution, in Å⁻¹; the diagonal fit then punches via
+the same radii path as HKL). Production HKL vs Q-anisotropic-adaptive default now
+agrees at **Jaccard 0.89–0.93**; the residual ~8% is search peaks (Q
+metric-ellipsoid + folded φ-tail vs HKL axis-aligned + union φ-tail), a frame
+difference rather than a regression. **Default is still HKL** (golden masters
+unchanged). Remaining gate before flipping the default: a **ΔPDF-level A/B** to
+confirm the ~8% punch difference does not move real-space correlation features.
 
 Two findings now encoded as tests / constraints:
 
@@ -301,6 +317,6 @@ Before treating the pipeline as a stable release candidate:
   reproduce.
 - Done: `scripts/check.sh` mirrors GitHub CI (`.github/workflows/ci.yml`) —
   pytest + `ruff check src/ tests/` + `mypy src/ndiff` — and can be installed as
-  a `pre-push` hook; the suite is at 160 passing tests.
+  a `pre-push` hook; the suite is at 162 passing tests.
 - Still open: add CI coverage that specifically exercises the Bragg
   guard/exclusion behavior, not just import/type checks.
