@@ -150,6 +150,21 @@ def test_covariance_punch_follows_tilted_peak():
     assert _ray(c2, s2) > _ray(c2, -s2)   # long diagonal punched further
 
 
+def test_q_mode_is_adaptive_not_fixed():
+    """Q-mode with the per-peak fit on enlarges a broad peak beyond the fixed Q
+    resolution floor — i.e. it modulates the Q base, it is not a fixed shape.
+    (Phase-4 integration: Q-mode now carries the adaptive coverage.)"""
+    cov = np.diag([0.16**2, 0.10**2, 0.10**2])  # broad along H
+    vol = _gaussian_peak_vol(cov)
+    qr = dict(mode="integer", min_intensity=10.0, min_prominence=0.5,
+              punch_incident_beam=False, intensity_scale=False, margin=0.0,
+              phi_tail_hkl=0.0, integer_optimize_position=True,
+              punch_frame="q", punch_q_radii=(0.05, 0.05, 0.05))
+    fixed = BraggRemover(integer_optimize_shape=False, **qr).build_mask(vol)
+    fitted = BraggRemover(integer_optimize_shape=True, **qr).build_mask(vol)
+    assert int((~fitted).sum()) > int((~fixed).sum())  # fit grows beyond the floor
+
+
 def test_covariance_default_off_is_unchanged():
     """Toggling covariance off reproduces the legacy diagonal-radii punch mask."""
     cov = np.diag([0.07**2, 0.05**2, 0.05**2])

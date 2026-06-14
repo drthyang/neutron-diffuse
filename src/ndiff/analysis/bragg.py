@@ -333,6 +333,19 @@ class BraggRemover:
             return None
         return (float(peak.source_node_hkl[0]), float(self.integer_h_guard_hkl))
 
+    def _fit_base_radii(self, vol: HKLVolume) -> tuple[float, float, float]:
+        """Resolution-floor radii for the per-peak fit clip.
+
+        In Q-mode the floor is the Q base ellipsoid's HKL bounding box (so the
+        fitted punch is never smaller than the Å⁻¹ resolution and the floor is
+        lattice-portable); in HKL mode it is the plain ``punch_radii`` — so the
+        legacy fit is unchanged.
+        """
+        a = self._q_shape_matrix(vol)
+        if a is not None:
+            return self._ellipsoid_bounding_radii(a)
+        return self._radii()
+
     @staticmethod
     def _shape_from_covariance(
         cov: NDArray[np.float64],
@@ -651,7 +664,7 @@ class BraggRemover:
             return center, None, None
 
         steps = tuple(abs(s) for s in self._steps(vol))
-        base = self._radii()
+        base = self._fit_base_radii(vol)
         if self.integer_fit_max_radius_hkl is None:
             max_r = tuple(float(r) * float(self.max_radius_scale) for r in base)
         else:
@@ -836,7 +849,12 @@ class BraggRemover:
     ) -> NDArray[np.bool_]:
         """Punch an anisotropic, intensity-scaled ellipsoid at each peak centre,
         in place on *keep* (local windows only)."""
-        rh0, rk0, rl0 = self._radii()
+        # Base resolution radii: the Q ellipsoid's HKL bounding box in Q-mode
+        # (lattice-portable floor), else the plain HKL radii — so the HKL path is
+        # unchanged.  The diagonal per-peak fit is clipped to this same floor, so
+        # in Q-mode it punches via the radii path below (identical mechanism to
+        # HKL, incl. the union φ-tail) — the frame only relocates the floor.
+        r_base = self._fit_base_radii(vol)
         q_shape = self._q_shape_matrix(vol)  # None in legacy (hkl) mode
 
         ref = self.intensity_ref
@@ -847,35 +865,38 @@ class BraggRemover:
         for peak_rec in peaks:
             s = self._scale_factor(peak_rec.intensity, ref if ref is not None else 1.0)
             center = (peak_rec.ih, peak_rec.ik, peak_rec.il)
-            if q_shape is not None:
-                # Q-space: scaling the radii by s scales the matrix by 1/s²; the
-                # local window is sized from the matrix's HKL bounding box.  The
-                # φ-tail and per-peak HKL shape-fit are not applied here, but the
-                # margin guard band is (inflating the ellipsoid by `margin` r.l.u.).
-                a = self._inflate_isotropic(q_shape / (s * s), self.margin)
-                self._punch_one(
-                    vol, keep, center, self._ellipsoid_bounding_radii(a), 0.0,
-                    center_hkl=peak_rec.center_hkl,
-                    h_guard=self._h_guard_for(peak_rec),
-                    shape_matrix=a,
-                )
-                continue
+
+            # (1) Covariance fit (Phase 3, either frame): tilted ellipsoid with the
+            #     φ-tail and margin folded into the matrix.
             if peak_rec.shape_hkl is not None:
-                # Phase 3 covariance fit: one tilted ellipsoid with the φ-tail and
-                # margin folded into the shape matrix (no union of two ellipsoids).
-                a = peak_rec.shape_hkl / (s * s)
-                a = self._fold_phi_tail(
-                    vol, a, peak_rec.center_hkl,
-                    max(0.0, float(self.phi_tail_hkl)) * s)
-                a = self._inflate_isotropic(a, self.margin)
+                a = self._inflate_isotropic(
+                    self._fold_phi_tail(
+                        vol, peak_rec.shape_hkl / (s * s), peak_rec.center_hkl,
+                        max(0.0, float(self.phi_tail_hkl)) * s),
+                    self.margin)
                 self._punch_one(
                     vol, keep, center, self._ellipsoid_bounding_radii(a), 0.0,
                     center_hkl=peak_rec.center_hkl,
-                    h_guard=self._h_guard_for(peak_rec),
-                    shape_matrix=a,
-                )
+                    h_guard=self._h_guard_for(peak_rec), shape_matrix=a)
                 continue
-            rh_base, rk_base, rl_base = peak_rec.radii_hkl or (rh0, rk0, rl0)
+
+            # (2) Q-mode with no per-peak fit (search peaks / shape-fit off): the
+            #     fixed Q base ellipsoid + folded φ-tail + margin.
+            if q_shape is not None and peak_rec.radii_hkl is None:
+                a = self._inflate_isotropic(
+                    self._fold_phi_tail(
+                        vol, q_shape / (s * s), peak_rec.center_hkl,
+                        max(0.0, float(self.phi_tail_hkl)) * s),
+                    self.margin)
+                self._punch_one(
+                    vol, keep, center, self._ellipsoid_bounding_radii(a), 0.0,
+                    center_hkl=peak_rec.center_hkl,
+                    h_guard=self._h_guard_for(peak_rec), shape_matrix=a)
+                continue
+
+            # (3) Radii path: HKL adaptive, or Q-mode diagonal fit floored by the Q
+            #     base — axis-aligned ellipsoid with the union φ-tail.
+            rh_base, rk_base, rl_base = peak_rec.radii_hkl or r_base
             radii = (
                 rh_base * s + self.margin,
                 rk_base * s + self.margin,
