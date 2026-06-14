@@ -295,8 +295,8 @@ def test_build_params_punch_overrides():
     assert defaults.mode == base.mode
     assert defaults.punch_radii == base.punch_radii
     assert defaults.phi_tail_hkl == base.phi_tail_hkl
-    # the Q-space frame defaults to legacy "hkl"
-    assert defaults.punch_frame == "hkl"
+    # the Q-space frame is the default (since Phase 4)
+    assert defaults.punch_frame == "q"
 
 
 def test_build_params_qspace_punch_overrides():
@@ -313,17 +313,17 @@ def test_build_params_qspace_punch_overrides():
     assert iso.punch_frame == "q"
     assert iso.punch_q_radius == 0.1
 
-    # per-axis: a and c overridden, b falls back to the (0.1) seed default
+    # per-axis: a and c overridden, b falls back to the default punch_q_radii
     anis = build_params(PipelineRunRequest(
         dataset_id="x",
         params=StageParamsIn(punch_frame="q",
                              punch_q_radius_a=0.08, punch_q_radius_c=0.2),
     )).punch
-    assert anis.punch_q_radii == (0.08, 0.1, 0.2)
+    assert anis.punch_q_radii == (0.08, base.punch_q_radii[1], 0.2)
 
-    # untouched by default
-    assert base.punch_frame == "hkl"
-    assert base.punch_q_radius is None and base.punch_q_radii is None
+    # the Q frame is the default since Phase 4
+    assert base.punch_frame == "q"
+    assert base.punch_q_radii == (0.097, 0.072, 0.115)
 
     # Phase 3 covariance-fit toggle
     cov = build_params(PipelineRunRequest(

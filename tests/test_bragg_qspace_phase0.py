@@ -69,11 +69,13 @@ def _synthetic_vol() -> HKLVolume:
 # Group 1 — golden masters (freeze current behaviour)
 # ---------------------------------------------------------------------------
 
-# Captured from the current implementation on 2026-06-13.  If a future change is
-# *intended* to alter the punch geometry, regenerate these deliberately.
-_GOLDEN_DEFAULT_PUNCHED = 821
+# Captured on 2026-06-13; regenerated 2026-06-14 when the production default
+# flipped to the Q-anisotropic-adaptive punch (ROADMAP Phase 6 / Phase 4, after
+# the ΔPDF A/B validated it, r=0.9998).  If a future change is *intended* to
+# alter the default punch geometry, regenerate these deliberately.
+_GOLDEN_DEFAULT_PUNCHED = 824
 _GOLDEN_DEFAULT_KEEP_SHA256 = (
-    "7280be18cfc534f88c22a0b1a316582d29677e2ed1545ec1fbcd29de03b6732d"
+    "01b70db783f47a6f9a600d6ce77aa54817b8908135eb71d236b884da371e280d"
 )
 _GOLDEN_INTEGER_ONLY_PUNCHED = 57
 _GOLDEN_SEARCH_ONLY_PUNCHED = 76

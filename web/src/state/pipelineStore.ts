@@ -85,7 +85,7 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
   punchMinI: "",
   punchMethod: "ellipsoid",
   punchMode: "",
-  punchFrame: "hkl",
+  punchFrame: "q", // Q-space is the default punch frame (Phase 4)
   punchQRadius: "",
   punchFitCovariance: false,
   punchRH: "",
@@ -121,10 +121,11 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
     if (s.punchRL) params.punch_radius_l = Number(s.punchRL);
     if (s.punchMargin) params.punch_margin = Number(s.punchMargin);
     if (s.punchPhiTail) params.punch_phi_tail_hkl = Number(s.punchPhiTail);
-    if (s.punchFrame === "q") {
-      params.punch_frame = "q";
-      if (s.punchQRadius) params.punch_q_radius = Number(s.punchQRadius);
-    }
+    // Always send the frame so the dropdown selection is honoured regardless of
+    // the backend default (which is now "q").
+    params.punch_frame = s.punchFrame;
+    if (s.punchFrame === "q" && s.punchQRadius)
+      params.punch_q_radius = Number(s.punchQRadius);
     if (s.punchFitCovariance) params.punch_fit_covariance = true;
     if (s.backfillMethod) params.backfill_method = s.backfillMethod;
     if (s.flattenEstimator) params.flatten_estimator = s.flattenEstimator;

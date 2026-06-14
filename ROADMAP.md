@@ -203,7 +203,7 @@ Two siblings to the ΔPDF path, added 2026-06-08:
 Open: decide "Phase B" — subtract the sharp core but keep the broad diffuse at
 the satellites, rather than punching them.
 
-## Phase 6 — Q-Space Bragg Punch  In Progress (Phases 0–3 done; 4 validating)
+## Phase 6 — Q-Space Bragg Punch  Complete (Q is the default since Phase 4)
 
 Migrate the Bragg punch ([`src/ndiff/analysis/bragg.py`](src/ndiff/analysis/bragg.py))
 from HKL-axis radii to a **Q-space resolution-ellipsoid** described by one
@@ -232,7 +232,7 @@ Design — one kernel, multiple shape specs:
 | 1 | Internal quadratic-form kernel routed through `A=diag(1/r²)`; prove equivalence | **done** |
 | 2 | Opt-in Q-space spec (`punch_frame`, `punch_q_radius`, `punch_q_radii`); default = legacy | **done** |
 | 3 | Unify φ-tail + shape-fit into `M` (fitter returns a 3×3 covariance) | **done** |
-| 4 | Validate HKL vs Q on real data, make Q-mode adaptive, then flip the default | **in progress** |
+| 4 | Validate HKL vs Q on real data, make Q-mode adaptive, then flip the default | **done** |
 
 Phase 0 (done): [`tests/test_bragg_qspace_phase0.py`](tests/test_bragg_qspace_phase0.py)
 — 9 tests. Golden masters freeze the current default `punch_bragg` keep-mask
@@ -286,9 +286,21 @@ the per-peak fit to the Q resolution, in Å⁻¹; the diagonal fit then punches 
 the same radii path as HKL). Production HKL vs Q-anisotropic-adaptive default now
 agrees at **Jaccard 0.89–0.93**; the residual ~8% is search peaks (Q
 metric-ellipsoid + folded φ-tail vs HKL axis-aligned + union φ-tail), a frame
-difference rather than a regression. **Default is still HKL** (golden masters
-unchanged). Remaining gate before flipping the default: a **ΔPDF-level A/B** to
-confirm the ~8% punch difference does not move real-space correlation features.
+difference rather than a regression. The final gate — a **ΔPDF-level A/B** through
+the full pipeline ([`examples/compare_delta_pdf_frames.py`](examples/compare_delta_pdf_frames.py)) —
+passed cleanly on 22 K: HKL vs Q-adaptive ΔPDF maps agree at **Pearson r =
+0.9998**, relative RMS 1.9%, max difference 0.06% of the peak (the difference is
+invisible at the data colour scale). The slice-level check
+([`examples/plot_punch_slices.py`](examples/plot_punch_slices.py)) confirmed the
+two punches differ only at Bragg-peak edges and leave the H=1/3 diffuse plane
+untouched.
+
+**The default is now Q** (`PunchParams.punch_frame="q"`,
+`punch_q_radii=(0.097, 0.072, 0.115)` Å⁻¹ ≈ the old HKL footprint × b*): the punch
+footprint is a lattice-/temperature-portable reciprocal-Å⁻¹ resolution floor,
+still modulated by the per-peak fit + φ-tail. The Phase 0 golden master was
+regenerated to freeze the new default; set `punch_frame="hkl"` to restore the
+legacy rlu footprint.
 
 Two findings now encoded as tests / constraints:
 

@@ -140,12 +140,15 @@ class PunchParams:
         0.15, 0.50, 1.00,
     )
     incident_beam_sphere_radius_hkl: float | None = None
-    # Q-space punch (opt-in; ROADMAP Phase 6).  Default "hkl" keeps the radii
-    # path above; "q" describes the Bragg punch in reciprocal Å^-1 (isotropic
-    # punch_q_radius, or per-a*,b*,c* punch_q_radii).
-    punch_frame: str = "hkl"
+    # Q-space punch (ROADMAP Phase 6, default since Phase 4).  The punch footprint
+    # is the reciprocal-Å⁻¹ resolution floor (per a*,b*,c*); the per-peak fit +
+    # φ-tail still modulate it (adaptive), so this reproduces the legacy HKL punch
+    # while being lattice/temperature-portable.  ΔPDF A/B vs the old HKL default:
+    # r=0.9998 (22K).  Set punch_frame="hkl" + punch_radii to restore the legacy
+    # rlu footprint; punch_q_radii ≈ HKL radii (0.09,0.12,0.45) × b*(22K).
+    punch_frame: str = "q"
     punch_q_radius: float | None = None
-    punch_q_radii: tuple[float, float, float] | None = None
+    punch_q_radii: tuple[float, float, float] | None = (0.097, 0.072, 0.115)
 
 
 @dataclass

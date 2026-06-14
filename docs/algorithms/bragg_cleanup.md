@@ -155,12 +155,14 @@ subsumes all current shapes and the Q-space upgrade:
 | Q per-axis radii `(ra,rb,rc)` (Å⁻¹) | `Pᵀ diag(1/r²) P`, `P = ê·UB` |
 | fitted resolution ellipsoid (Phase 3) | per-peak 3×3 `A` from the covariance (φ-tail = rank-1 mod) |
 
-**Using the Q-space punch (opt-in).** Set `punch_frame="q"` and either
-`punch_q_radius` (isotropic, Å⁻¹) or `punch_q_radii` (along a*, b*, c*, Å⁻¹) on
-`PunchParams` / `BraggRemover`, or pick **Frame → Q-space (Å⁻¹)** in the web
-Run-pipeline panel. The Q radii are the **resolution floor** in Å⁻¹ (lattice- and
-temperature-independent). `punch_frame="hkl"` (default) keeps the radii path
-above, so existing configs and saved pipelines are unaffected.
+**The Q-space punch is the default** (`punch_frame="q"`,
+`punch_q_radii=(0.097, 0.072, 0.115)` Å⁻¹ ≈ the old HKL footprint × b*). The Q
+radii are the **resolution floor** in Å⁻¹ (lattice- and temperature-independent);
+set `punch_q_radius` for an isotropic floor instead, or `punch_frame="hkl"` +
+`punch_radii` to restore the legacy r.l.u. footprint. In the web Run-pipeline
+panel this is the **Frame → Q-space (Å⁻¹)** selector. The default was validated
+against the old HKL punch by a full-pipeline ΔPDF A/B (Pearson r = 0.9998 on
+22 K; see `examples/compare_delta_pdf_frames.py`).
 
 In Q-mode the punch is **adaptive**, not fixed: the per-peak shape-fit is floored
 to the Q resolution and then punches through the same mechanism as the HKL path

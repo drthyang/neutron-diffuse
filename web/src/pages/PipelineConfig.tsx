@@ -541,8 +541,11 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                 </Field>
               </div>
               <p className="config-note">
-                Lattice-independent: the punch is a true Q-sphere built from the UB
-                metric. The HKL half-radii below are ignored in this frame.
+                Default frame: the punch footprint is the reciprocal-Å⁻¹
+                resolution floor (lattice-independent, per a*/b*/c*), still
+                modulated by the per-peak fit. Leave r·Q blank for the default
+                anisotropic resolution; set it for an isotropic Q-sphere. The HKL
+                half-radii below are ignored in this frame.
               </p>
             </>
           ) : null}
