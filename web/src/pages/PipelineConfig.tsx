@@ -7,7 +7,7 @@ import { useEffect, useMemo, type ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { useDatasets } from "../api/hooks";
-import { Field, Switch } from "../components/ui";
+import { Field, HelpTip, Switch } from "../components/ui";
 import {
   STAGE_LABELS,
   STAGE_NO,
@@ -558,82 +558,93 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
           </div>
           {s.punchFrame === "q" ? (
             <>
-              <span className="config-sub-title">
-                Resolution floor along a*, b*, c* (Å⁻¹)
-              </span>
+              <div className="config-sub-row">
+                <span className="config-sub-title">
+                  Resolution floor (Å⁻¹)
+                </span>
+                <HelpTip>
+                  Punch half-radii along the reciprocal axes a*, b*, c*, in Å⁻¹ —
+                  a lattice- and temperature-independent resolution floor, still
+                  modulated by the per-peak fit. Leave blank to use the validated
+                  default (0.097, 0.072, 0.115).
+                </HelpTip>
+              </div>
               <div className="config-grid-3">
-                <Field label="r·a*">
+                <Field label={<>r<sub>a*</sub></>}>
                   <input
                     type="number"
                     step="0.005"
                     min="0"
                     placeholder="0.097"
                     value={s.punchQA}
-                    title="Punch half-radius along a* in reciprocal Å⁻¹"
+                    title="Punch half-radius along a* (Å⁻¹)"
                     onChange={(e) => patch({ punchQA: e.target.value })}
                   />
                 </Field>
-                <Field label="r·b*">
+                <Field label={<>r<sub>b*</sub></>}>
                   <input
                     type="number"
                     step="0.005"
                     min="0"
                     placeholder="0.072"
                     value={s.punchQB}
-                    title="Punch half-radius along b* in reciprocal Å⁻¹"
+                    title="Punch half-radius along b* (Å⁻¹)"
                     onChange={(e) => patch({ punchQB: e.target.value })}
                   />
                 </Field>
-                <Field label="r·c*">
+                <Field label={<>r<sub>c*</sub></>}>
                   <input
                     type="number"
                     step="0.005"
                     min="0"
                     placeholder="0.115"
                     value={s.punchQC}
-                    title="Punch half-radius along c* in reciprocal Å⁻¹"
+                    title="Punch half-radius along c* (Å⁻¹)"
                     onChange={(e) => patch({ punchQC: e.target.value })}
                   />
                 </Field>
               </div>
-              <p className="config-note">
-                The punch footprint in reciprocal Å⁻¹ — a lattice- and
-                temperature-independent resolution floor, still modulated by the
-                per-peak fit. Leave blank to use the validated default
-                (0.097, 0.072, 0.115).
-              </p>
             </>
           ) : (
             <>
-              <span className="config-sub-title">Ellipsoid half-radii (r.l.u.)</span>
+              <div className="config-sub-row">
+                <span className="config-sub-title">Ellipsoid half-radii (r.l.u.)</span>
+                <HelpTip>
+                  Punch half-radii along H, K, L in reciprocal-lattice units —
+                  the legacy fractional-coordinate footprint.
+                </HelpTip>
+              </div>
               <div className="config-grid-3">
-                <Field label="r·H">
+                <Field label={<>r<sub>H</sub></>}>
                   <input
                     type="number"
                     step="0.01"
                     min="0"
                     placeholder="0.09"
                     value={s.punchRH}
+                    title="Punch half-radius along H (r.l.u.)"
                     onChange={(e) => patch({ punchRH: e.target.value })}
                   />
                 </Field>
-                <Field label="r·K">
+                <Field label={<>r<sub>K</sub></>}>
                   <input
                     type="number"
                     step="0.01"
                     min="0"
                     placeholder="0.12"
                     value={s.punchRK}
+                    title="Punch half-radius along K (r.l.u.)"
                     onChange={(e) => patch({ punchRK: e.target.value })}
                   />
                 </Field>
-                <Field label="r·L">
+                <Field label={<>r<sub>L</sub></>}>
                   <input
                     type="number"
                     step="0.01"
                     min="0"
                     placeholder="0.45"
                     value={s.punchRL}
+                    title="Punch half-radius along L (r.l.u.)"
                     onChange={(e) => patch({ punchRL: e.target.value })}
                   />
                 </Field>
@@ -664,16 +675,18 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
               />
             </Field>
           </div>
-          <Switch
-            label="Fit resolution ellipsoid (tilted, covariance)"
-            checked={s.punchFitCovariance}
-            onChange={(v) => patch({ punchFitCovariance: v })}
-          />
-          <p className="config-note">
-            Fit a tilted 3×3 ellipsoid to each Bragg peak (following its real
-            orientation) and fold the φ-tail into it, instead of three axis-aligned
-            half-radii plus a separate tail.
-          </p>
+          <div className="switch-row">
+            <Switch
+              label="Fit resolution ellipsoid (tilted, covariance)"
+              checked={s.punchFitCovariance}
+              onChange={(v) => patch({ punchFitCovariance: v })}
+            />
+            <HelpTip>
+              Fit a tilted 3×3 ellipsoid to each Bragg peak (following its real
+              orientation) and fold the φ-tail into it, instead of three
+              axis-aligned half-radii plus a separate tail.
+            </HelpTip>
+          </div>
           <PunchShapeViz
             method={s.punchMethod}
             geom={punchGeom}

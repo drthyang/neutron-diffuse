@@ -887,6 +887,89 @@ input[type="range"]::-moz-range-track {
   grid-template-columns: 1fr 1fr 1fr;
   gap: 10px;
 }
+/* header row with an inline help icon */
+.config-sub-row,
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Subscripts in field labels. Keep the literal case (text-transform none) so the
+   reciprocal axes stay lowercase a-star, b-star, c-star even though the label
+   itself is uppercased. */
+.field-label sub {
+  font-size: 0.8em;
+  text-transform: none;
+}
+
+/* help-tip "?" icon + hover/focus bubble */
+.helptip {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+  outline: none;
+}
+.helptip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  color: var(--text-3);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease;
+}
+.helptip:hover .helptip-icon,
+.helptip:focus .helptip-icon {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.helptip-bubble {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 232px;
+  max-width: 232px;
+  padding: 8px 10px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: normal;
+  z-index: 30;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  transition: opacity 120ms ease;
+}
+.helptip-bubble::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--border-strong);
+}
+.helptip:hover .helptip-bubble,
+.helptip:focus .helptip-bubble {
+  opacity: 1;
+  visibility: visible;
+}
 
 /* Bragg-punch footprint illustration (pie analogue for the punch stage) */
 .punch-viz {

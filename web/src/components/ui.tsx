@@ -139,6 +139,20 @@ export function Switch({
   );
 }
 
+// A small "?" help icon that reveals a description bubble on hover / focus.
+export function HelpTip({ children }: { children: ReactNode }) {
+  return (
+    <span className="helptip" tabIndex={0}>
+      <span className="helptip-icon" aria-hidden="true">
+        ?
+      </span>
+      <span className="helptip-bubble" role="tooltip">
+        {children}
+      </span>
+    </span>
+  );
+}
+
 export function Segmented({
   options,
   value,
