@@ -850,8 +850,9 @@ class BraggRemover:
             if q_shape is not None:
                 # Q-space: scaling the radii by s scales the matrix by 1/s²; the
                 # local window is sized from the matrix's HKL bounding box.  The
-                # φ-tail and per-peak HKL shape-fit are not applied here.
-                a = q_shape / (s * s)
+                # φ-tail and per-peak HKL shape-fit are not applied here, but the
+                # margin guard band is (inflating the ellipsoid by `margin` r.l.u.).
+                a = self._inflate_isotropic(q_shape / (s * s), self.margin)
                 self._punch_one(
                     vol, keep, center, self._ellipsoid_bounding_radii(a), 0.0,
                     center_hkl=peak_rec.center_hkl,

@@ -129,6 +129,17 @@ def test_q_isotropic_equals_equivalent_hkl_on_diagonal_metric():
     assert int(disagree.sum()) <= 0.05 * int((~keep_q).sum()) + 5
 
 
+def test_q_punch_honors_margin():
+    """The margin guard band inflates the Q-space hole too (it was silently
+    ignored before — a Q-mode/HKL-mode inconsistency)."""
+    vol = _single_peak_vol(UB_22K, center=(1.0, 0.0, 0.0))
+    keep0 = _q_remover(punch_frame="q", punch_q_radius=0.10,
+                       margin=0.0).build_mask(vol)
+    keepm = _q_remover(punch_frame="q", punch_q_radius=0.10,
+                       margin=0.05).build_mask(vol)
+    assert int((~keepm).sum()) > int((~keep0).sum())
+
+
 def test_q_per_axis_radii_punch_further_along_softer_axis():
     """Per-axis Q radii give independent control: a larger c*-axis radius punches
     further along L than the a*-axis radius does along H."""
