@@ -855,6 +855,43 @@ input[type="range"]::-moz-range-track {
   font-size: 15px;
   font-weight: 700;
 }
+/* parametric ring viz: faint radial underlay = continuous Ring(|Q|) */
+.pring-underlay {
+  stroke: var(--surface-3);
+  opacity: 0.5;
+}
+/* radial line-shape Ring(|Q|) curve */
+.rprof {
+  display: block;
+  width: 100%;
+  max-width: 220px;
+  margin: 2px auto 0;
+}
+.rprof-line {
+  stroke: var(--accent);
+  stroke-width: 1.6;
+}
+.rprof-fill {
+  fill: var(--accent);
+  opacity: 0.16;
+}
+.rprof-win {
+  fill: var(--amber);
+  opacity: 0.18;
+}
+.rprof-axis {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.rprof-tick {
+  stroke: var(--text-3);
+  stroke-width: 1;
+}
+.rprof-lbl {
+  fill: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 8px;
+}
 .ring-viz-cap {
   margin-top: 6px;
   text-align: center;

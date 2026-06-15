@@ -47,6 +47,7 @@ import numpy as np
 
 import ndiff
 from ndiff.preprocessing import (
+    ParametricRingModel,
     PatchedRadialRingModel,
     azimuthal_sampling_mask,
     confirm_ring_shells_across_h,
@@ -223,27 +224,53 @@ if confirm:
 # the per-slice profiles never leak between stack planes).  All knobs at class
 # defaults, plus the cross-stack confirmed shells and per-shell amplitude
 # ceilings.
-model = PatchedRadialRingModel(
-    plane=slice_cfg.plane,
-    q_step=float(env_default("Q_STEP", "0.02")),
-    n_patches=int(env_default("N_PATCHES", "36")),
-    n_fourier=int(env_default("N_FOURIER", "8")),
-    profile_method=env_default("PROFILE_METHOD", "median"),
-    texture_q_smooth=float(env_default("TEXTURE_Q_SMOOTH", "0.0")),
-    texture_ridge=float(env_default("TEXTURE_RIDGE", "0.05")),
-    allowed_ring_centers=ring_centers,
-    allowed_ring_halfwidths=ring_halfwidths,
-    allowed_ring_ceilings=ring_ceilings,
-)
-print(f"model: preset={preset_name} profile={model.profile_method} "
-      f"n_fourier={model.n_fourier} "
-      f"q_step={model.q_step} q_smooth={model.texture_q_smooth} "
-      f"ridge={model.texture_ridge} baseline={model.baseline_method} "
-      f"adaptive_width={model.adaptive_ring_width} "
-      f"slice_axis={slice_cfg.axis_name} plane={slice_cfg.plane} "
-      f"confirmed_shells={'none' if ring_centers is None else ring_centers.size} "
-      f"amp_cap={amp_cap}",
-      flush=True)
+ring_model_name = env_default("RING_MODEL", "patched").strip().lower()
+model: PatchedRadialRingModel | ParametricRingModel
+if ring_model_name == "parametric":
+    model = ParametricRingModel(
+        plane=slice_cfg.plane,
+        q_step=float(env_default("Q_STEP", "0.02")),
+        n_fourier=int(env_default("N_FOURIER", "8")),
+        profile_method=env_default("PROFILE_METHOD", "median"),
+        texture_ridge=float(env_default("TEXTURE_RIDGE", "0.05")),
+        ring_width=float(env_default("RING_WIDTH", "0.24")),
+        eta0=float(env_default("RING_ETA0", "0.5")),
+        radial_mode=env_default("RADIAL_MODE", "rolling"),
+        roll_step=float(env_default("ROLL_STEP", "0.04")),
+        allowed_ring_centers=ring_centers,
+        allowed_ring_halfwidths=ring_halfwidths,
+        allowed_ring_ceilings=ring_ceilings,
+    )
+    print(f"model: parametric:{model.radial_mode} preset={preset_name} "
+          f"profile={model.profile_method} n_fourier={model.n_fourier} "
+          f"q_step={model.q_step} ridge={model.texture_ridge} "
+          f"ring_width={model.ring_width} roll_step={model.roll_step} "
+          f"eta0={model.eta0} slice_axis={slice_cfg.axis_name} "
+          f"plane={slice_cfg.plane} "
+          f"confirmed_shells={'none' if ring_centers is None else ring_centers.size} "
+          f"amp_cap={amp_cap}", flush=True)
+else:
+    model = PatchedRadialRingModel(
+        plane=slice_cfg.plane,
+        q_step=float(env_default("Q_STEP", "0.02")),
+        n_patches=int(env_default("N_PATCHES", "36")),
+        n_fourier=int(env_default("N_FOURIER", "8")),
+        profile_method=env_default("PROFILE_METHOD", "median"),
+        texture_q_smooth=float(env_default("TEXTURE_Q_SMOOTH", "0.0")),
+        texture_ridge=float(env_default("TEXTURE_RIDGE", "0.05")),
+        allowed_ring_centers=ring_centers,
+        allowed_ring_halfwidths=ring_halfwidths,
+        allowed_ring_ceilings=ring_ceilings,
+    )
+    print(f"model: preset={preset_name} profile={model.profile_method} "
+          f"n_fourier={model.n_fourier} "
+          f"q_step={model.q_step} q_smooth={model.texture_q_smooth} "
+          f"ridge={model.texture_ridge} baseline={model.baseline_method} "
+          f"adaptive_width={model.adaptive_ring_width} "
+          f"slice_axis={slice_cfg.axis_name} plane={slice_cfg.plane} "
+          f"confirmed_shells={'none' if ring_centers is None else ring_centers.size} "
+          f"amp_cap={amp_cap}",
+          flush=True)
 
 res_data = np.empty_like(vol.data)         # data - rings, per voxel
 out_mask = vol.mask.copy()                 # propagate the sparse-azimuth drops

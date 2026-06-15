@@ -68,6 +68,11 @@ export interface StageParamsIn {
   rings_n_patches?: number;
   rings_n_fourier?: number;
   rings_slice_axis?: string;
+  // "patched" (per-patch) | "parametric" (separable Ring(|Q|) × per-shell texture)
+  rings_model?: string;
+  rings_ring_width?: number;
+  // "rolling" (continuous Ring(|Q|)) | "peaks" (discrete pseudo-Voigt)
+  rings_radial_mode?: string;
   punch_min_intensity?: number;
   punch_search_n_mad?: number;
   punch_mode?: string;

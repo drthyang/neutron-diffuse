@@ -34,9 +34,12 @@ interface PipelineConfig {
   datasetId: string;
   flatten: boolean;
   force: boolean;
+  ringModel: string; // "patched" | "parametric"
+  ringRadialMode: string; // parametric: "rolling" | "peaks"
   ringNPatches: string;
   ringNFourier: string;
   ringSliceAxis: string;
+  ringWidth: string; // parametric: ring width / rolling window (Å⁻¹)
   punchMinI: string;
   punchMethod: string;
   punchMode: string;
@@ -82,9 +85,12 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
   datasetId: "",
   flatten: true,
   force: false,
+  ringModel: "patched",
+  ringRadialMode: "rolling",
   ringNPatches: "",
   ringNFourier: "",
   ringSliceAxis: "H",
+  ringWidth: "",
   punchMinI: "",
   punchMethod: "ellipsoid",
   punchMode: "",
@@ -116,9 +122,14 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
     set({ events: [], terminal: null, running: true, jobId: null });
 
     const params: StageParamsIn = {};
+    if (s.ringModel) params.rings_model = s.ringModel;
     if (s.ringNPatches) params.rings_n_patches = Number(s.ringNPatches);
     if (s.ringNFourier) params.rings_n_fourier = Number(s.ringNFourier);
     if (s.ringSliceAxis) params.rings_slice_axis = s.ringSliceAxis;
+    if (s.ringModel === "parametric") {
+      params.rings_radial_mode = s.ringRadialMode;
+      if (s.ringWidth) params.rings_ring_width = Number(s.ringWidth);
+    }
     if (s.punchMinI) params.punch_min_intensity = Number(s.punchMinI);
     if (s.punchMode) params.punch_mode = s.punchMode;
     if (s.punchRH) params.punch_radius_h = Number(s.punchRH);

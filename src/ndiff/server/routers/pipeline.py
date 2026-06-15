@@ -31,6 +31,12 @@ def build_params(req: PipelineRunRequest) -> PipelineParams:
         p.rings = dataclasses.replace(p.rings, n_fourier=sp.rings_n_fourier)
     if sp.rings_slice_axis is not None:
         p.rings = dataclasses.replace(p.rings, slice_axis=sp.rings_slice_axis)
+    if sp.rings_model is not None:
+        p.rings = dataclasses.replace(p.rings, ring_model=sp.rings_model)
+    if sp.rings_ring_width is not None:
+        p.rings = dataclasses.replace(p.rings, ring_width=sp.rings_ring_width)
+    if sp.rings_radial_mode is not None:
+        p.rings = dataclasses.replace(p.rings, ring_radial_mode=sp.rings_radial_mode)
     if sp.punch_min_intensity is not None:
         p.punch = dataclasses.replace(p.punch, min_intensity=sp.punch_min_intensity)
     if sp.punch_search_n_mad is not None:

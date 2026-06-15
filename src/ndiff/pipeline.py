@@ -35,6 +35,7 @@ import ndiff
 from ndiff.analysis import BraggRemover, DeltaPDF, backfill_bragg, compute_delta_pdf
 from ndiff.core import HKLVolume
 from ndiff.preprocessing import (
+    ParametricRingModel,
     PatchedRadialRingModel,
     azimuthal_sampling_mask,
     confirm_ring_shells_across_h,
@@ -85,7 +86,8 @@ def _emit(progress: ProgressFn | None, stage: str, status: Status,
 # ---------------------------------------------------------------------------
 @dataclass
 class RingParams:
-    """Powder-ring removal (per-slice ``PatchedRadialRingModel``)."""
+    """Powder-ring removal (per-slice ``PatchedRadialRingModel`` or
+    ``ParametricRingModel``, selected by ``ring_model``)."""
 
     q_min: float = 1.5
     q_max: float = 10.5
@@ -98,6 +100,16 @@ class RingParams:
     texture_ridge: float = 0.08
     ring_amp_cap: float = 3.0       # per-shell amplitude ceiling × cross-stack norm
     confirm_rings: bool = True      # confirm real |Q| shells across the stack axis
+    # "patched" (default, non-parametric per-patch) | "parametric" (separable
+    # Ring(|Q|) × per-shell Fourier texture — binning-free azimuthal LS, so the
+    # statistics don't vary with |Q|).
+    ring_model: str = "patched"
+    ring_width: float = 0.24        # parametric: ring width / rolling window (Å⁻¹)
+    ring_eta0: float = 0.5          # parametric peaks: initial pseudo-Voigt Lorentzian frac
+    # parametric radial model: "rolling" (continuous Ring(|Q|), thick window swept
+    # Qmin→Qmax) | "peaks" (discrete pseudo-Voigt rings)
+    ring_radial_mode: str = "rolling"
+    ring_roll_step: float = 0.04    # parametric rolling: |Q| spacing of window centres
 
 
 @dataclass
@@ -259,9 +271,11 @@ def remove_rings(vol: HKLVolume, params: RingParams | None = None, *,
     q_range = (p.q_min, p.q_max)
     axis_values = getattr(vol, cfg.axis_attr)
 
+    model_tag = (f"{p.ring_model}:{p.ring_radial_mode}"
+                 if p.ring_model.strip().lower() == "parametric" else p.ring_model)
     _emit(progress, "rings", "start", 0.0,
-          f"ring removal: {axis_values.size} {cfg.axis_name} planes "
-          f"(plane={cfg.plane}, |Q| {q_range})")
+          f"ring removal [{model_tag}]: {axis_values.size} {cfg.axis_name} "
+          f"planes (plane={cfg.plane}, |Q| {q_range})")
 
     ring_centers = ring_halfwidths = ring_ceilings = None
     if p.confirm_rings:
@@ -273,18 +287,35 @@ def remove_rings(vol: HKLVolume, params: RingParams | None = None, *,
               f"confirmed {ring_centers.size} ring shells across "
               f"{cfg.axis_name} (amp cap {p.ring_amp_cap}×)")
 
-    model = PatchedRadialRingModel(
-        plane=cfg.plane,
-        q_step=p.q_step,
-        n_patches=p.n_patches,
-        n_fourier=p.n_fourier,
-        profile_method=p.profile_method,
-        texture_q_smooth=p.texture_q_smooth,
-        texture_ridge=p.texture_ridge,
-        allowed_ring_centers=ring_centers,
-        allowed_ring_halfwidths=ring_halfwidths,
-        allowed_ring_ceilings=ring_ceilings,
-    )
+    model: PatchedRadialRingModel | ParametricRingModel
+    if p.ring_model.strip().lower() == "parametric":
+        model = ParametricRingModel(
+            plane=cfg.plane,
+            q_step=p.q_step,
+            n_fourier=p.n_fourier,
+            profile_method=p.profile_method,
+            texture_ridge=p.texture_ridge,
+            ring_width=p.ring_width,
+            eta0=p.ring_eta0,
+            radial_mode=p.ring_radial_mode,
+            roll_step=p.ring_roll_step,
+            allowed_ring_centers=ring_centers,
+            allowed_ring_halfwidths=ring_halfwidths,
+            allowed_ring_ceilings=ring_ceilings,
+        )
+    else:
+        model = PatchedRadialRingModel(
+            plane=cfg.plane,
+            q_step=p.q_step,
+            n_patches=p.n_patches,
+            n_fourier=p.n_fourier,
+            profile_method=p.profile_method,
+            texture_q_smooth=p.texture_q_smooth,
+            texture_ridge=p.texture_ridge,
+            allowed_ring_centers=ring_centers,
+            allowed_ring_halfwidths=ring_halfwidths,
+            allowed_ring_ceilings=ring_ceilings,
+        )
 
     res_data = np.empty_like(vol.data)
     out_mask = vol.mask.copy()
@@ -305,8 +336,8 @@ def remove_rings(vol: HKLVolume, params: RingParams | None = None, *,
         _assign_plane(out_mask, cfg, ip, _take_plane(keep, cfg, 0))
 
         try:
-            prof = model.fit(src, q_range=q_range)
-            _, I_ring = model.subtract(src, prof)
+            model.fit(src, q_range=q_range)        # caches the per-plane fit
+            _, I_ring = model.subtract(src)         # uses the cached fit
         except Exception as exc:  # numerical edge case on a plane — leave as-is
             _assign_plane(res_data, cfg, ip, _take_plane(sl.data, cfg, 0))
             n_skipped += 1

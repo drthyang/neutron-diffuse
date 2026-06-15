@@ -261,6 +261,18 @@ def test_build_params_ring_overrides():
     assert overridden.rings.n_patches == 48
     assert overridden.rings.n_fourier == 10
     assert overridden.rings.slice_axis == "L"
+    # ring model defaults to the patched estimator; the parametric one is opt-in
+    assert defaults.rings.ring_model == "patched"
+    parametric = build_params(PipelineRunRequest(
+        dataset_id="x",
+        params=StageParamsIn(rings_model="parametric", rings_ring_width=0.3,
+                             rings_radial_mode="peaks"),
+    ))
+    assert parametric.rings.ring_model == "parametric"
+    assert parametric.rings.ring_width == 0.3
+    assert parametric.rings.ring_radial_mode == "peaks"
+    # the parametric radial model defaults to the continuous rolling sweep
+    assert defaults.rings.ring_radial_mode == "rolling"
     # an unrelated stage keeps its default
     from ndiff.pipeline import PunchParams
     assert overridden.punch.min_intensity == PunchParams().min_intensity

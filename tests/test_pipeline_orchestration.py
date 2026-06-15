@@ -66,6 +66,44 @@ def test_pdf_input_is_backfilled_when_flatten_disabled(tmp_path):
     assert paths.pdf_input == paths.backfilled
 
 
+def _ring_vol_3d(shape=(5, 41, 41), ring_q=3.0, ring_fwhm=0.14, seed=0):
+    """3-D volume with a textured powder ring in each 0kl plane (slice_axis='H')."""
+    from ndiff.preprocessing.parametric_ring import _pseudo_voigt
+
+    rng = np.random.default_rng(seed)
+    vol = HKLVolume.from_arrays(
+        np.ones(shape), (-2, 2), (-4, 4), (-4, 4), ub_matrix=UB)
+    q = vol.q_magnitude()
+    _, K, L = vol.hkl_grid()
+    Q = np.stack([np.zeros_like(K), K, L], axis=-1) @ UB.T
+    phi = np.arctan2(Q[..., 2], Q[..., 1])
+    diffuse = 1.0 + 0.2 * np.cos(np.pi * K) * np.cos(np.pi * L)
+    ring = (1.0 + 0.4 * np.cos(2 * phi)) * 3.0 * _pseudo_voigt(q, ring_q, ring_fwhm, 0.5)
+    data = diffuse + ring + rng.normal(0, 0.02, shape)
+    return HKLVolume.from_arrays(
+        data, (-2, 2), (-4, 4), (-4, 4), ub_matrix=UB), q
+
+
+def test_remove_rings_parametric_runs_and_suppresses_ring():
+    """The ring_model='parametric' branch runs through the per-slice 3-D driver
+    and subtracts the planted ring while preserving the off-ring diffuse."""
+    vol, q = _ring_vol_3d()
+    params = pipeline.RingParams(
+        ring_model="parametric", slice_axis="H", q_min=1.0, q_max=8.0,
+        confirm_rings=False)
+    out = pipeline.remove_rings(vol, params)
+
+    assert out.data.shape == vol.data.shape
+    assert np.isfinite(out.data).all()
+
+    on_lo, on_hi = 2.9, 3.1
+    base = float(np.median(vol.data[(q > 1.3) & (q < 1.9)]))
+    before = float(np.median(vol.data[(q > on_lo) & (q < on_hi)])) - base
+    after = float(np.median(out.data[(q > on_lo) & (q < on_hi)])) - base
+    assert before > 0.3
+    assert after < 0.4 * before
+
+
 def test_transform_config_string_format():
     cfg = pipeline.delta_pdf_transform_config(
         pipeline.DeltaPdfParams(apodization="gaussian", gaussian_sigma=0.4,

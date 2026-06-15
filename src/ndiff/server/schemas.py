@@ -55,6 +55,12 @@ class StageParamsIn(BaseModel):
     rings_n_patches: int | None = None
     rings_n_fourier: int | None = None
     rings_slice_axis: str | None = None
+    # "patched" (non-parametric per-patch) | "parametric" (separable Ring(|Q|) ×
+    # per-shell Fourier texture); rings_ring_width is the ring-width / rolling
+    # window (Å⁻¹); rings_radial_mode is "rolling" (continuous) | "peaks".
+    rings_model: str | None = None
+    rings_ring_width: float | None = None
+    rings_radial_mode: str | None = None
     punch_min_intensity: float | None = None
     punch_search_n_mad: float | None = None
     punch_mode: str | None = None
