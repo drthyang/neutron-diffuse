@@ -241,3 +241,90 @@ def test_rolling_near_zero_on_flat_noise():
     _, I_ring = model.subtract(vol)
     # no real ring → the continuous fit removes only noise-level intensity
     assert float(np.median(np.abs(I_ring))) < 0.05
+
+
+# ---------------------------------------------------------------------------
+# adaptive non-separable radial shape: q0(φ), fwhm(φ)
+# ---------------------------------------------------------------------------
+def _phi_width_ring_vol(N=121, q0=2.6, f0=0.12, f1=0.06, eta=0.4, seed=0,
+                        const=False):
+    """hk slice with one ring at fixed |Q| whose WIDTH varies azimuthally:
+    fwhm(φ) = f0 + f1·cos(2φ)  (or constant f0 when ``const``)."""
+    from ndiff.preprocessing.parametric_ring import _pseudo_voigt_phi
+    rng = np.random.default_rng(seed)
+    h = np.linspace(-4, 4, N)
+    ub = 2 * np.pi * np.eye(3) / 4.0
+    shape = (N, N, 1)
+    base = HKLVolume.from_arrays(np.ones(shape), (h[0], h[-1]), (h[0], h[-1]),
+                                 (0, 0), ub_matrix=ub)
+    q = base.q_magnitude()
+    H, K, _ = base.hkl_grid()
+    phi = np.arctan2(K, H)
+    fwhm = np.full_like(q, f0) if const else (f0 + f1 * np.cos(2 * phi))
+    ring = 3.0 * _pseudo_voigt_phi(q, np.full_like(q, q0), fwhm, eta)
+    data = 1.0 + ring + rng.normal(0, 0.02, shape)
+    return HKLVolume.from_arrays(data, (h[0], h[-1]), (h[0], h[-1]), (0, 0),
+                                 ub_matrix=ub)
+
+
+def _shell_inhomogeneity(vol_out, q0=2.6, w=0.12, nsec=8):
+    q = vol_out.q_magnitude()
+    H, K, _ = vol_out.hkl_grid()
+    phi = np.arctan2(K, H)
+    on = np.abs(q - q0) <= w
+    edges = np.linspace(-np.pi, np.pi, nsec + 1)
+    sec = np.clip(np.digitize(phi[on], edges) - 1, 0, nsec - 1)
+    rv = vol_out.data[on]
+    prof = [np.median(rv[sec == s]) for s in range(nsec) if np.any(sec == s)]
+    return float(np.std(prof))
+
+
+def test_adaptive_radial_harmonics_accepted_for_phi_dependent_width():
+    """A ring whose width varies with φ: the adaptive model accepts q0(φ)/fwhm(φ)
+    and leaves a more uniform (less azimuthally-structured) residual than the
+    separable model with a single shared width."""
+    vol = _phi_width_ring_vol(const=False)
+    common = dict(plane="hk0", q_step=0.03, radial_mode="peaks",
+                  allowed_ring_centers=np.array([2.6]),
+                  allowed_ring_halfwidths=np.array([0.12]),
+                  radial_n_fourier=2, radial_harmonic_sectors=8,
+                  radial_harmonic_min_voxels_per_sector=8)
+    sep = ParametricRingModel(radial_harmonics=False, **common)
+    sep.fit(vol, q_range=(1.0, 4.0))
+    out_sep, _ = sep.subtract(vol)
+
+    ns = ParametricRingModel(radial_harmonics=True,
+                             radial_harmonic_accept_margin=0.02, **common)
+    fitted = ns.fit(vol, q_range=(1.0, 4.0))
+    out_ns, _ = ns.subtract(vol)
+
+    # the harmonics were accepted for this ring
+    assert fitted.rings[0].fwhm_coeffs is not None
+    # and they reduce the azimuthal residual structure
+    assert _shell_inhomogeneity(out_ns) < _shell_inhomogeneity(out_sep)
+
+
+def test_adaptive_radial_harmonics_rejected_for_constant_width():
+    """A constant-width ring: the harmonics give no improvement, so the adaptive
+    test rejects them and the ring stays separable (q0/fwhm coeffs are None)."""
+    vol = _phi_width_ring_vol(const=True)
+    ns = ParametricRingModel(plane="hk0", q_step=0.03, radial_mode="peaks",
+                             allowed_ring_centers=np.array([2.6]),
+                             allowed_ring_halfwidths=np.array([0.12]),
+                             radial_harmonics=True, radial_n_fourier=2,
+                             radial_harmonic_sectors=8,
+                             radial_harmonic_min_voxels_per_sector=8,
+                             radial_harmonic_accept_margin=0.05)
+    fitted = ns.fit(vol, q_range=(1.0, 4.0))
+    assert fitted.rings[0].q0_coeffs is None
+    assert fitted.rings[0].fwhm_coeffs is None
+
+
+def test_radial_harmonics_off_by_default():
+    vol = _phi_width_ring_vol(const=False)
+    model = ParametricRingModel(plane="hk0", q_step=0.03, radial_mode="peaks",
+                                allowed_ring_centers=np.array([2.6]),
+                                allowed_ring_halfwidths=np.array([0.12]))
+    assert model.radial_harmonics is False
+    fitted = model.fit(vol, q_range=(1.0, 4.0))
+    assert fitted.rings[0].fwhm_coeffs is None

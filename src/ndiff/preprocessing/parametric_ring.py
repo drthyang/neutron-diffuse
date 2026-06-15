@@ -86,6 +86,26 @@ def _pseudo_voigt(
     return eta * lorentz + (1.0 - eta) * gauss
 
 
+def _pseudo_voigt_phi(
+    q: NDArray[np.float64],
+    q0: NDArray[np.float64],
+    fwhm: NDArray[np.float64],
+    eta: float,
+) -> NDArray[np.float64]:
+    """Unit-peak pseudo-Voigt with **per-voxel** centre ``q0`` and width ``fwhm``
+    arrays (``eta`` scalar) — the non-separable ``PV(|Q|; q0(φ), fwhm(φ))``."""
+    q = np.asarray(q, dtype=np.float64)
+    q0 = np.asarray(q0, dtype=np.float64)
+    fwhm = np.maximum(np.asarray(fwhm, dtype=np.float64), 1e-6)
+    eta = float(np.clip(eta, 0.0, 1.0))
+    dq = q - q0
+    sigma = fwhm * _FWHM_TO_SIGMA
+    gamma = 0.5 * fwhm
+    gauss = np.exp(-0.5 * (dq / sigma) ** 2)
+    lorentz = 1.0 / (1.0 + (dq / gamma) ** 2)
+    return eta * lorentz + (1.0 - eta) * gauss
+
+
 # ---------------------------------------------------------------------------
 # Fitted result
 # ---------------------------------------------------------------------------
@@ -101,12 +121,20 @@ class ParametricRing:
     texture_coeffs : (M,) Fourier coefficients of the non-negative azimuthal
         amplitude ``Tᵢ(φ)`` — this carries the ring's amplitude, so the radial
         shape is unit-peak.  ``M = 1 + n_fourier`` (symmetric) or ``1 + 2·n_fourier``.
+    q0_coeffs, fwhm_coeffs : (1 + 2·radial_n_fourier,) or None
+        Full-Fourier coefficients of the **azimuth-dependent** centre ``q0(φ)``
+        and width ``fwhm(φ)`` — the *non-separable* extension, set only when the
+        adaptive fit accepted them for this ring (else ``None`` → the ring is
+        separable, using the scalar ``q_center`` / ``fwhm``).  Evaluated against
+        the model's ``radial_n_fourier`` basis.
     """
 
     q_center: float
     fwhm: float
     eta: float
     texture_coeffs: NDArray[np.float64]
+    q0_coeffs: NDArray[np.float64] | None = None
+    fwhm_coeffs: NDArray[np.float64] | None = None
 
 
 @dataclass
@@ -144,6 +172,33 @@ class FittedParametricRingModel:
     pooled_profile: NDArray[np.float64] = field(default_factory=lambda: np.array([]))
     baseline: NDArray[np.float64] = field(default_factory=lambda: np.array([]))
     ceilings: NDArray[np.float64] | None = None
+    radial_n_fourier: int = 0
+
+    def ring_shape(
+        self, i: int, phi: NDArray[np.float64]
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Per-voxel ``(q0(φ), fwhm(φ))`` for peak *i*.
+
+        Constant ``q_center`` / ``fwhm`` when the ring is separable; the accepted
+        Fourier series (clipped to a sane band around the centre values) when the
+        non-separable radial harmonics were fit.
+        """
+        r = self.rings[i]
+        shp = np.asarray(phi).shape
+        if r.q0_coeffs is None and r.fwhm_coeffs is None:
+            return np.full(shp, r.q_center), np.full(shp, r.fwhm)
+        flat = np.asarray(phi, dtype=np.float64).ravel()
+        basis = _azimuthal_basis(flat, self.radial_n_fourier, False)
+        if r.q0_coeffs is not None:
+            q0 = np.clip(basis @ r.q0_coeffs,
+                         r.q_center - 2.0 * r.fwhm, r.q_center + 2.0 * r.fwhm)
+        else:
+            q0 = np.full(flat.size, r.q_center)
+        if r.fwhm_coeffs is not None:
+            fwhm = np.clip(basis @ r.fwhm_coeffs, 0.3 * r.fwhm, 3.0 * r.fwhm)
+        else:
+            fwhm = np.full(flat.size, r.fwhm)
+        return q0.reshape(shp), fwhm.reshape(shp)
 
     def ring_texture(self, i: int, phi: NDArray[np.float64]) -> NDArray[np.float64]:
         """Evaluate peak *i*'s non-negative azimuthal amplitude ``Tᵢ(φ)``."""
@@ -169,7 +224,11 @@ class FittedParametricRingModel:
             return self._evaluate_rolling(q_mag, phi)
         out = np.zeros_like(np.asarray(q_mag, dtype=np.float64))
         for i, r in enumerate(self.rings):
-            shape = _pseudo_voigt(q_mag, r.q_center, r.fwhm, r.eta)
+            if r.q0_coeffs is None and r.fwhm_coeffs is None:
+                shape = _pseudo_voigt(q_mag, r.q_center, r.fwhm, r.eta)
+            else:
+                q0, fwhm = self.ring_shape(i, phi)
+                shape = _pseudo_voigt_phi(q_mag, q0, fwhm, r.eta)
             out += self.ring_texture(i, phi) * shape
         return np.maximum(out, 0.0)
 
@@ -287,6 +346,30 @@ class ParametricRingModel:
         Spacing (Å⁻¹) of the rolling-window centres (default 0.04).  The window
         half-width is ``ring_width``; centres overlap so the texture varies
         smoothly along |Q|.
+    radial_harmonics : bool
+        **Peaks mode only.**  When True, also fit the azimuth-dependent radial
+        *shape* of each ring — ``q0(φ)`` and ``fwhm(φ)`` as low-order Fourier
+        series — giving the non-separable ``I_ring = Tᵢ(φ)·PV(|Q|; q0ᵢ(φ),
+        fwhmᵢ(φ))``.  This is **adaptive per ring**: the harmonics are accepted
+        only where they actually reduce that ring's on-shell residual
+        inhomogeneity AND the azimuthal sampling is adequate; otherwise the ring
+        falls back to a constant ``q0``/``fwhm`` (separable).  Default False —
+        the separable model is the validated default; this is opt-in pending A/B.
+        Diagnostics show non-separability helps the well-sampled outer rings but
+        over-fits the innermost / sparsest shells, hence the adaptive guard.
+    radial_n_fourier : int
+        Harmonics for ``q0(φ)``/``fwhm(φ)`` (default 2 — a centre offset is the
+        1st harmonic; keep low, the radial shape varies slowly with φ).
+    radial_harmonic_sectors : int
+        Azimuthal sectors used to estimate the per-φ radial shape (default 16).
+    radial_harmonic_min_voxels_per_sector : int
+        A ring needs at least this many shell voxels in every sector (on average)
+        to even attempt the radial harmonics (default 40) — the sparse-sampling
+        guard that keeps the innermost/outermost shells separable.
+    radial_harmonic_accept_margin : float
+        Accept the harmonics only if they cut the on-shell residual
+        inhomogeneity by at least this fraction vs the constant shape
+        (default 0.05).
     """
 
     def __init__(
@@ -317,6 +400,11 @@ class ParametricRingModel:
         snr_mask_threshold: float | None = None,
         radial_mode: str = "rolling",
         roll_step: float = 0.04,
+        radial_harmonics: bool = False,
+        radial_n_fourier: int = 2,
+        radial_harmonic_sectors: int = 16,
+        radial_harmonic_min_voxels_per_sector: int = 40,
+        radial_harmonic_accept_margin: float = 0.05,
     ) -> None:
         self.plane = plane
         self.q_step = q_step
@@ -335,6 +423,11 @@ class ParametricRingModel:
         self.texture_min_template = texture_min_template
         self.texture_irls_iter = texture_irls_iter
         self.texture_spike_reject = texture_spike_reject
+        self.radial_harmonics = radial_harmonics
+        self.radial_n_fourier = radial_n_fourier
+        self.radial_harmonic_sectors = radial_harmonic_sectors
+        self.radial_harmonic_min_voxels_per_sector = radial_harmonic_min_voxels_per_sector
+        self.radial_harmonic_accept_margin = radial_harmonic_accept_margin
         self.min_ring_snr = min_ring_snr
         self.min_voxels_per_patch = min_voxels_per_patch
         self.min_voxels_per_bin = min_voxels_per_bin
@@ -459,12 +552,17 @@ class ParametricRingModel:
         for q0, fwhm, eta, amp in pv:
             coeffs = self._fit_ring_texture(
                 q, intensity, ph, q_grid, baseline, q0, fwhm, eta, amp)
-            rings.append(ParametricRing(q0, fwhm, eta, coeffs))
+            q0_coeffs = fwhm_coeffs = None
+            if self.radial_harmonics:
+                q0_coeffs, fwhm_coeffs = self._fit_radial_harmonics(
+                    q, intensity, ph, q_grid, baseline, q0, fwhm, eta, coeffs)
+            rings.append(ParametricRing(q0, fwhm, eta, coeffs,
+                                        q0_coeffs=q0_coeffs, fwhm_coeffs=fwhm_coeffs))
 
         self._model = FittedParametricRingModel(
             plane=self.plane, rings=rings, n_fourier=self.n_fourier,
             symmetric=self.symmetric, q_grid=q_grid, pooled_profile=pooled_f,
-            baseline=baseline,
+            baseline=baseline, radial_n_fourier=self.radial_n_fourier,
             ceilings=None if ceilings is None else np.asarray(ceilings, float))
         return self._model
 
@@ -610,6 +708,106 @@ class ParametricRingModel:
             tukey = np.where(resid > 0, tukey, 1.0)
             w = w0 * tukey
         return c
+
+    # ------------------------------------------------------------------
+    # Adaptive non-separable radial shape: q0(φ), fwhm(φ)
+    # ------------------------------------------------------------------
+    def _fit_radial_harmonics(
+        self,
+        q: NDArray[np.float64],
+        intensity: NDArray[np.float64],
+        phi: NDArray[np.float64],
+        q_grid: NDArray[np.float64],
+        baseline: NDArray[np.float64],
+        q0: float,
+        fwhm: float,
+        eta: float,
+        texture_coeffs: NDArray[np.float64],
+    ) -> tuple[NDArray[np.float64] | None, NDArray[np.float64] | None]:
+        """Fit ``q0(φ)`` and ``fwhm(φ)`` for one ring and accept them only if they
+        help (adaptive).
+
+        Per azimuthal sector, fit a pseudo-Voigt to the shell voxels to get that
+        sector's centre and width, then a low-order Fourier series across φ.
+        Guards: the shell must average at least
+        ``radial_harmonic_min_voxels_per_sector`` voxels/sector, and enough
+        sectors must yield a fit.  Accept the harmonics only if they cut the
+        on-shell residual inhomogeneity (std over φ of the per-sector median
+        residual, using the ring's texture so the amplitude is matched) by at
+        least ``radial_harmonic_accept_margin`` vs the constant shape — otherwise
+        the ring stays separable (returns ``None, None``).
+        """
+        from scipy.optimize import curve_fit
+
+        w = max(fwhm, self.q_step)
+        shell = np.abs(q - q0) <= 3.0 * w
+        nsec = self.radial_harmonic_sectors
+        minv = self.radial_harmonic_min_voxels_per_sector
+        if int(shell.sum()) < nsec * minv:
+            return None, None
+
+        qs, ints, phs = q[shell], intensity[shell], phi[shell]
+        base_at = np.interp(qs, q_grid, baseline, left=baseline[0], right=baseline[-1])
+        exc = ints - base_at
+
+        edges = np.linspace(-np.pi, np.pi, nsec + 1)
+        ctr = 0.5 * (edges[:-1] + edges[1:])
+        sec = np.clip(np.digitize(phs, edges) - 1, 0, nsec - 1)
+        q0_s = np.full(nsec, np.nan)
+        fw_s = np.full(nsec, np.nan)
+        for s in range(nsec):
+            m = sec == s
+            if int(m.sum()) < minv:
+                continue
+            try:
+                popt, _ = curve_fit(
+                    lambda qq, a, c, f: a * _pseudo_voigt(qq, c, f, eta),
+                    qs[m], exc[m],
+                    p0=[max(float(np.nanmax(exc[m])), 1e-3), q0, w],
+                    bounds=([0.0, q0 - 1.5 * w, 0.3 * w],
+                            [np.inf, q0 + 1.5 * w, 3.0 * w]),
+                    maxfev=4000)
+                q0_s[s], fw_s[s] = popt[1], popt[2]
+            except (RuntimeError, ValueError):
+                continue
+
+        valid = np.isfinite(q0_s) & np.isfinite(fw_s)
+        nh = self.radial_n_fourier
+        if int(valid.sum()) < 2 * nh + 2:
+            return None, None
+
+        B = _azimuthal_basis(ctr[valid], nh, False)
+        q0_coeffs, *_ = np.linalg.lstsq(B, q0_s[valid], rcond=None)
+        fw_coeffs, *_ = np.linalg.lstsq(B, fw_s[valid], rcond=None)
+
+        # accept test: residual inhomogeneity, harmonic vs its OWN DC constant
+        # (same texture, same estimation source) — so we credit the azimuthal
+        # VARIATION only, not a slightly better mean width than the global fit.
+        Bv = _azimuthal_basis(phs, nh, False)
+        q0_phi = np.clip(Bv @ q0_coeffs, q0 - 2.0 * fwhm, q0 + 2.0 * fwhm)
+        fw_phi = np.clip(Bv @ fw_coeffs, 0.3 * fwhm, 3.0 * fwhm)
+        q0_dc = float(np.median(q0_s[valid]))
+        fw_dc = float(np.clip(np.median(fw_s[valid]), 0.3 * fwhm, 3.0 * fwhm))
+        tex = np.maximum(
+            0.0, _azimuthal_basis(phs, self.n_fourier, self.symmetric) @ texture_coeffs)
+        res_h = exc - tex * _pseudo_voigt_phi(qs, q0_phi, fw_phi, eta)
+        res_c = exc - tex * _pseudo_voigt(qs, q0_dc, fw_dc, eta)
+        inh_h = self._shell_inhom(res_h, sec, nsec)
+        inh_c = self._shell_inhom(res_c, sec, nsec)
+        if inh_c > 0 and inh_h < inh_c * (1.0 - self.radial_harmonic_accept_margin):
+            return q0_coeffs, fw_coeffs
+        return None, None
+
+    @staticmethod
+    def _shell_inhom(
+        resid: NDArray[np.float64], sec: NDArray[np.int_], nsec: int
+    ) -> float:
+        """Azimuthal inhomogeneity = std over sectors of the per-sector median
+        residual (lower = cleaner, more uniform ring removal)."""
+        prof = np.array([
+            np.median(resid[sec == s]) if np.any(sec == s) else np.nan
+            for s in range(nsec)])
+        return float(np.nanstd(prof))
 
     # ------------------------------------------------------------------
     # Rolling-window continuous fit
