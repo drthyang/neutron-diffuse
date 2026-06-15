@@ -239,8 +239,16 @@ class ParametricRingModel:
         the texture fit (default 0.2) — near-peak voxels carry the texture; the
         far wings are noise-dominated.
     texture_irls_iter : int
-        Robust iteratively-reweighted iterations that down-weight the positive
-        (Bragg) outliers in the texture fit (default 3).
+        Robust iteratively-reweighted iterations in the texture fit (default 3).
+    texture_spike_reject : bool
+        How the IRLS separates Bragg from the ring's azimuthal texture (default
+        True).  **True** — φ-shape-aware: down-weight only *azimuthally-narrow*
+        positive excursions (a sample far above its φ-neighbourhood = a Bragg
+        spike) and otherwise iterate a *symmetric* robust reweight, so broad
+        bright arcs (real texture) keep full weight and are captured.  **False**
+        — legacy: reject every positive residual on the high side, which cannot
+        tell a bright arc from a Bragg spike and so under-subtracts textured
+        rings (the documented ~⅔-amplitude failure).
     min_ring_snr : float
         Detected rings whose peak excess is below this multiple of the pooled
         profile's robust noise are rejected as spurious (default 5.0).  The
@@ -297,6 +305,7 @@ class ParametricRingModel:
         texture_shell_scale: float = 1.5,
         texture_min_template: float = 0.2,
         texture_irls_iter: int = 3,
+        texture_spike_reject: bool = True,
         min_ring_snr: float = 5.0,
         min_voxels_per_patch: int = 200,
         min_voxels_per_bin: int = 4,
@@ -325,6 +334,7 @@ class ParametricRingModel:
         self.texture_shell_scale = texture_shell_scale
         self.texture_min_template = texture_min_template
         self.texture_irls_iter = texture_irls_iter
+        self.texture_spike_reject = texture_spike_reject
         self.min_ring_snr = min_ring_snr
         self.min_voxels_per_patch = min_voxels_per_patch
         self.min_voxels_per_bin = min_voxels_per_bin
@@ -352,14 +362,31 @@ class ParametricRingModel:
         self,
         vol: HKLVolume,
         q_range: tuple[float, float] | None = None,
+        bragg_keep_mask: NDArray[np.bool_] | None = None,
     ) -> FittedParametricRingModel:
-        """Fit the separable ring model to *vol*."""
+        """Fit the separable ring model to *vol*.
+
+        Parameters
+        ----------
+        bragg_keep_mask : array of bool, optional
+            A keep-mask (``True`` = keep, ``False`` = Bragg) the same shape as
+            ``vol.data``, e.g. from
+            :meth:`~ndiff.analysis.BraggRemover.build_mask`.  Bragg voxels are
+            excluded **from the fit only** (``subtract`` still models the ring at
+            every voxel).  Removing the sharp single-crystal reflections that sit
+            *on* the powder ring lets the texture fit use a gentle IRLS
+            (``texture_irls_iter`` low) and so capture the bright-arc amplitude —
+            without the high-side rejection conflating those arcs with Bragg and
+            under-subtracting the ring.
+        """
         q_mag = _offset_q_magnitude(
             vol, self.plane, self.center_offset, self.center_offset_h_slope)
         phi = _azimuthal_angle(
             vol, self.plane, self.center_offset, self.center_offset_h_slope)
 
         valid = vol.mask & np.isfinite(vol.data)
+        if bragg_keep_mask is not None:
+            valid &= np.asarray(bragg_keep_mask, dtype=bool)
         if q_range is not None:
             valid &= (q_mag >= q_range[0]) & (q_mag <= q_range[1])
         if int(valid.sum()) < max(self.min_voxels_per_bin * 4, 16):
@@ -494,8 +521,9 @@ class ParametricRingModel:
         I − baseline(|Q|)`` and ``template = PVᵢ(|Q|)`` (unit peak).  The
         intended relation is ``target ≈ Tᵢ(φ)·template`` so the ratio estimates
         ``Tᵢ(φ)`` directly; weighting by ``template²`` trusts the near-peak
-        voxels, and the IRLS down-weights the positive (Bragg) outliers.  Falls
-        back to the flat radial amplitude ``amp`` if the shell is too sparse.
+        voxels, and the robust solve down-weights the φ-narrow Bragg spikes
+        (see :meth:`_robust_texture_solve`).  Falls back to the flat radial
+        amplitude ``amp`` if the shell is too sparse.
         """
         n_basis = (1 + self.n_fourier) if self.symmetric else (1 + 2 * self.n_fourier)
         flat = np.zeros(n_basis, dtype=np.float64)
@@ -532,27 +560,56 @@ class ParametricRingModel:
                 float)
         reg = np.diag(order)
 
-        coeffs = flat
-        w = w0.copy()
-        for _ in range(max(1, self.texture_irls_iter)):
+        return self._robust_texture_solve(B, ratio, w0, phi_s, n_basis, reg)
+
+    def _robust_texture_solve(
+        self,
+        B: NDArray[np.float64],
+        ratio: NDArray[np.float64],
+        w0: NDArray[np.float64],
+        phi_s: NDArray[np.float64],
+        n_basis: int,
+        reg: NDArray[np.float64],
+    ) -> NDArray[np.float64]:
+        """Ridge-regularised, robust IRLS solve of one azimuthal texture.
+
+        With ``texture_spike_reject`` (default) the φ-narrow Bragg spikes are
+        suppressed *once* by :func:`_phi_spike_weight` (a model-independent
+        weight from each sample's φ-neighbourhood) and the texture is then a
+        single weighted ridge solve — no model-residual reweighting, because the
+        ridge under-fits the arc peaks and an IRLS on those residuals would
+        re-suppress the very bright arcs we want to keep.  Otherwise the legacy
+        high-side IRLS is used (down-weights every positive residual — bright
+        arcs included — and so under-subtracts textured rings).
+        """
+        def _solve(w: NDArray[np.float64]) -> NDArray[np.float64]:
             AtA = B.T @ (B * w[:, None])
             scale = np.trace(AtA) / n_basis
             Aty = B.T @ (w * ratio)
             try:
-                coeffs = np.linalg.solve(AtA + self.texture_ridge * scale * reg, Aty)
+                return np.linalg.solve(AtA + self.texture_ridge * scale * reg, Aty)
             except np.linalg.LinAlgError:
-                coeffs, *_ = np.linalg.lstsq(
+                c, *_ = np.linalg.lstsq(
                     AtA + self.texture_ridge * scale * reg, Aty, rcond=None)
-            # robust reweight: down-weight positive (Bragg) outliers
-            resid = ratio - B @ coeffs
+                return c
+
+        if self.texture_spike_reject:
+            # Bragg handled up front by the φ-shape weight; one ridge solve keeps
+            # the broad arcs (no residual-based reweighting to undo it).
+            return _solve(w0 * _phi_spike_weight(phi_s, ratio, n_basis))
+
+        # legacy: high-side-only IRLS (conflates bright arcs with Bragg)
+        w = w0.copy()
+        c = np.zeros(n_basis, dtype=np.float64)
+        for _ in range(max(1, self.texture_irls_iter)):
+            c = _solve(w)
+            resid = ratio - B @ c
             mad = float(np.median(np.abs(resid - np.median(resid)))) + 1e-12
             scale_r = 1.4826 * mad
             tukey = np.clip(1.0 - (resid / (4.0 * scale_r)) ** 2, 0.0, 1.0) ** 2
-            # only the high (Bragg) side is rejected hard; low side kept
             tukey = np.where(resid > 0, tukey, 1.0)
             w = w0 * tukey
-
-        return coeffs
+        return c
 
     # ------------------------------------------------------------------
     # Rolling-window continuous fit
@@ -579,7 +636,8 @@ class ParametricRingModel:
         the value *at* ``q0`` (≈ ``Ring(q0)``), not the window average, and the
         harmonics are the azimuthal texture.  A Hann weight in ``|q − q0|`` (×
         the template) localises the estimate, a ridge damps high harmonics, and
-        the IRLS rejects the positive (Bragg) outliers.  Off-ring shells (where
+        the robust solve rejects the φ-narrow Bragg spikes while keeping the
+        broad bright arcs (see :meth:`_robust_texture_solve`).  Off-ring shells (where
         the radial excess is ~0) contribute nothing, so the diffuse is preserved.
         The result is a *continuous* ``Ring(|Q|)·T(|Q|,φ)`` — no discrete-peak
         detection.
@@ -631,24 +689,8 @@ class ParametricRingModel:
             w0 = template**2 * hann            # near-peak + radially-local voxels
 
             B = _azimuthal_basis(phi_s, self.n_fourier, self.symmetric)
-            w = w0.copy()
-            c = np.zeros(n_basis)
-            for _ in range(max(1, self.texture_irls_iter)):
-                AtA = B.T @ (B * w[:, None])
-                scale = np.trace(AtA) / n_basis
-                Aty = B.T @ (w * ratio)
-                try:
-                    c = np.linalg.solve(AtA + self.texture_ridge * scale * reg, Aty)
-                except np.linalg.LinAlgError:
-                    c, *_ = np.linalg.lstsq(
-                        AtA + self.texture_ridge * scale * reg, Aty, rcond=None)
-                resid = ratio - B @ c
-                mad = float(np.median(np.abs(resid - np.median(resid)))) + 1e-12
-                scale_r = 1.4826 * mad
-                tukey = np.clip(1.0 - (resid / (4.0 * scale_r)) ** 2, 0.0, 1.0) ** 2
-                tukey = np.where(resid > 0, tukey, 1.0)   # reject Bragg (high side)
-                w = w0 * tukey
-            coeffs[j] = c
+            coeffs[j] = self._robust_texture_solve(
+                B, ratio, w0, phi_s, n_basis, reg)
 
         # the continuous radial amplitude is the constant (φ-mean) term; never < 0
         coeffs[:, 0] = np.maximum(coeffs[:, 0], 0.0)
@@ -699,6 +741,66 @@ class ParametricRingModel:
             within = np.abs(centers - float(c)) <= 2.0 * max(float(w), self.roll_step)
             out[within] = np.minimum(out[within], float(cap))
         return out
+
+
+def _phi_spike_weight(
+    phi: NDArray[np.float64],
+    ratio: NDArray[np.float64],
+    n_basis: int,
+    cut: float = 4.0,
+) -> NDArray[np.float64]:
+    """Down-weight φ-bins that stick up above their NEIGHBOURS (Bragg spikes).
+
+    A Bragg reflection on the ring is sharp in φ — its φ-bin level sits far
+    above the bins on either side.  A bright ring arc is broad — its bin sits at
+    the level of its neighbours because they are elevated too.  So we bin φ,
+    take each bin's robust level, subtract a *neighbour-median baseline* (a
+    rolling median over a window wider than a Bragg peak but narrower than an
+    arc), and down-weight bins whose excess is a positive outlier.  Comparing
+    bin-to-neighbours (not sample-to-own-bin) is what keeps the upper half of the
+    in-bin noise — and the bright arcs — at full weight.  Returns a per-sample
+    multiplicative weight in [0, 1].
+    """
+    phi = np.asarray(phi, dtype=np.float64)
+    ratio = np.asarray(ratio, dtype=np.float64)
+    n = phi.size
+    if n < 3:
+        return np.ones(n, dtype=np.float64)
+    lo, hi = float(phi.min()), float(phi.max())
+    if hi <= lo:
+        return np.ones(n, dtype=np.float64)
+    nb = int(np.clip(n // (4 * max(n_basis, 1)), 16, 72))
+    edges = np.linspace(lo, hi, nb + 1)
+    b = np.clip(np.digitize(phi, edges) - 1, 0, nb - 1)
+
+    level = np.full(nb, np.nan)
+    for k in range(nb):
+        m = b == k
+        if np.any(m):
+            level[k] = np.median(ratio[m])
+    valid = np.isfinite(level)
+    if valid.sum() < 5:
+        return np.ones(n, dtype=np.float64)
+
+    # neighbour-median baseline: rolling median over ±rad bins (excludes nothing;
+    # a lone Bragg bin can't move a median of many neighbours, a broad arc can)
+    rad = max(2, nb // 12)
+    base = np.copy(level)
+    for k in range(nb):
+        if not valid[k]:
+            continue
+        win = level[max(0, k - rad): k + rad + 1]
+        win = win[np.isfinite(win)]
+        if win.size:
+            base[k] = np.median(win)
+    excess = level - base
+    ex = excess[valid]
+    mad = float(np.median(np.abs(ex - np.median(ex)))) + 1e-12
+    scale = 1.4826 * mad
+    bin_w = np.ones(nb, dtype=np.float64)
+    pos = valid & (excess > 0.0)
+    bin_w[pos] = np.clip(1.0 - (excess[pos] / (cut * scale)) ** 2, 0.0, 1.0) ** 2
+    return bin_w[b]
 
 
 def _profile_noise(prof: NDArray[np.float64]) -> float:

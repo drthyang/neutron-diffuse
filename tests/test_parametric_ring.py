@@ -199,6 +199,36 @@ def test_rolling_radial_amplitude_is_continuous_and_peaks_at_ring():
     assert on > 3.0 * off
 
 
+def test_spike_reject_recovers_bright_arc_better_than_legacy():
+    """φ-shape rejection (default) captures the broad bright-arc texture that the
+    legacy high-side rejection under-subtracts, while both still spare Bragg.
+
+    The planted texture ``1 + 0.4·cos(2φ)`` peaks at φ=0 (the +H direction, since
+    Q ∥ a*).  The legacy IRLS treats that bright arc like a Bragg outlier and
+    leaves more of it behind; the φ-shape detector keeps it (broad in φ) and
+    subtracts more, so less ring survives on the bright arc."""
+    vol, _ring, bragg = _ring_vol(ring_q=2.6, ring_fwhm=0.12, eta=0.5)
+    q = vol.q_magnitude()
+    H, K, _ = vol.hkl_grid()
+    phi = np.arctan2(K, H)
+    bright = (q > 2.5) & (q < 2.7) & (np.abs(phi) < 0.4) & (bragg < 1)
+    assert bright.sum() > 4
+
+    resid = {}
+    for sr in (True, False):
+        model = ParametricRingModel(plane="hk0", q_step=0.03, ring_width=0.3,
+                                    roll_step=0.05, radial_mode="rolling",
+                                    texture_spike_reject=sr)
+        model.fit(vol, q_range=(1.0, 4.0))
+        out, _I = model.subtract(vol)
+        resid[sr] = float(np.median(out.data[bright]))
+        # both modes leave the sharp Bragg peaks in the residual
+        assert np.all(out.data[bragg > 100] > 100.0)
+
+    # φ-shape rejection leaves less of the bright arc behind (captures more of it)
+    assert resid[True] < resid[False]
+
+
 def test_rolling_near_zero_on_flat_noise():
     rng = np.random.default_rng(2)
     shape = (61, 61, 1)
