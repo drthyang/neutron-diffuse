@@ -11,7 +11,15 @@
   3. Bragg-hole backfill            implemented, real-data QA active
   4. Radial-background flatten      implemented (background removal, default ON)
   5. 3D-DeltaPDF Fourier transform  implemented, centring bug fixed
+  6. Back-FFT consistency check     implemented (inverse-FFT round trip vs data)
 ```
+
+Stage 6 inverse-transforms the ΔPDF back to reciprocal space
+(`ndiff.analysis.invert_delta_pdf`) and compares it to the diffuse data the ΔPDF
+was built from, writing a metric (Pearson r + normalised RMS residual) and a
+`data | back-FFT | residual` figure.  On 22K the round trip reproduces the data
+(r ≈ 0.9999); a gross mismatch would flag a transform bug or an over-aggressive
+`crop_hkl` / apodization.  Default ON (`pdf_check_enabled`).
 
 Background removal is an explicit step (4 — the radial flatten), not a hidden
 blur inside the FFT; the transform's own Gaussian `SUBTRACT_BG` defaults off and

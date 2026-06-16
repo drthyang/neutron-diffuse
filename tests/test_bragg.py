@@ -1,10 +1,16 @@
 """Tests for Bragg peak detection and 3D-ΔPDF."""
 
 import numpy as np
+import pytest
 
 from ndiff.analysis.bragg import BraggRemover, bragg_mask
 from ndiff.analysis.bragg_fill import backfill_bragg
-from ndiff.analysis.delta_pdf import _next_power_of_2, compute_delta_pdf
+from ndiff.analysis.delta_pdf import (
+    DeltaPDF,
+    _next_power_of_2,
+    compute_delta_pdf,
+    invert_delta_pdf,
+)
 from ndiff.core import HKLVolume
 
 
@@ -542,3 +548,59 @@ def test_delta_pdf_centring_positive_peak():
     assert list(peaks) == [c - 3, c + 3]           # peaks at the right distance
     assert (hline[peaks] > 0).all()                # correct sign (was negative)
     assert np.isclose(hline[c - 3], hline[c + 3])  # centrosymmetric
+
+
+def _make_even_vol(n=15):
+    """A centrosymmetric (even about the Q=0 centre) diffuse volume."""
+    idx = np.arange(n)
+    c = n // 2
+    field = np.full((n, n, n), 5.0)
+    for f in (2, 3):
+        line = np.cos(2 * np.pi * f * (idx - c) / n)
+        field = field + line[:, None, None] + line[None, :, None] + line[None, None, :]
+    ub = 2 * np.pi * np.eye(3) / 4.0
+    return HKLVolume.from_arrays(field, (-2, 2), (-2, 2), (-2, 2), ub_matrix=ub)
+
+
+def test_invert_delta_pdf_roundtrip_recovers_input():
+    """compute_delta_pdf → invert_delta_pdf reproduces the transformed volume.
+
+    Consistency check: with a centrosymmetric input and the gaussian window
+    (nonzero everywhere, so deapodization is exact), the back-FFT must recover
+    I(Q) to numerical precision — including through the zero-padding (n=15→16).
+    """
+    vol = _make_even_vol(15)
+    dpdf = compute_delta_pdf(
+        vol, apodization="gaussian", gaussian_sigma=0.5, zero_pad=True,
+        subtract_mean=True, real_space_angstrom=False)
+    recon = invert_delta_pdf(dpdf, deapodize=True)
+
+    assert recon.data.shape == vol.data.shape
+    assert recon.mask.all()                              # gaussian → all reliable
+    assert np.allclose(recon.data, vol.data, atol=1e-8)
+
+
+def test_invert_delta_pdf_no_deapodize_is_windowed_input():
+    """Without deapodization the reconstruction is the window-tapered input.
+
+    Uses the odd grid (origin index pairs perfectly about the centre) so the
+    real-part projection is exactly lossless; an even grid leaves index 0
+    unpaired and the round-trip then loses a small asymmetric part by design.
+    """
+    vol = _make_even_vol(15)
+    win = np.exp(-0.5 * (np.linspace(-1, 1, 15) / 0.5) ** 2)
+    win3 = win[:, None, None] * win[None, :, None] * win[None, None, :]
+    dpdf = compute_delta_pdf(
+        vol, apodization="gaussian", gaussian_sigma=0.5, zero_pad=False,
+        subtract_mean=True, real_space_angstrom=False)
+    recon = invert_delta_pdf(dpdf, deapodize=False)
+    assert np.allclose(recon.data, vol.data * win3, atol=1e-8)
+
+
+def test_invert_delta_pdf_requires_metadata():
+    """A DeltaPDF without the inverse metadata cannot be inverted."""
+    bare = DeltaPDF(
+        data=np.zeros((4, 4, 4)), x_axis=np.arange(4), y_axis=np.arange(4),
+        z_axis=np.arange(4), q_max=1.0, apodization="none")
+    with pytest.raises(ValueError, match="inverse metadata"):
+        invert_delta_pdf(bare)

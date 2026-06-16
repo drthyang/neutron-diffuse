@@ -13,6 +13,7 @@ contract of :func:`ndiff.pipeline.run_pipeline`:
   stale-cache guard.
 """
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -141,6 +142,17 @@ def stubbed(monkeypatch):
         return _fake_dpdf()
 
     monkeypatch.setattr(pipeline, "delta_pdf", pdf_stub)
+
+    # Stage 6 (pdf_check) — stub the back-FFT comparison so orchestration tests
+    # stay fast and don't need a real invertible DeltaPDF; it touches the figure
+    # so the resume/skip guard (json+png both exist) behaves.
+    def pdf_check_stub(vol, dpdf, params, *, h_values=(0.0,), figure_path=None):
+        calls.append("pdf_check")
+        if figure_path is not None:
+            Path(figure_path).write_bytes(b"")
+        return {"pearson_r": 1.0, "normalized_rms": 0.0}
+
+    monkeypatch.setattr(pipeline, "pdf_consistency_check", pdf_check_stub)
     return SimpleNamespace(calls=calls, vol=vol)
 
 
@@ -157,9 +169,11 @@ def test_run_pipeline_runs_all_stages_in_order(tmp_path, stubbed):
         inp, proc_dir=tmp_path,
         progress=lambda *a: events.append(a),
     )
-    assert stubbed.calls == ["rings", "punch", "backfill", "flatten", "pdf"]
+    assert stubbed.calls == [
+        "rings", "punch", "backfill", "flatten", "pdf", "pdf_check"]
     for p in (paths.ringremoved, paths.braggpunched, paths.backfilled,
-              paths.flattened, paths.delta_pdf):
+              paths.flattened, paths.delta_pdf,
+              paths.pdf_check_json, paths.pdf_check_png):
         assert p.exists(), p
     # nothing skipped on a fresh run
     assert not any(ev[1] == "skip" for ev in events)
@@ -175,7 +189,8 @@ def test_run_pipeline_resumes_and_skips_existing(tmp_path, stubbed):
                           progress=lambda *a: events.append(a))
     assert stubbed.calls == []                           # everything skipped
     skipped = {ev[0] for ev in events if ev[1] == "skip"}
-    assert skipped == {"rings", "punch", "backfill", "flatten", "pdf"}
+    assert skipped == {
+        "rings", "punch", "backfill", "flatten", "pdf", "pdf_check"}
 
 
 def test_force_from_recomputes_tail_only(tmp_path, stubbed):
@@ -184,7 +199,7 @@ def test_force_from_recomputes_tail_only(tmp_path, stubbed):
     stubbed.calls.clear()
 
     pipeline.run_pipeline(inp, proc_dir=tmp_path, force_from="backfill")
-    assert stubbed.calls == ["backfill", "flatten", "pdf"]
+    assert stubbed.calls == ["backfill", "flatten", "pdf", "pdf_check"]
 
 
 def test_force_recomputes_everything(tmp_path, stubbed):
@@ -193,7 +208,8 @@ def test_force_recomputes_everything(tmp_path, stubbed):
     stubbed.calls.clear()
 
     pipeline.run_pipeline(inp, proc_dir=tmp_path, force=True)
-    assert stubbed.calls == ["rings", "punch", "backfill", "flatten", "pdf"]
+    assert stubbed.calls == [
+        "rings", "punch", "backfill", "flatten", "pdf", "pdf_check"]
 
 
 def test_stage_subset_runs_only_requested(tmp_path, stubbed):
@@ -291,3 +307,37 @@ def test_real_pdf_stale_guard_skips_on_rerun(tmp_path):
     pipeline.run_pipeline(inp, params, progress=lambda *a: events.append(a), **kw)
     skipped = {ev[0] for ev in events if ev[1] == "skip"}
     assert {"backfill", "flatten", "pdf"} <= skipped
+
+
+def _diffuse_vol(n=15):
+    """A clean centrosymmetric diffuse volume on an odd grid (exact round trip)."""
+    vol = HKLVolume.from_arrays(
+        np.zeros((n, n, n)), (-3, 3), (-3, 3), (-3, 3), ub_matrix=UB)
+    vol.data[...] = 5.0 * np.exp(-vol.q_magnitude() / 2.0) + 1.0
+    return vol
+
+
+def test_real_pdf_check_roundtrip_metrics(tmp_path):
+    """The real pdf_check stage inverts the ΔPDF and recovers the diffuse data."""
+    import json
+
+    inp = tmp_path / "s.nxs"
+    params = pipeline.PipelineParams(
+        flatten_enabled=False,
+        delta_pdf=pipeline.DeltaPdfParams(apodization="gaussian", zero_pad=False,
+                                          crop_hkl=None),
+    )
+    paths = pipeline.pipeline_paths(inp, proc_dir=tmp_path, flatten_enabled=False)
+    ndiff.save(_diffuse_vol(15), paths.backfilled)   # = pdf_input when flatten off
+
+    events = []
+    pipeline.run_pipeline(inp, params, proc_dir=tmp_path,
+                          stages=("pdf", "pdf_check"),
+                          progress=lambda *a: events.append(a))
+
+    assert paths.pdf_check_json.exists()
+    assert paths.pdf_check_png.exists()
+    assert ("pdf_check", "done") in {(ev[0], ev[1]) for ev in events}
+    metrics = json.loads(paths.pdf_check_json.read_text())
+    assert metrics["pearson_r"] > 0.999        # gaussian window → near-exact
+    assert metrics["normalized_rms"] < 1e-2

@@ -24,6 +24,7 @@ and the per-stage glue (build the model/params, call it, write the output).
 from __future__ import annotations
 
 import dataclasses
+import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,7 +33,13 @@ from typing import Literal
 import numpy as np
 
 import ndiff
-from ndiff.analysis import BraggRemover, DeltaPDF, backfill_bragg, compute_delta_pdf
+from ndiff.analysis import (
+    BraggRemover,
+    DeltaPDF,
+    backfill_bragg,
+    compute_delta_pdf,
+    invert_delta_pdf,
+)
 from ndiff.core import HKLVolume
 from ndiff.preprocessing import (
     ParametricRingModel,
@@ -57,6 +64,7 @@ __all__ = [
     "flatten",
     "delta_pdf",
     "delta_pdf_transform_config",
+    "pdf_consistency_check",
     "pipeline_paths",
     "run_pipeline",
 ]
@@ -72,7 +80,8 @@ __all__ = [
 Status = Literal["start", "progress", "done", "skip", "error"]
 ProgressFn = Callable[[str, Status, float | None, str], None]
 
-STAGES: tuple[str, ...] = ("rings", "punch", "backfill", "flatten", "pdf")
+STAGES: tuple[str, ...] = (
+    "rings", "punch", "backfill", "flatten", "pdf", "pdf_check")
 
 
 def _emit(progress: ProgressFn | None, stage: str, status: Status,
@@ -213,6 +222,10 @@ class PipelineParams:
     flatten: FlattenParams = field(default_factory=FlattenParams)
     delta_pdf: DeltaPdfParams = field(default_factory=DeltaPdfParams)
     flatten_enabled: bool = True
+    # Stage 6 — back-FFT round-trip consistency check (inverse-transform the
+    # ΔPDF and compare to the diffuse data it came from); writes a metric JSON
+    # and a comparison figure, no large volume.
+    pdf_check_enabled: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -522,6 +535,110 @@ def write_delta_pdf_h5(dpdf: DeltaPDF, vol: HKLVolume, p: DeltaPdfParams,
             pass
 
 
+def _crop_hkl(vol: HKLVolume, crop_hkl: tuple[float, float, float] | None
+              ) -> HKLVolume:
+    """Symmetric ±crop_hkl crop of *vol* (matches ``compute_delta_pdf``)."""
+    if crop_hkl is None:
+        return vol
+    h_max, k_max, l_max = crop_hkl
+    ih = np.where(np.abs(vol.h_axis) <= h_max)[0]
+    ik = np.where(np.abs(vol.k_axis) <= k_max)[0]
+    il = np.where(np.abs(vol.l_axis) <= l_max)[0]
+    sl = (slice(ih[0], ih[-1] + 1), slice(ik[0], ik[-1] + 1),
+          slice(il[0], il[-1] + 1))
+    return dataclasses.replace(
+        vol, data=vol.data[sl], sigma=vol.sigma[sl], mask=vol.mask[sl],
+        h_axis=vol.h_axis[ih[0]:ih[-1] + 1], k_axis=vol.k_axis[ik[0]:ik[-1] + 1],
+        l_axis=vol.l_axis[il[0]:il[-1] + 1])
+
+
+def pdf_consistency_check(
+    vol: HKLVolume,
+    dpdf: DeltaPDF,
+    p: DeltaPdfParams,
+    *,
+    h_values: Sequence[float] = (0.0, 1.0 / 3.0, 1.0),
+    figure_path: Path | None = None,
+) -> dict:
+    """Back-FFT round-trip check: inverse-transform *dpdf* and compare to *vol*.
+
+    Inverse-transforms the ΔPDF back to reciprocal space
+    (:func:`~ndiff.analysis.invert_delta_pdf`) and measures how well it
+    reproduces the cleaned diffuse data it was built from (cropped to the
+    transform window).  Returns a metrics dict — Pearson ``r`` and normalised
+    RMS residual over the reliably-recovered region, plus per-H-plane ``r`` —
+    and, when *figure_path* is given, writes a ``data | back-FFT | residual``
+    comparison PNG.  A faithful ΔPDF gives ``r ≈ 1``; a gross mismatch flags a
+    transform bug or an over-aggressive ``crop_hkl`` / apodization.
+    """
+    recon = invert_delta_pdf(dpdf, deapodize=True)
+    data_vol = _crop_hkl(vol, p.crop_hkl)
+    data = np.where(np.isfinite(data_vol.masked_data()), data_vol.data, 0.0)
+    rec = recon.data
+    reliable = recon.mask & np.isfinite(data)
+
+    def _r(a: np.ndarray, b: np.ndarray, m: np.ndarray) -> float:
+        a, b = a[m], b[m]
+        return float(np.corrcoef(a, b)[0, 1]) if a.size > 1 else float("nan")
+
+    resid = rec - data
+    rms = float(np.sqrt(np.mean(resid[reliable] ** 2))) if reliable.any() else 0.0
+    denom = (float(np.sqrt(np.mean(data[reliable] ** 2)))
+             if reliable.any() else 0.0) or 1.0
+    per_plane: dict[str, float] = {}
+    rows = []
+    for hv in h_values:
+        ih = int(np.argmin(np.abs(recon.h_axis - hv)))
+        h_actual = float(recon.h_axis[ih])
+        r_plane = _r(rec[ih], data[ih], reliable[ih])
+        per_plane[f"{h_actual:+.3f}"] = r_plane
+        rows.append((h_actual, data[ih], rec[ih], reliable[ih], r_plane))
+
+    metrics = {
+        "pearson_r": _r(rec, data, reliable),
+        "normalized_rms": rms / denom,
+        "rms": rms,
+        "n_voxels": int(reliable.sum()),
+        "per_plane_r": per_plane,
+        "crop_hkl": list(p.crop_hkl) if p.crop_hkl else None,
+        "apodization": p.apodization,
+    }
+
+    if figure_path is not None:
+        _write_consistency_figure(rows, Path(figure_path))
+    return metrics
+
+
+def _write_consistency_figure(rows: list, out_png: Path) -> None:
+    """data | back-FFT | residual panels per H plane (lazy matplotlib)."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    n = len(rows)
+    fig, axes = plt.subplots(n, 3, figsize=(13, 4 * n), squeeze=False)
+    titles = ["data  I(Q)", "back-FFT  IFFT[ΔPDF]", "residual (data − recon)"]
+    for r, (hv, d2, r2, m2, rho) in enumerate(rows):
+        finite = d2[np.isfinite(d2)]
+        vmax = float(np.nanpercentile(finite, 99)) if finite.size else 1.0
+        rscale = float(np.nanpercentile(np.abs(d2[m2]), 99)) if m2.any() else 1.0
+        panels = [(d2, "magma", 0.0, vmax), (r2, "magma", 0.0, vmax),
+                  (d2 - r2, "RdBu_r", -rscale, rscale)]
+        for c, (panel, cmap, vmin, vmx) in enumerate(panels):
+            ax = axes[r][c]
+            ax.imshow(panel.T, origin="lower", cmap=cmap, vmin=vmin, vmax=vmx,
+                      aspect="auto")
+            extra = f"  r={rho:.4f}" if c == 1 else ""
+            ax.set_title(f"H={hv:+.3f}  {titles[c]}{extra}", fontsize=9)
+            ax.set_xticks([])
+            ax.set_yticks([])
+    fig.tight_layout()
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_png, dpi=110)
+    plt.close(fig)
+
+
 def _pdf_is_current(pdf_path: Path, expected_src: str, expected_config: str) -> bool:
     if not pdf_path.exists():
         return False
@@ -551,6 +668,8 @@ class PipelinePaths:
     flattened: Path
     delta_pdf: Path
     pdf_input: Path     # flattened if flatten enabled, else backfilled
+    pdf_check_json: Path
+    pdf_check_png: Path
 
 
 def pipeline_paths(input_path: str | Path, *, proc_dir: str | Path | None = None,
@@ -571,6 +690,8 @@ def pipeline_paths(input_path: str | Path, *, proc_dir: str | Path | None = None
         input=inp, ringremoved=ring, braggpunched=punch, backfilled=fill,
         flattened=flat, delta_pdf=pdf,
         pdf_input=flat if flatten_enabled else fill,
+        pdf_check_json=proc / f"{pdf.stem}_consistency.json",
+        pdf_check_png=proc / f"{pdf.stem}_consistency.png",
     )
 
 
@@ -672,6 +793,8 @@ def run_pipeline(
               "flatten disabled (no background removed)")
 
     # --- stage 5: ΔPDF (with stale-cache guard) -----------------------------
+    dpdf_obj: DeltaPDF | None = None     # in-memory ΔPDF if (re)computed here
+    pdf_vol: HKLVolume | None = None     # its input volume, for the check stage
     if want("pdf"):
         expected_config = delta_pdf_transform_config(p.delta_pdf)
         is_current = _pdf_is_current(paths.delta_pdf, paths.pdf_input.name,
@@ -683,9 +806,36 @@ def run_pipeline(
             if paths.delta_pdf.exists() and not is_current:
                 _emit(progress, "pdf", "progress", None,
                       f"{paths.delta_pdf.name} stale — recomputing")
-            vol = ndiff.load(paths.pdf_input)
-            dpdf = delta_pdf(vol, p.delta_pdf, progress=progress)
-            write_delta_pdf_h5(dpdf, vol, p.delta_pdf, paths.pdf_input.name,
-                               paths.delta_pdf)
+            pdf_vol = ndiff.load(paths.pdf_input)
+            dpdf_obj = delta_pdf(pdf_vol, p.delta_pdf, progress=progress)
+            write_delta_pdf_h5(dpdf_obj, pdf_vol, p.delta_pdf,
+                               paths.pdf_input.name, paths.delta_pdf)
+
+    # --- stage 6: back-FFT round-trip consistency check ---------------------
+    if want("pdf_check") and p.pdf_check_enabled:
+        outputs_exist = (paths.pdf_check_json.exists()
+                         and paths.pdf_check_png.exists())
+        # Re-run if the ΔPDF was (re)computed this run, if outputs are missing,
+        # or if explicitly forced; otherwise the cached check is still valid.
+        if dpdf_obj is None and outputs_exist and not forced("pdf_check"):
+            _emit(progress, "pdf_check", "skip", None,
+                  f"{paths.pdf_check_json.name} exists")
+        else:
+            _emit(progress, "pdf_check", "start", None,
+                  "back-FFT round-trip consistency check")
+            if pdf_vol is None:
+                pdf_vol = ndiff.load(paths.pdf_input)
+            if dpdf_obj is None:
+                dpdf_obj = delta_pdf(pdf_vol, p.delta_pdf)
+            metrics = pdf_consistency_check(
+                pdf_vol, dpdf_obj, p.delta_pdf,
+                figure_path=paths.pdf_check_png)
+            paths.pdf_check_json.parent.mkdir(parents=True, exist_ok=True)
+            paths.pdf_check_json.write_text(json.dumps(metrics, indent=2))
+            _emit(progress, "pdf_check", "done", 1.0,
+                  f"back-FFT vs data: r={metrics['pearson_r']:.5f}, "
+                  f"normalised RMS={metrics['normalized_rms']:.3e}")
+    elif want("pdf_check"):
+        _emit(progress, "pdf_check", "skip", None, "consistency check disabled")
 
     return paths

@@ -50,6 +50,37 @@ Step by step (as implemented in `src/ndiff/analysis/delta_pdf.py`):
 Real-space axes come from `fftshift(fftfreq(n, d=ΔHKL))`, converted to Å with
 the direct-lattice vector lengths `2π·inv(UB)ᵀ`.
 
+## Inverse transform & consistency check (`invert_delta_pdf`)
+
+The recipe is exactly invertible, so the ΔPDF can be transformed **back** to the
+reciprocal-space diffuse volume it came from — a round-trip consistency check.
+`compute_delta_pdf` records the inverse metadata (pad width, the separable window
+factors, the subtracted mean, the cropped axes) on its result, and
+`invert_delta_pdf` undoes each step:
+
+```python
+I_recon = fftshift( ifftn( ifftshift( Δρ ) ) ).real    # inverse of the recipe
+I_recon = unpad(I_recon)                                # strip symmetric padding
+I_recon = (I_recon + mean) / window                     # restore DC, deapodize
+```
+
+The deapodization (divide by the window) is well-posed for the **gaussian**
+window because it never reaches zero; for **hann** the edge planes (window → 0)
+are clamped by `window_floor` and are unreliable. The recovered volume's `mask`
+marks the reliably-recovered region.
+
+`pdf_consistency_check` (pipeline stage `pdf_check`, default ON; standalone
+`examples/delta_pdf_consistency.py`) runs this inverse and compares it to the
+diffuse data the ΔPDF was built from (cropped to the transform window), writing a
+metric JSON (Pearson r + normalised RMS residual) and a `data | back-FFT |
+residual` figure. Because the `mmm` data is centrosymmetric and the gaussian
+window is invertible, a faithful ΔPDF round-trips to **r ≈ 1** (22K: r = 0.9999,
+RMS ≈ 1%). The check is therefore a regression/validation gate: a wrong axis,
+sign flip, or normalisation bug, or an over-aggressive `crop_hkl` / apodization,
+would surface here as a visible residual. (On an **even** grid the `Q=0` centre
+leaves one index unpaired, so the real-part projection drops a small asymmetric
+part — a known, tiny round-trip error; odd grids are exact.)
+
 ## The centring bug (fixed 2026-06-05)
 
 Earlier code did `fftshift(fftn(data))` with **no `ifftshift`** and **one-sided**

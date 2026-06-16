@@ -54,6 +54,16 @@ The full pipeline now runs end to end through the 3D-ΔPDF:
    interactive viewers `examples/explore_delta_pdf_ortho.py` (recommended — all
    three orthoslice planes at once) and `examples/explore_delta_pdf.py` (single
    y_K–z_L plane with an x_H slider).
+6. **Back-FFT consistency check** (`ndiff.analysis.invert_delta_pdf`): the exact
+   inverse transform of step 5, run as a pipeline stage (`pdf_check`, default ON
+   via `pdf_check_enabled`) and a standalone tool
+   (`examples/delta_pdf_consistency.py`). It inverse-FFTs the ΔPDF back to
+   reciprocal space and compares it to the diffuse data the ΔPDF was built from,
+   writing `*_delta_pdf_consistency.json` (Pearson r + normalised RMS over the
+   reliably-recovered region) and a `data | back-FFT | residual` PNG. Because the
+   gaussian apodization is invertible and the data is centrosymmetric, a faithful
+   ΔPDF round-trips to r ≈ 1 (22K: r = 0.9999, RMS ≈ 1%); a gross mismatch flags a
+   transform bug or an over-aggressive `crop_hkl` / apodization.
 
 A **Fourier-centring bug** in `compute_delta_pdf` was found and fixed
 (2026-06-05): the transform was missing `ifftshift` on the centred input and

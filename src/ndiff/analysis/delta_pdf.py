@@ -21,7 +21,7 @@ from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.fft import fftfreq, fftn, fftshift, ifftshift
+from scipy.fft import fftfreq, fftn, fftshift, ifftn, ifftshift
 from scipy.ndimage import gaussian_filter
 
 from ndiff.core import HKLVolume
@@ -52,6 +52,20 @@ class DeltaPDF:
     z_axis: NDArray[np.float64]
     q_max: float
     apodization: str
+
+    # --- inverse-transform metadata (populated by compute_delta_pdf) ----------
+    # Everything needed to map the ΔPDF back to the reciprocal-space volume it
+    # came from (see invert_delta_pdf).  Optional / default-None so older callers
+    # and serialised results stay valid.
+    pad_width: tuple[tuple[int, int], ...] | None = None
+    cropped_shape: tuple[int, int, int] | None = None
+    window_axes: tuple[NDArray[np.float64], ...] | None = None
+    subtracted_mean: float = 0.0
+    smooth_bg: NDArray[np.float64] | None = None
+    h_axis_c: NDArray[np.float64] | None = None
+    k_axis_c: NDArray[np.float64] | None = None
+    l_axis_c: NDArray[np.float64] | None = None
+    ub_matrix: NDArray[np.float64] | None = None
 
     def slice_hk0(self) -> NDArray[np.float64]:
         """Return the l=0 (z=0) slice."""
@@ -167,6 +181,7 @@ def compute_delta_pdf(
     # one 3D FFT.  This is the right model for H-layered/modulated data, where an
     # isotropic H-blur (e.g. 1.5 r.l.u. ≈ 45 px on a 0.033-step H axis) would
     # smear the H=0/±1/3/±2/3 layers into each other's background.
+    smooth_bg: NDArray[np.float64] | None = None
     if subtract_smooth_bg:
         if isinstance(subtract_smooth_bg, tuple):
             sig_h, sig_k, sig_l = (float(s) for s in subtract_smooth_bg)
@@ -176,18 +191,27 @@ def compute_delta_pdf(
         dk0 = (k_axis[-1] - k_axis[0]) / max(len(k_axis) - 1, 1)
         dl0 = (l_axis[-1] - l_axis[0]) / max(len(l_axis) - 1, 1)
         sigma_px = (sig_h / dh0, sig_k / dk0, sig_l / dl0)
-        data = data - gaussian_filter(data, sigma=sigma_px, mode="nearest")
+        smooth_bg = gaussian_filter(data, sigma=sigma_px, mode="nearest")
+        data = data - smooth_bg
+
+    # Shape of the (cropped, bg-subtracted) volume that actually enters the
+    # transform — recorded so invert_delta_pdf can un-pad back to it.
+    cropped_shape = data.shape
 
     # Apply apodization window first, then subtract mean of the windowed
     # data so that the DC component (sum) is exactly zero and the r=0
     # DeltaPDF peak is suppressed. Subtracting before windowing leaves a
     # nonzero sum = ∫(data−mean)·w dQ, producing a spurious 10^5-amplitude
     # spike at r=0 that overwhelms near-origin structure.
-    win = _build_window(data.shape, apodization, gaussian_sigma)
+    window_axes = _window_axes(data.shape, apodization, gaussian_sigma)
+    win = window_axes[0][:, None, None] * window_axes[1][None, :, None] \
+        * window_axes[2][None, None, :]
     data = data * win
 
+    subtracted_mean = 0.0
     if subtract_mean:
-        data -= data.mean()
+        subtracted_mean = float(data.mean())
+        data -= subtracted_mean
 
     # Zero-pad to next power-of-2 for efficiency.  Pad SYMMETRICALLY so the
     # Q=0 origin (at index s//2 of each axis) stays at the centre of the
@@ -248,6 +272,102 @@ def compute_delta_pdf(
         z_axis=z_axis,
         q_max=q_max,
         apodization=apodization,
+        pad_width=tuple(tuple(p) for p in pad_width),
+        cropped_shape=cropped_shape,
+        window_axes=window_axes,
+        subtracted_mean=subtracted_mean,
+        smooth_bg=smooth_bg,
+        h_axis_c=h_axis,
+        k_axis_c=k_axis,
+        l_axis_c=l_axis,
+        ub_matrix=vol.ub_matrix.copy(),
+    )
+
+
+def invert_delta_pdf(
+    dpdf: DeltaPDF,
+    *,
+    deapodize: bool = True,
+    add_back_smooth_bg: bool = True,
+    window_floor: float = 1e-3,
+) -> HKLVolume:
+    """Inverse-transform a 3D-ΔPDF back to its reciprocal-space diffuse volume.
+
+    This is the exact mathematical inverse of :func:`compute_delta_pdf`: undo the
+    centred FFT, strip the symmetric zero-padding, then (optionally) divide out
+    the apodization window and restore the subtracted mean / smooth background —
+    recovering the cleaned diffuse intensity ``I(Q)`` that produced the ΔPDF.
+
+    Round-tripping ``compute_delta_pdf → invert_delta_pdf`` is the consistency
+    check: the reconstruction should reproduce the transformed volume to
+    numerical precision (the input is centrosymmetric — ``mmm`` Laue — so the
+    real-part projection in the forward transform loses nothing).  Where it
+    *doesn't* match, the discrepancy localises what the transform settings
+    discard: high-|Q| detail removed by ``crop_hkl`` and, for ``hann``, the
+    edge planes where the window vanishes.
+
+    Parameters
+    ----------
+    deapodize:
+        Divide out the apodization window to recover the un-tapered intensity.
+        Stable for ``gaussian`` (never zero); for ``hann`` the division is
+        clamped by *window_floor* and the edge planes are unreliable.  ``False``
+        returns the windowed reconstruction — what a naive inverse FFT yields.
+    add_back_smooth_bg:
+        Re-add the smooth background removed by ``subtract_smooth_bg`` (only if
+        it was used).  ``False`` keeps only the oscillatory modulation.
+    window_floor:
+        Smallest window value (relative to its peak) the deapodization divides
+        by; also defines the reliable-region ``mask``.
+
+    Returns
+    -------
+    HKLVolume
+        Reciprocal-space reconstruction on the (possibly cropped) HKL grid of
+        the transform input.  ``mask`` marks where the window exceeds
+        *window_floor* (the reliably recoverable region).
+    """
+    if (dpdf.pad_width is None or dpdf.cropped_shape is None
+            or dpdf.window_axes is None or dpdf.h_axis_c is None
+            or dpdf.k_axis_c is None or dpdf.l_axis_c is None):
+        raise ValueError(
+            "DeltaPDF is missing the inverse metadata (pad_width / cropped_shape "
+            "/ window_axes / cropped axes); recompute it with compute_delta_pdf "
+            "from this build before inverting.")
+
+    # Exact inverse of fftshift(fftn(ifftshift(·))).  The stored ΔPDF is real
+    # (FT of centrosymmetric I(Q)); ifftn of it is real up to round-off.
+    prep_pad = np.real(fftshift(ifftn(ifftshift(dpdf.data))))
+
+    # Strip the symmetric zero-padding → the windowed, mean-subtracted volume.
+    sl = tuple(slice(lo, lo + n)
+               for (lo, _hi), n in zip(dpdf.pad_width, dpdf.cropped_shape))
+    prep = prep_pad[sl] + dpdf.subtracted_mean   # restore mean → win·(I − bg)
+
+    win = (dpdf.window_axes[0][:, None, None]
+           * dpdf.window_axes[1][None, :, None]
+           * dpdf.window_axes[2][None, None, :])
+    reliable = win >= window_floor * float(win.max())
+
+    if deapodize:
+        recon = np.divide(prep, win, out=np.zeros_like(prep), where=reliable)
+    else:
+        recon = prep
+        reliable = np.ones(recon.shape, dtype=bool)
+
+    if add_back_smooth_bg and dpdf.smooth_bg is not None:
+        recon = recon + dpdf.smooth_bg
+
+    ub = (np.asarray(dpdf.ub_matrix, dtype=np.float64)
+          if dpdf.ub_matrix is not None else np.eye(3, dtype=np.float64))
+    return HKLVolume(
+        data=recon.astype(np.float64),
+        sigma=np.zeros(recon.shape, dtype=np.float64),
+        mask=reliable,
+        h_axis=dpdf.h_axis_c.copy(),
+        k_axis=dpdf.k_axis_c.copy(),
+        l_axis=dpdf.l_axis_c.copy(),
+        ub_matrix=ub.copy(),
     )
 
 
@@ -255,20 +375,25 @@ def compute_delta_pdf(
 # Helpers
 # ------------------------------------------------------------------
 
-def _build_window(shape: tuple[int, ...], kind: Window, sigma: float) -> NDArray:
-    """Build a 3D separable apodization window."""
-    def _1d(n: int) -> NDArray:
+def _window_axes(
+    shape: tuple[int, ...], kind: Window, sigma: float
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+    """The three separable 1-D apodization factors (kept for exact inversion)."""
+    def _1d(n: int) -> NDArray[np.float64]:
         if kind == "hann":
-            return np.hanning(n)
+            return np.hanning(n).astype(np.float64)
         if kind == "gaussian":
             x = np.linspace(-1, 1, n)
-            return np.exp(-0.5 * (x / sigma) ** 2)
-        return np.ones(n)
+            return np.exp(-0.5 * (x / sigma) ** 2).astype(np.float64)
+        return np.ones(n, dtype=np.float64)
 
-    wh = _1d(shape[0])[:, None, None]
-    wk = _1d(shape[1])[None, :, None]
-    wl = _1d(shape[2])[None, None, :]
-    return wh * wk * wl
+    return _1d(shape[0]), _1d(shape[1]), _1d(shape[2])
+
+
+def _build_window(shape: tuple[int, ...], kind: Window, sigma: float) -> NDArray:
+    """Build a 3D separable apodization window."""
+    wh, wk, wl = _window_axes(shape, kind, sigma)
+    return wh[:, None, None] * wk[None, :, None] * wl[None, None, :]
 
 
 def _next_power_of_2(n: int) -> int:
