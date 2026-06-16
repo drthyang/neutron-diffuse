@@ -49,6 +49,61 @@ const HOT: Stop[] = [
   [1.0, [255, 255, 255]],
 ];
 
+const MAGMA: Stop[] = [
+  [0.0, [0, 0, 4]],
+  [0.13, [28, 16, 68]],
+  [0.25, [79, 18, 123]],
+  [0.38, [129, 37, 129]],
+  [0.5, [181, 54, 122]],
+  [0.63, [229, 80, 100]],
+  [0.75, [251, 135, 97]],
+  [0.88, [254, 194, 135]],
+  [1.0, [252, 253, 191]],
+];
+
+const PLASMA: Stop[] = [
+  [0.0, [13, 8, 135]],
+  [0.13, [75, 3, 161]],
+  [0.25, [125, 3, 168]],
+  [0.38, [168, 34, 150]],
+  [0.5, [203, 70, 121]],
+  [0.63, [229, 107, 93]],
+  [0.75, [248, 148, 65]],
+  [0.88, [253, 195, 40]],
+  [1.0, [240, 249, 33]],
+];
+
+const CIVIDIS: Stop[] = [
+  [0.0, [0, 32, 76]],
+  [0.25, [42, 68, 109]],
+  [0.5, [124, 123, 120]],
+  [0.75, [186, 176, 119]],
+  [1.0, [255, 234, 70]],
+];
+
+const TURBO: Stop[] = [
+  [0.0, [48, 18, 59]],
+  [0.25, [33, 144, 255]],
+  [0.5, [125, 233, 99]],
+  [0.75, [253, 166, 52]],
+  [1.0, [122, 4, 3]],
+];
+
+const RAINBOW: Stop[] = [
+  [0.0, [136, 0, 235]],
+  [0.17, [0, 80, 255]],
+  [0.34, [0, 200, 230]],
+  [0.5, [40, 220, 90]],
+  [0.67, [200, 230, 30]],
+  [0.84, [255, 150, 20]],
+  [1.0, [230, 20, 20]],
+];
+
+const GRAY: Stop[] = [
+  [0.0, [0, 0, 0]],
+  [1.0, [255, 255, 255]],
+];
+
 const RDBU_R: Stop[] = [
   [0.0, [5, 48, 97]],
   [0.25, [67, 147, 195]],
@@ -60,9 +115,25 @@ const RDBU_R: Stop[] = [
 export const COLORMAPS: Record<string, Uint8ClampedArray> = {
   inferno: buildLut(INFERNO),
   viridis: buildLut(VIRIDIS),
+  magma: buildLut(MAGMA),
+  plasma: buildLut(PLASMA),
+  cividis: buildLut(CIVIDIS),
+  turbo: buildLut(TURBO),
+  rainbow: buildLut(RAINBOW),
   hot: buildLut(HOT),
+  gray: buildLut(GRAY),
   RdBu_r: buildLut(RDBU_R),
 };
 
-export const SEQUENTIAL_NAMES = ["inferno", "viridis", "hot"];
+export const SEQUENTIAL_NAMES = [
+  "inferno",
+  "viridis",
+  "magma",
+  "plasma",
+  "cividis",
+  "turbo",
+  "rainbow",
+  "hot",
+  "gray",
+];
 export const DIVERGING_NAME = "RdBu_r";

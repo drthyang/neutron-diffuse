@@ -439,6 +439,54 @@ input[type="range"]::-moz-range-track {
   background: transparent;
 }
 
+/* dual-thumb range: two overlaid inputs over one track + a [lo,hi] fill */
+.range-dual {
+  position: relative;
+  height: 16px;
+  margin: 6px 0;
+}
+.range-dual .range-track,
+.range-dual .range-fill {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 4px;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.range-dual .range-track {
+  left: 0;
+  right: 0;
+  background: var(--surface-3);
+}
+.range-dual .range-fill {
+  left: var(--lo, 0%);
+  right: calc(100% - var(--hi, 100%));
+  background: var(--accent);
+}
+.range-dual input[type="range"] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 16px;
+  margin: 0;
+  background: none;
+  pointer-events: none; /* only the thumbs are interactive */
+}
+.range-dual input[type="range"]:nth-of-type(1) {
+  z-index: 3; /* keep the lo thumb grabbable when the two overlap */
+}
+.range-dual input[type="range"]:nth-of-type(2) {
+  z-index: 2;
+}
+.range-dual input[type="range"]::-webkit-slider-thumb {
+  pointer-events: auto;
+}
+.range-dual input[type="range"]::-moz-range-thumb {
+  pointer-events: auto;
+}
+
 /* segmented control */
 .segmented {
   display: inline-flex;

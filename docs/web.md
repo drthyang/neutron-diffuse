@@ -35,6 +35,7 @@ fallback:
 | **Reciprocal cleanup** | `explore_slice.py` | One panel per HKLVolume stage (raw / ring-removed / Bragg-punched / backfilled / flattened) sharing an H/K/L plane selector, cut, contrast, log, and colormap. All panels share **one fixed global colour scale** (pooled from the centre cut), so stages are directly comparable and the scale stays put while you scrub. The cut readout is an **editable box** — type a value (e.g. `0.3333`) and it snaps to the nearest plane. |
 | **3D-ΔPDF** | `explore_delta_pdf_ortho.py` | Three linked real-space orthoslices (x_H–y_K, x_H–z_L, y_K–z_L) shown as square **windows** (adjustable size, default 80 Å), each with its own cut slider directly above it, plus contrast and a gray dashed unit-cell overlay. |
 | **Multi-temperature** | `explore_delta_pdf_multi.py` | 22 / 45 / 100 K × the three planes as a square grid, sharing the cut, window, and contrast; a per-plane colour scale pooled across temperatures. |
+| **Consistency check** | `delta_pdf_consistency.py` | End-of-workflow back-FFT check: inverse-transforms the ΔPDF to reciprocal space and shows **data \| back-FFT \| residual** at a shared plane/cut, with the agreement metrics (Pearson r, normalised RMS, per-plane r). An adjustable **\|Q\| band** (min/max sliders → *Apply*) band-limits the data before the round trip, so you can isolate which signals come from low- vs high-\|Q\| (frequency). Served by `/api/consistency/{dataset}` (recon LRU-cached per \|Q\| band). |
 
 ## Architecture
 

@@ -240,6 +240,51 @@ def test_hkl_endpoint_rejects_dpdf_volume(dpdf_env):
 
 
 # ---------------------------------------------------------------------------
+# back-FFT consistency endpoints
+# ---------------------------------------------------------------------------
+def test_consistency_meta_and_band(env):
+    """Meta returns metrics + |Q| span; a sub-band limits the metric region."""
+    client, _ = env
+    full = client.get(f"/api/consistency/{SLUG}/meta")
+    assert full.status_code == 200
+    m = full.json()
+    assert m["q_data_max"] > 0
+    assert "kl" in m["planes"]
+    assert m["metrics"]["q_band"] is None
+    full_vox = m["metrics"]["n_voxels"]
+
+    qmax = m["q_data_max"]
+    banded = client.get(f"/api/consistency/{SLUG}/meta",
+                        params={"q_min": qmax * 0.3, "q_max": qmax * 0.7})
+    assert banded.status_code == 200
+    mb = banded.json()
+    assert mb["metrics"]["q_band"][0] == pytest.approx(qmax * 0.3)
+    assert 0 < mb["metrics"]["n_voxels"] < full_vox   # the shell is a subset
+
+
+def test_consistency_slice_envelope(env):
+    client, _ = env
+    r = client.get(f"/api/consistency/{SLUG}/slice",
+                   params={"panel": "recon", "plane": "kl", "value": 0.0})
+    assert r.status_code == 200
+    header, data = _parse_envelope(r.content)
+    assert data.shape == (header["ny"], header["nx"])
+    assert header["x_label"] and header["y_label"]
+
+
+def test_consistency_bad_panel_400(env):
+    client, _ = env
+    r = client.get(f"/api/consistency/{SLUG}/slice",
+                   params={"panel": "nope", "plane": "kl"})
+    assert r.status_code == 400
+
+
+def test_consistency_unknown_dataset_404(env):
+    client, _ = env
+    assert client.get("/api/consistency/does-not-exist/meta").status_code == 404
+
+
+# ---------------------------------------------------------------------------
 # request → PipelineParams mapping
 # ---------------------------------------------------------------------------
 def test_build_params_ring_overrides():

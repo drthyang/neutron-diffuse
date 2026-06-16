@@ -46,6 +46,29 @@ export interface DeltaPdfMeta {
   planes: string[];
 }
 
+export interface ConsistencyMetrics {
+  pearson_r: number;
+  normalized_rms: number;
+  rms: number;
+  n_voxels: number;
+  per_plane_r: Record<string, number>;
+  q_band: [number, number] | null;
+  q_data_max: number;
+  crop_hkl: number[] | null;
+  apodization: string;
+}
+
+export interface ConsistencyMeta {
+  shape: [number, number, number];
+  h_range: [number, number];
+  k_range: [number, number];
+  l_range: [number, number];
+  lattice: Lattice;
+  planes: string[];
+  q_data_max: number;
+  metrics: ConsistencyMetrics;
+}
+
 // Header decoded from the binary slice envelope.
 export interface SliceHeader {
   ny: number;

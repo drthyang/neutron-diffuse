@@ -117,6 +117,68 @@ export function Slider({
   );
 }
 
+// Dual-thumb range slider: one track, two handles → a [lo, hi] band.
+export function RangeSlider({
+  label,
+  readout,
+  valueMin,
+  valueMax,
+  min,
+  max,
+  step = 1,
+  disabled = false,
+  grow = false,
+  onChange,
+}: {
+  label: ReactNode;
+  readout?: string;
+  valueMin: number;
+  valueMax: number;
+  min: number;
+  max: number;
+  step?: number;
+  disabled?: boolean;
+  grow?: boolean;
+  onChange: (lo: number, hi: number) => void;
+}) {
+  const span = max > min ? max - min : 1;
+  const loPct = ((valueMin - min) / span) * 100;
+  const hiPct = ((valueMax - min) / span) * 100;
+  return (
+    <div className={`field${grow ? " grow" : ""}`}>
+      <div className="field-row">
+        <span className="field-label">{label}</span>
+        {readout !== undefined && <span className="readout">{readout}</span>}
+      </div>
+      <div
+        className="range-dual"
+        style={{ "--lo": `${loPct}%`, "--hi": `${hiPct}%` } as React.CSSProperties}
+      >
+        <div className="range-track" />
+        <div className="range-fill" />
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={valueMin}
+          disabled={disabled}
+          onChange={(e) => onChange(Math.min(Number(e.target.value), valueMax), valueMax)}
+        />
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={valueMax}
+          disabled={disabled}
+          onChange={(e) => onChange(valueMin, Math.max(Number(e.target.value), valueMin))}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function Switch({
   label,
   checked,
@@ -307,6 +369,14 @@ export function IconRun({ size = 17 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 18 18" {...stroke}>
       <path d="M5 3.6 14 9l-9 5.4z" />
+    </svg>
+  );
+}
+
+export function IconCheck({ size = 17 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 18 18" {...stroke}>
+      <path d="M2.5 9.5 7 14l8.5-10" />
     </svg>
   );
 }

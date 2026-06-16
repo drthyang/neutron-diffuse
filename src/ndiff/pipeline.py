@@ -65,6 +65,7 @@ __all__ = [
     "delta_pdf",
     "delta_pdf_transform_config",
     "pdf_consistency_check",
+    "consistency_reconstruction",
     "pipeline_paths",
     "run_pipeline",
 ]
@@ -552,12 +553,45 @@ def _crop_hkl(vol: HKLVolume, crop_hkl: tuple[float, float, float] | None
         l_axis=vol.l_axis[il[0]:il[-1] + 1])
 
 
+_CHECK_H_VALUES: tuple[float, ...] = (0.0, 1.0 / 3.0, 1.0)
+
+
+def _consistency_metrics(
+    rec: np.ndarray, data: np.ndarray, region: np.ndarray,
+    h_axis: np.ndarray, h_values: Sequence[float],
+) -> tuple[dict, list]:
+    """Pearson r + normalised RMS over *region*, plus per-H-plane r and figure rows."""
+    def _r(a: np.ndarray, b: np.ndarray, m: np.ndarray) -> float:
+        a, b = a[m], b[m]
+        return float(np.corrcoef(a, b)[0, 1]) if a.size > 1 else float("nan")
+
+    rms = float(np.sqrt(np.mean((rec - data)[region] ** 2))) if region.any() else 0.0
+    denom = (float(np.sqrt(np.mean(data[region] ** 2)))
+             if region.any() else 0.0) or 1.0
+    per_plane: dict[str, float] = {}
+    rows = []
+    for hv in h_values:
+        ih = int(np.argmin(np.abs(h_axis - hv)))
+        h_actual = float(h_axis[ih])
+        r_plane = _r(rec[ih], data[ih], region[ih])
+        per_plane[f"{h_actual:+.3f}"] = r_plane
+        rows.append((h_actual, data[ih], rec[ih], region[ih], r_plane))
+    metrics = {
+        "pearson_r": _r(rec, data, region),
+        "normalized_rms": rms / denom,
+        "rms": rms,
+        "n_voxels": int(region.sum()),
+        "per_plane_r": per_plane,
+    }
+    return metrics, rows
+
+
 def pdf_consistency_check(
     vol: HKLVolume,
     dpdf: DeltaPDF,
     p: DeltaPdfParams,
     *,
-    h_values: Sequence[float] = (0.0, 1.0 / 3.0, 1.0),
+    h_values: Sequence[float] = _CHECK_H_VALUES,
     figure_path: Path | None = None,
 ) -> dict:
     """Back-FFT round-trip check: inverse-transform *dpdf* and compare to *vol*.
@@ -574,39 +608,66 @@ def pdf_consistency_check(
     recon = invert_delta_pdf(dpdf, deapodize=True)
     data_vol = _crop_hkl(vol, p.crop_hkl)
     data = np.where(np.isfinite(data_vol.masked_data()), data_vol.data, 0.0)
-    rec = recon.data
-    reliable = recon.mask & np.isfinite(data)
-
-    def _r(a: np.ndarray, b: np.ndarray, m: np.ndarray) -> float:
-        a, b = a[m], b[m]
-        return float(np.corrcoef(a, b)[0, 1]) if a.size > 1 else float("nan")
-
-    resid = rec - data
-    rms = float(np.sqrt(np.mean(resid[reliable] ** 2))) if reliable.any() else 0.0
-    denom = (float(np.sqrt(np.mean(data[reliable] ** 2)))
-             if reliable.any() else 0.0) or 1.0
-    per_plane: dict[str, float] = {}
-    rows = []
-    for hv in h_values:
-        ih = int(np.argmin(np.abs(recon.h_axis - hv)))
-        h_actual = float(recon.h_axis[ih])
-        r_plane = _r(rec[ih], data[ih], reliable[ih])
-        per_plane[f"{h_actual:+.3f}"] = r_plane
-        rows.append((h_actual, data[ih], rec[ih], reliable[ih], r_plane))
-
-    metrics = {
-        "pearson_r": _r(rec, data, reliable),
-        "normalized_rms": rms / denom,
-        "rms": rms,
-        "n_voxels": int(reliable.sum()),
-        "per_plane_r": per_plane,
-        "crop_hkl": list(p.crop_hkl) if p.crop_hkl else None,
-        "apodization": p.apodization,
-    }
-
+    region = recon.mask & np.isfinite(data)
+    metrics, rows = _consistency_metrics(
+        recon.data, data, region, recon.h_axis, h_values)
+    metrics["crop_hkl"] = list(p.crop_hkl) if p.crop_hkl else None
+    metrics["apodization"] = p.apodization
     if figure_path is not None:
         _write_consistency_figure(rows, Path(figure_path))
     return metrics
+
+
+def _band_limit_q(
+    vol: HKLVolume, q_band: tuple[float, float]
+) -> tuple[HKLVolume, np.ndarray]:
+    """Mask voxels outside the spherical |Q| shell [qmin, qmax] (Å⁻¹)."""
+    qmin, qmax = q_band
+    in_band = (vol.q_magnitude() >= qmin) & (vol.q_magnitude() <= qmax)
+    return dataclasses.replace(vol, mask=vol.mask & in_band), in_band
+
+
+def consistency_reconstruction(
+    vol: HKLVolume,
+    p: DeltaPdfParams,
+    *,
+    q_band: tuple[float, float] | None = None,
+    h_values: Sequence[float] = _CHECK_H_VALUES,
+) -> dict:
+    """Band-limit (optional) → ΔPDF → inverse-FFT → compare; return sliceable volumes.
+
+    Powers the interactive consistency view.  When *q_band* is given, keeps only
+    the spherical |Q| shell ``[qmin, qmax]`` (Å⁻¹) of the diffuse data before the
+    forward+inverse round trip, so the caller can see which ΔPDF features and how
+    much signal come from low- vs high-|Q| data.  Returns reciprocal-space
+    ``HKLVolume``s (``recon``, ``data``, ``residual``) on the cropped grid — ready
+    for :func:`ndiff.visualization.extract_slice` — plus the metrics dict.
+    """
+    vol_c = _crop_hkl(vol, p.crop_hkl)
+    in_band = np.ones(vol_c.data.shape, dtype=bool)
+    if q_band is not None:
+        vol_c, in_band = _band_limit_q(vol_c, q_band)
+    dpdf = compute_delta_pdf(
+        vol_c, apodization=p.apodization,  # type: ignore[arg-type]
+        gaussian_sigma=p.gaussian_sigma, zero_pad=p.zero_pad,
+        subtract_mean=p.subtract_mean, real_space_angstrom=True,
+        crop_hkl=None, subtract_smooth_bg=p.subtract_smooth_bg)
+    recon = invert_delta_pdf(dpdf, deapodize=True)
+    data = np.where(np.isfinite(vol_c.masked_data()), vol_c.data, 0.0)
+    region = recon.mask & np.isfinite(data) & in_band
+    metrics, _rows = _consistency_metrics(
+        recon.data, data, region, recon.h_axis, h_values)
+    metrics["q_data_max"] = float(vol_c.q_magnitude().max())
+    metrics["q_band"] = list(q_band) if q_band else None
+    metrics["crop_hkl"] = list(p.crop_hkl) if p.crop_hkl else None
+    metrics["apodization"] = p.apodization
+
+    zeros = np.zeros(recon.data.shape, dtype=np.float64)
+    ones = np.ones(recon.data.shape, dtype=bool)
+    data_vol = dataclasses.replace(vol_c, data=data, sigma=zeros, mask=ones)
+    resid_vol = dataclasses.replace(recon, data=data - recon.data)
+    return {"metrics": metrics, "recon": recon, "data": data_vol,
+            "residual": resid_vol}
 
 
 def _write_consistency_figure(rows: list, out_png: Path) -> None:

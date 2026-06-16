@@ -3,12 +3,14 @@ import { useState, type ReactNode } from "react";
 import { useHealth } from "./api/hooks";
 import {
   BrandGlyph,
+  IconCheck,
   IconFlow,
   IconLattice,
   IconLayers,
   IconOrbits,
   IconRun,
 } from "./components/ui";
+import { ConsistencyViewer } from "./pages/ConsistencyViewer";
 import { DeltaPdfViewer } from "./pages/DeltaPdfViewer";
 import { MultiTempViewer } from "./pages/MultiTempViewer";
 import { PipelineConfig } from "./pages/PipelineConfig";
@@ -16,7 +18,7 @@ import { PipelineExecution } from "./pages/PipelineExecution";
 import { ReciprocalViewer } from "./pages/ReciprocalViewer";
 import { usePipelineStore } from "./state/pipelineStore";
 
-type Tab = "config" | "execution" | "reciprocal" | "dpdf" | "multi";
+type Tab = "config" | "execution" | "reciprocal" | "dpdf" | "multi" | "consistency";
 
 const NAV: { id: Tab; label: string; desc: string; icon: ReactNode }[] = [
   {
@@ -49,6 +51,12 @@ const NAV: { id: Tab; label: string; desc: string; icon: ReactNode }[] = [
     desc: "ΔPDF orthoslices side by side across temperatures, with shared cuts and pooled colour scale.",
     icon: <IconLayers />,
   },
+  {
+    id: "consistency",
+    label: "Consistency check",
+    desc: "Inverse-FFT the ΔPDF back to reciprocal space and compare to the data; band-limit |Q| to separate low- vs high-frequency signal.",
+    icon: <IconCheck />,
+  },
 ];
 
 function renderPage(tab: Tab, setTab: (t: Tab) => void): ReactNode {
@@ -63,6 +71,8 @@ function renderPage(tab: Tab, setTab: (t: Tab) => void): ReactNode {
       return <DeltaPdfViewer />;
     case "multi":
       return <MultiTempViewer />;
+    case "consistency":
+      return <ConsistencyViewer />;
   }
 }
 

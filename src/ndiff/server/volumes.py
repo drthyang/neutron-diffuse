@@ -28,7 +28,7 @@ import numpy as np
 import ndiff
 from ndiff.core import HKLVolume
 from ndiff.visualization import extract_slice
-from ndiff.visualization.slices import _ALIASES, _PLANE
+from ndiff.visualization.slices import _ALIASES, _PLANE, SliceData
 
 #: Plane keys accepted by the slice endpoint (principal pairs + Mantid aliases).
 PLANES: tuple[str, ...] = tuple(_PLANE.keys()) + tuple(_ALIASES.keys())
@@ -100,10 +100,8 @@ def _robust_max(arr: np.ndarray) -> float:
     return float(np.percentile(np.abs(finite), 99)) or 1.0
 
 
-def slice_envelope(path: Path, plane: str, value: float, interp: bool) -> bytes:
-    """Extract a 2D slice and pack it into the binary wire format above."""
-    vol = load_volume(path)
-    sd = extract_slice(vol, plane=plane, value=value, interp=interp)
+def pack_slice(sd: SliceData) -> bytes:
+    """Pack a :class:`~ndiff.visualization.slices.SliceData` into the wire format."""
     data = np.ascontiguousarray(sd.data, dtype="<f4")  # masked voxels are NaN
     header = {
         "ny": int(data.shape[0]),
@@ -117,3 +115,10 @@ def slice_envelope(path: Path, plane: str, value: float, interp: bool) -> bytes:
     }
     hb = json.dumps(header).encode("utf-8")
     return struct.pack("<I", len(hb)) + hb + data.tobytes()
+
+
+def slice_envelope(path: Path, plane: str, value: float, interp: bool) -> bytes:
+    """Extract a 2D slice and pack it into the binary wire format above."""
+    vol = load_volume(path)
+    sd = extract_slice(vol, plane=plane, value=value, interp=interp)
+    return pack_slice(sd)

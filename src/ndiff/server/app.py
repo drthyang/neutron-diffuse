@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from ndiff.server.config import ServerConfig, config_from_env
 from ndiff.server.jobs import JobManager
+from ndiff.server.routers import consistency as consistency_router
 from ndiff.server.routers import datasets as datasets_router
 from ndiff.server.routers import deltapdf as deltapdf_router
 from ndiff.server.routers import pipeline as pipeline_router
@@ -48,6 +49,7 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
     app.include_router(slices_router.router)
     app.include_router(deltapdf_router.router)
     app.include_router(pipeline_router.router)
+    app.include_router(consistency_router.router)
 
     @app.get("/api/health")
     def health() -> dict:
