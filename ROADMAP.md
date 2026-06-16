@@ -32,14 +32,21 @@ final 3D-DeltaPDF stage with a well-organized cleanup stack and clear defaults.
 Current production path:
 
 - `examples/remove_rings_3d.py`
-- `PatchedRadialRingModel`
+- Two selectable models (`RingParams.ring_model`): `PatchedRadialRingModel`
+  (`"patched"`, **default**) and `ParametricRingModel` (`"parametric"`, separable
+  pseudo-Voigt × per-ring Fourier texture; rolling / peaks radial modes).
 - Per-H-plane fit over the full 3D volume.
 - Cross-H shell confirmation and amplitude ceilings in the 3D driver.
 
 Current decisions:
 
 - Ring removal is subtractive only.
-- Use the Mantid-background-subtracted `*_cc_sub_bkg.nxs` input when available.
+- **Patched is the default model.** A/B on 22K (`examples/compare_ring_models.py`,
+  2026-06-16): patched and parametric rolling are close but fail oppositely
+  (patched over-subtracts at the ring centres, parametric under-subtracts on
+  H=1/3); patched hugs the diffuse baseline better overall.
+- Use the Mantid-background-subtracted `*_cc_sub_bkg.nxs` input when available
+  (but see Open validation — the un-subtracted `*_cc.nxs` is under evaluation).
 - `RING_PRESET=cc_on` is preferred for the cleaner background-subtracted data.
 - Keep `q_step=0.02` as the stable default. Finer `0.015` can reduce ring
   leftovers but has not been adopted because it can remove broad diffuse signal.
@@ -59,6 +66,15 @@ Open validation:
 - Inspect residual weak ring arcs after Bragg cleanup.
 - Decide whether the `cc_on` preset should become the default script preset for
   all available real data.
+- **Texture-contrast compression (both models).** The fitted azimuthal texture
+  `T(φ)` is flattened to ≈half the data-truth contrast at bright shells
+  (|Q|≈2.69, H=0) → bright arcs under-subtracted, dim arcs over-subtracted.
+  Lever is contrast (lower `texture_ridge`, higher `n_fourier`), not a background
+  term. The mean removal-% metric is blind to it; judge on the texture overlay
+  (`examples/tune_parametric_ring.py`) and the diverging / per-φ residual figures
+  (`examples/compare_ring_models.py`).
+- **Input under evaluation:** raw `*_cc.nxs` (no Mantid empty-background
+  subtraction) vs `*_cc_sub_bkg.nxs`, since the subtracted file may add artifacts.
 
 ## Phase 3 — Bragg Punch And Backfill  Implemented
 

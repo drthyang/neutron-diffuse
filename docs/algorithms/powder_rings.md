@@ -54,6 +54,65 @@ The key design rule is: **ring removal is subtractive only**. Do not replace
 masked/excess regions unless the mask is based on azimuthal smoothness, not
 radial excess.
 
+## Selectable Models: Patched vs Parametric
+
+Two interchangeable removers expose the same `fit` / `subtract` interface and the
+same cross-stack confirmed-shell guards; select with `RingParams.ring_model`
+(`"patched"` — default | `"parametric"`).
+
+- **`PatchedRadialRingModel`** (`"patched"`, default) — the non-parametric
+  per-(azimuthal-patch × |Q|-bin) estimator described above.
+- **`ParametricRingModel`** (`"parametric"`) — separable and binning-free:
+  `I_ring(|Q|,φ) = Σᵢ Tᵢ(φ)·PVᵢ(|Q|)`, a unit-peak pseudo-Voigt radial line shape
+  per ring × that ring's own non-negative Fourier azimuthal texture
+  `Tᵢ(φ) = c₀ + Σₖ (cₖ cos kφ + sₖ sin kφ)`. Two radial modes (`ring_radial_mode`):
+  **rolling** (default — a continuous `Ring(|Q|)·T(|Q|,φ)` swept over thick
+  overlapping |Q| windows, no peak detection) and **peaks** (discrete
+  pseudo-Voigt rings). Motivation: the patched grid's per-cell voxel count scales
+  with arc length ∝ |Q|, starving the low-|Q| patches; the parametric fit pools
+  all azimuths per radial shell for uniform statistics.
+
+### A/B status (2026-06-16)
+
+Compared on 22K with `examples/compare_ring_models.py` (H = 0, 1/3, 1, same
+confirmed shells). The two are **close** but fail in *opposite* directions:
+**patched over-subtracts** (digs shallow negative troughs at the ring centres,
+worst at the first ring ≈1.93 Å⁻¹) while **parametric rolling under-subtracts**
+(leaves ring behind, most on the magnetic H=1/3 plane). Judged on the slice
+figures below, **patched hugs the diffuse baseline better overall and is kept as
+the default**; parametric rolling is a validated, selectable alternative.
+
+### The dominant residual error is texture-contrast compression
+
+The main arc-by-arc error in **both** models is that the fitted azimuthal texture
+`T(φ)` is **flattened toward its φ-mean**. At |Q|≈2.69 Å⁻¹ (H=0) the data-truth
+ring excess swings ≈0.04→0.16, but every model reaches only ≈0.078→0.135 —
+roughly half the contrast. So `T(φ)` sits *below* truth at the bright arcs
+(→ under-subtraction / leftover) and *above* it at the dim arcs
+(→ over-subtraction / digs a hole). Cause: the harmonic ridge (`texture_ridge`,
+penalty ∝ order², with the mean `c₀` left free) + Fourier truncation
+(`n_fourier`) + the amplitude ceiling. A constant/background offset **cannot** fix
+this — it shifts every azimuth equally, whereas the error is *differential*; the
+lever is texture **contrast** (lower `texture_ridge`, higher `n_fourier`).
+
+> **Metric caveat.** The mean per-shell "ring removed %" is *blind* to this,
+> because the bright-under and dim-over errors cancel in the azimuthal average
+> (parametric scores ≈98% at H=0 with a visibly wrong texture). Judge ring
+> quality on the azimuthal **texture overlay** and the **per-φ / diverging
+> residual** figures, not on the mean %.
+
+### A/B tooling
+
+- `examples/compare_ring_models.py` — per-plane metrics + three figures: (a) the
+  magma `data | patched | parametric` residuals; (b) a **diverging
+  deviation-from-baseline** map (red = ring leftover, blue = over-subtraction)
+  that makes over-subtraction visible — the magma view hides it; (c) a 1-D
+  azimuthally-averaged **ring-residual profile** vs |Q| measured against one
+  common diffuse baseline.
+- `examples/tune_parametric_ring.py` — the azimuthal **texture overlay**
+  (data-truth `median_on(φ) − median_off(φ)` vs each model's `T(φ)` at a shell);
+  the diagnostic that exposes the contrast compression.
+
 ## Legacy Factored Ring Algorithm
 
 The older algorithm is still useful background and remains available for

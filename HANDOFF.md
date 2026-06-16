@@ -1,6 +1,6 @@
 # Hand-off Notes — neutron-diffuse
 
-**Date:** 2026-06-13
+**Date:** 2026-06-16
 **Repo:** `neutron-diffuse`
 **Current branch:** `main`
 
@@ -64,11 +64,19 @@ correct recipe is `fftshift(fftn(ifftshift(·)))` with symmetric padding. See
 `test_delta_pdf_centring_positive_peak`. After the fix the ΔPDF shows coherent
 single-sign correlation peaks on the expected b/c lattice.
 
-Preferred input is the Mantid-background-subtracted file:
+Preferred input has been the Mantid-background-subtracted file:
 
 ```text
 data/raw/*_cc_sub_bkg.nxs
 ```
+
+**Under evaluation (2026-06-16):** the raw `*_cc.nxs` (correlation-chopper data
+*without* the Mantid empty-background subtraction) is being compared against
+`*_cc_sub_bkg.nxs`, because the background-subtracted file appears to introduce
+artifacts. A full pipeline was run on the un-subtracted 22K (input labelled
+`No_BK_rmv`) for a side-by-side ΔPDF comparison; ring removal stays
+baseline-relative (SNIP preserves the higher pedestal), so the only deliberate
+input difference is the empty-scan subtraction. Not yet a default change.
 
 Run with a Python ≥3.10 environment that has the dependencies installed
 (`pip install -e ".[dev]"`); the commands below use `python3`.
@@ -180,7 +188,26 @@ Outputs are written under `data/processed/`:
 
 Ring removal:
 
-- Use `PatchedRadialRingModel` slice-by-slice over H.
+- Two selectable models share one `fit`/`subtract` interface (`RingParams.ring_model`):
+  `PatchedRadialRingModel` (`"patched"`, **default**) and `ParametricRingModel`
+  (`"parametric"`, separable pseudo-Voigt × per-ring Fourier texture; rolling /
+  peaks via `ring_radial_mode`). Both run slice-by-slice over H with cross-H
+  confirmed shells + amplitude ceilings.
+- **A/B verdict (2026-06-16):** the two are **close** but fail oppositely —
+  patched over-subtracts (shallow troughs at the ring centres, worst at ≈1.93 Å⁻¹),
+  parametric rolling under-subtracts (leftover, most on H=1/3). On a slice A/B
+  (`examples/compare_ring_models.py`) patched hugs the baseline better overall →
+  **kept as the default**.
+- **Open issue — texture-contrast compression (both models).** The fitted
+  azimuthal texture `T(φ)` is flattened to ≈half the data-truth contrast at bright
+  shells (|Q|≈2.69, H=0), so bright arcs are under-subtracted and dim arcs
+  over-subtracted. Cause is the harmonic ridge (`texture_ridge`) + `n_fourier`
+  truncation + the amplitude ceiling — **not** a missing background term (a
+  constant shifts all φ equally and cannot fix a differential error). The lever is
+  texture *contrast* (lower `texture_ridge`, higher `n_fourier`). The mean
+  removal-% metric is blind to it (errors cancel azimuthally); judge on the
+  texture overlay (`examples/tune_parametric_ring.py`) and the diverging / per-φ
+  residual figures from `compare_ring_models.py`.
 - Keep `q_step=0.02` as the default. `0.015` can reduce ring leftovers but may
   eat broad diffuse on rich-diffuse slices.
 - Keep `profile_method="median"` and `texture_q_smooth=0.0` for the current
