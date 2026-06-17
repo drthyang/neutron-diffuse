@@ -73,6 +73,11 @@ def reconstruction(
     return res
 
 
+def clear_cache() -> None:
+    with _lock:
+        _cache.clear()
+
+
 def consistency_meta(
     path: Path, q_band: tuple[float, float] | None, r_band: tuple[float, float] | None
 ) -> dict:

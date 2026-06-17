@@ -5,7 +5,6 @@
 import { create } from "zustand";
 
 interface DpdfState {
-  datasetId?: string;
   cutX: number;
   cutY: number;
   cutZ: number;
@@ -14,7 +13,6 @@ interface DpdfState {
   colormap: string;
   windowFull: number; // square real-space window width in Å (shared by both viewers)
   centered: boolean;
-  setDataset: (id: string) => void;
   setCutX: (i: number) => void;
   setCutY: (i: number) => void;
   setCutZ: (i: number) => void;
@@ -35,7 +33,6 @@ export const useDpdfStore = create<DpdfState>((set) => ({
   colormap: "RdBu_r",
   windowFull: 80,
   centered: false,
-  setDataset: (datasetId) => set({ datasetId }),
   setCutX: (cutX) => set({ cutX }),
   setCutY: (cutY) => set({ cutY }),
   setCutZ: (cutZ) => set({ cutZ }),

@@ -26,6 +26,7 @@ import {
   type FixedAxis,
   useViewerStore,
 } from "../state/viewerStore";
+import { useDatasetStore, useInitializeDataset } from "../state/datasetStore";
 
 const STAGE_ORDER = ["raw", "ringremoved", "braggpunched", "backfilled", "flattened"];
 const STAGE_LABELS: Record<string, string> = {
@@ -40,23 +41,20 @@ const AXES: FixedAxis[] = ["H", "K", "L"];
 export function ReciprocalViewer() {
   const datasetsQ = useDatasets();
   const datasets = useMemo(() => datasetsQ.data ?? [], [datasetsQ.data]);
+  useInitializeDataset(datasets);
 
-  const datasetId = useViewerStore((s) => s.datasetId);
+  const datasetId = useDatasetStore((s) => s.datasetId);
+  const setDataset = useDatasetStore((s) => s.setDataset);
   const fixedAxis = useViewerStore((s) => s.fixedAxis);
   const cutIndex = useViewerStore((s) => s.cutIndex);
   const contrast = useViewerStore((s) => s.contrast);
   const log = useViewerStore((s) => s.log);
   const colormap = useViewerStore((s) => s.colormap);
-  const setDataset = useViewerStore((s) => s.setDataset);
   const setFixedAxis = useViewerStore((s) => s.setFixedAxis);
   const setCutIndex = useViewerStore((s) => s.setCutIndex);
   const setContrast = useViewerStore((s) => s.setContrast);
   const setLog = useViewerStore((s) => s.setLog);
   const setColormap = useViewerStore((s) => s.setColormap);
-
-  useEffect(() => {
-    if (!datasetId && datasets.length) setDataset(datasets[0].id);
-  }, [datasetId, datasets, setDataset]);
 
   const dataset = datasets.find((d) => d.id === datasetId);
   const stages = (dataset?.stages ?? [])

@@ -22,6 +22,7 @@ import {
   Slider,
   Switch,
 } from "../components/ui";
+import { useDatasetStore, useInitializeDataset } from "../state/datasetStore";
 import { useDpdfStore } from "../state/dpdfStore";
 import { AXIS_INDEX, AXIS_TO_PLANE, type FixedAxis, REAL_AXIS_INDEX, REAL_AXIS_TO_PLANE, type RealAxis, useViewerStore } from "../state/viewerStore";
 
@@ -36,6 +37,9 @@ const PANELS = [
 export function ConsistencyViewer() {
   const datasetsQ = useDatasets();
   const datasets = useMemo(() => datasetsQ.data ?? [], [datasetsQ.data]);
+  useInitializeDataset(datasets);
+  const datasetId = useDatasetStore((s) => s.datasetId);
+  const setDatasetId = useDatasetStore((s) => s.setDataset);
   // Only datasets whose ΔPDF input (flattened/backfilled) exists can be inverted.
   const usable = useMemo(
     () =>
@@ -46,17 +50,17 @@ export function ConsistencyViewer() {
             s.exists &&
             (s.name === "flattened" || s.name === "backfilled"),
         ),
-      ),
+    ),
     [datasets],
   );
+  const dataset = datasets.find((d) => d.id === datasetId);
+  const selectedUsable = Boolean(dataset && usable.some((d) => d.id === dataset.id));
 
-  const datasetId = useViewerStore((s) => s.datasetId);
   const fixedAxis = useViewerStore((s) => s.fixedAxis);
   const cutIndex = useViewerStore((s) => s.cutIndex);
   const contrast = useViewerStore((s) => s.contrast);
   const log = useViewerStore((s) => s.log);
   const colormap = useViewerStore((s) => s.colormap);
-  const setDatasetId = useViewerStore((s) => s.setDataset);
   const setFixedAxis = useViewerStore((s) => s.setFixedAxis);
   const setCutIndex = useViewerStore((s) => s.setCutIndex);
   const setContrast = useViewerStore((s) => s.setContrast);
@@ -91,17 +95,13 @@ export function ConsistencyViewer() {
   const dpdfCutIndex = dpdfFixedAxis === "X" ? cutX : dpdfFixedAxis === "Y" ? cutY : cutZ;
   const setDpdfCutIndex = dpdfFixedAxis === "X" ? setCutX : dpdfFixedAxis === "Y" ? setCutY : setCutZ;
 
-  useEffect(() => {
-    if (!datasetId && usable.length) setDatasetId(usable[0].id);
-  }, [datasetId, usable, setDatasetId]);
-
   // Meta drives the metrics + grid ranges + |Q| span; it recomputes the (heavy)
   // round trip whenever the committed band changes.
   const metaQ = useQuery({
     queryKey: ["consMeta", datasetId, band?.min, band?.max, rBand?.min, rBand?.max],
     queryFn: () =>
       fetchConsistencyMeta(datasetId as string, band?.min, band?.max, rBand?.min, rBand?.max),
-    enabled: Boolean(datasetId),
+    enabled: Boolean(datasetId && selectedUsable),
     placeholderData: keepPreviousData,
   });
   const meta = metaQ.data;
@@ -189,7 +189,7 @@ export function ConsistencyViewer() {
         fetchConsistencySlice(
           datasetId as string, p.key, plane, value, band?.min, band?.max, rBand?.min, rBand?.max,
         ),
-      enabled: Boolean(datasetId && axisInfo),
+      enabled: Boolean(datasetId && selectedUsable && axisInfo),
       placeholderData: keepPreviousData,
     })),
   });
@@ -200,7 +200,7 @@ export function ConsistencyViewer() {
       fetchConsistencySlice(
         datasetId as string, "dpdf", dpdfPlane, dpdfValue, band?.min, band?.max, rBand?.min, rBand?.max,
       ),
-    enabled: Boolean(datasetId && dpdfAxisInfo),
+    enabled: Boolean(datasetId && selectedUsable && dpdfAxisInfo),
     placeholderData: keepPreviousData,
   });
 
@@ -226,7 +226,7 @@ export function ConsistencyViewer() {
             value={datasetId ?? ""}
             onChange={(e) => setDatasetId(e.target.value)}
           >
-            {usable.map((d) => (
+            {datasets.map((d) => (
               <option key={d.id} value={d.id} title={d.raw_name}>
                 {d.temperature ?? d.stem}
               </option>
@@ -420,6 +420,12 @@ export function ConsistencyViewer() {
           hint="Run the pipeline first — the flattened/backfilled volume feeds this back-FFT check."
         />
       )}
+      {!datasetsQ.isError && usable.length > 0 && dataset && !selectedUsable && (
+        <EmptyState
+          title="No invertible volume for this dataset"
+          hint="Run this dataset through backfill or flatten first — the flattened/backfilled volume feeds this back-FFT check."
+        />
+      )}
       {metaQ.isError && (
         <EmptyState
           error
@@ -429,6 +435,7 @@ export function ConsistencyViewer() {
         />
       )}
 
+      {selectedUsable && (
       <div className="panel-grid">
         {PANELS.map((p, i) => {
           const isData = p.key === "data";
@@ -471,8 +478,9 @@ export function ConsistencyViewer() {
           gridlines={dpdfGridlines}
         />
       </div>
+      )}
 
-      {m && (
+      {selectedUsable && m && (
         <MetaStrip
           items={[
             {

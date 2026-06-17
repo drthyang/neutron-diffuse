@@ -2,6 +2,7 @@
 
 import type {
   ConsistencyMeta,
+  DataRoot,
   Dataset,
   DeltaPdfMeta,
   JobOut,
@@ -46,6 +47,20 @@ export function fetchHealth(): Promise<{ status: string }> {
 
 export function fetchDatasets(): Promise<Dataset[]> {
   return getJSON<Dataset[]>("/api/datasets");
+}
+
+export function fetchDataRoot(): Promise<DataRoot> {
+  return getJSON<DataRoot>("/api/data-root");
+}
+
+export async function setDataRoot(dataRoot: string): Promise<DataRoot> {
+  const r = await fetch("/api/data-root", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ data_root: dataRoot }),
+  });
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  return (await r.json()) as DataRoot;
 }
 
 export function fetchMeta(volumeId: string): Promise<VolumeMeta> {

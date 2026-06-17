@@ -8,12 +8,8 @@ import { useDatasets, useDpdfMeta } from "../api/hooks";
 import { COLORMAPS, DIVERGING_NAMES, DIVERGING_NAME } from "../colormaps/luts";
 import { DpdfPanel } from "../components/DpdfPanel";
 import { EmptyState, Field, MetaStrip, Slider, Switch } from "../components/ui";
+import { useDatasetStore, useInitializeDataset } from "../state/datasetStore";
 import { useDpdfStore } from "../state/dpdfStore";
-
-function tempNum(t: string | null): number {
-  const m = t?.match(/(\d+)/);
-  return m ? Number(m[1]) : 1e9;
-}
 
 function axisValue(
   range: [number, number] | undefined,
@@ -26,15 +22,11 @@ function axisValue(
 
 export function DeltaPdfViewer() {
   const datasetsQ = useDatasets();
-  const dpdfDatasets = useMemo(
-    () =>
-      (datasetsQ.data ?? [])
-        .filter((d) => d.stages.some((s) => s.name === "delta_pdf" && s.exists))
-        .sort((a, b) => tempNum(a.temperature) - tempNum(b.temperature)),
-    [datasetsQ.data],
-  );
+  const datasets = useMemo(() => datasetsQ.data ?? [], [datasetsQ.data]);
+  useInitializeDataset(datasets);
 
-  const datasetId = useDpdfStore((s) => s.datasetId);
+  const datasetId = useDatasetStore((s) => s.datasetId);
+  const setDataset = useDatasetStore((s) => s.setDataset);
   const cutX = useDpdfStore((s) => s.cutX);
   const cutY = useDpdfStore((s) => s.cutY);
   const cutZ = useDpdfStore((s) => s.cutZ);
@@ -43,7 +35,6 @@ export function DeltaPdfViewer() {
   const colormap = useDpdfStore((s) => s.colormap);
   const setColormap = useDpdfStore((s) => s.setColormap);
   const centered = useDpdfStore((s) => s.centered);
-  const setDataset = useDpdfStore((s) => s.setDataset);
   const setCutX = useDpdfStore((s) => s.setCutX);
   const setCutY = useDpdfStore((s) => s.setCutY);
   const setCutZ = useDpdfStore((s) => s.setCutZ);
@@ -57,11 +48,7 @@ export function DeltaPdfViewer() {
   const setWindowFull = useDpdfStore((s) => s.setWindowFull);
   const halfWindow = windowFull / 2;
 
-  useEffect(() => {
-    if (!datasetId && dpdfDatasets.length) setDataset(dpdfDatasets[0].id);
-  }, [datasetId, dpdfDatasets, setDataset]);
-
-  const dataset = dpdfDatasets.find((d) => d.id === datasetId);
+  const dataset = datasets.find((d) => d.id === datasetId);
   const volumeId = dataset?.stages.find((s) => s.name === "delta_pdf")?.volume_id;
   const meta = useDpdfMeta(volumeId).data;
 
@@ -92,7 +79,7 @@ export function DeltaPdfViewer() {
             value={datasetId ?? ""}
             onChange={(e) => setDataset(e.target.value)}
           >
-            {dpdfDatasets.map((d) => (
+            {datasets.map((d) => (
               <option key={d.id} value={d.id} title={d.raw_name}>
                 {d.temperature ?? d.stem}
               </option>
@@ -132,8 +119,8 @@ export function DeltaPdfViewer() {
 
       {datasetsQ.isSuccess && !volumeId && (
         <EmptyState
-          title="No ΔPDF volume available"
-          hint="Run the pipeline through the ΔPDF stage — the Run pipeline tab produces the real-space volume shown here."
+          title="No ΔPDF volume available for this dataset"
+          hint="Run this dataset through the ΔPDF stage — the Run pipeline tab produces the real-space volume shown here."
         />
       )}
 

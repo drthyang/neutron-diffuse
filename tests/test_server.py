@@ -80,6 +80,41 @@ def test_list_datasets_reflects_disk(env):
     assert vid["ringremoved"] == f"{SLUG}.ringremoved"
 
 
+def test_data_root_can_be_switched(tmp_path):
+    (tmp_path / "raw").mkdir()
+    (tmp_path / "processed").mkdir()
+    paths = pipeline_paths(tmp_path / "raw" / f"{STEM}.nxs",
+                           proc_dir=tmp_path / "processed")
+    ndiff.save(_vol(), paths.ringremoved)
+
+    alt = tmp_path / "alt_data"
+    (alt / "raw").mkdir(parents=True)
+    (alt / "processed").mkdir()
+    alt_stem = "TbTi3Bi4_45K_alt_cc_sub_bkg"
+    alt_slug = "TbTi3Bi4-45K-alt-cc-sub-bkg"
+    alt_paths = pipeline_paths(alt / "raw" / f"{alt_stem}.nxs",
+                               proc_dir=alt / "processed")
+    ndiff.save(_vol(seed=1), alt_paths.ringremoved)
+
+    app = create_app(ServerConfig(data_root=tmp_path))
+    client = TestClient(app)
+
+    assert client.get("/api/data-root").json()["data_root"] == str(tmp_path)
+    assert client.get("/api/datasets").json()[0]["id"] == SLUG
+
+    switched = client.put("/api/data-root", json={"data_root": str(alt)})
+    assert switched.status_code == 200
+    body = switched.json()
+    assert body["data_root"] == str(alt)
+    assert body["raw_exists"] is True
+    assert body["processed_exists"] is True
+    assert body["n_datasets"] == 1
+    assert client.get("/api/datasets").json()[0]["id"] == alt_slug
+
+    missing = client.put("/api/data-root", json={"data_root": str(tmp_path / "nope")})
+    assert missing.status_code == 400
+
+
 @pytest.mark.parametrize("dpdf_name", ["full_chain", "short_legacy", "both"])
 def test_discovery_no_phantom_from_delta_pdf_names(tmp_path, dpdf_name):
     """``*_delta_pdf.h5`` files attach to their dataset instead of spawning a

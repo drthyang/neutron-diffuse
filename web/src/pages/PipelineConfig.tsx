@@ -3,17 +3,29 @@
 // them; pressing Run kicks off the job (also in the store) and jumps to the
 // Execution page via `onStarted`.
 
-import { useEffect, useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useShallow } from "zustand/react/shallow";
 
-import { useDatasets } from "../api/hooks";
+import { setDataRoot } from "../api/client";
+import { useDataRoot, useDatasets } from "../api/hooks";
 import { Field, HelpTip, Switch } from "../components/ui";
+import { useDatasetStore, useInitializeDataset } from "../state/datasetStore";
 import {
   STAGE_LABELS,
   STAGE_NO,
   usePipelineStore,
   type PunchPlane,
 } from "../state/pipelineStore";
+
+const DATASET_STAGE_BADGES = [
+  { key: "raw", label: "Raw", group: "Input" },
+  { key: "ringremoved", label: "Ring removed", group: "Cleanup" },
+  { key: "braggpunched", label: "Bragg punched", group: "Cleanup" },
+  { key: "backfilled", label: "Backfilled", group: "Cleanup" },
+  { key: "flattened", label: "Background flattened", group: "Cleanup" },
+  { key: "delta_pdf", label: "3D-ΔPDF", group: "Output" },
+] as const;
 
 // One pipeline stage rendered as its own card.  `step` shows the matching
 // stepper number so the tiles read in pipeline order regardless of how the
@@ -544,11 +556,25 @@ function PunchShapeViz({
 
 export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
   const datasetsQ = useDatasets();
+  const dataRootQ = useDataRoot();
+  const queryClient = useQueryClient();
   const datasets = useMemo(() => datasetsQ.data ?? [], [datasetsQ.data]);
+  useInitializeDataset(datasets);
+  const datasetId = useDatasetStore((st) => st.datasetId);
+  const setDataset = useDatasetStore((st) => st.setDataset);
+  const resetDataset = useDatasetStore((st) => st.resetDataset);
+  const selectedDataset = datasets.find((d) => d.id === datasetId);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const [rootDraft, setRootDraft] = useState("");
+  const [rootError, setRootError] = useState<string | null>(null);
+  const [rootNote, setRootNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (dataRootQ.data?.data_root) setRootDraft(dataRootQ.data.data_root);
+  }, [dataRootQ.data?.data_root]);
 
   const s = usePipelineStore(
     useShallow((st) => ({
-      datasetId: st.datasetId,
       flatten: st.flatten,
       force: st.force,
       ringModel: st.ringModel,
@@ -580,11 +606,6 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
   const patch = usePipelineStore((st) => st.patch);
   const run = usePipelineStore((st) => st.run);
 
-  // default to the first dataset once the list loads
-  useEffect(() => {
-    if (!s.datasetId && datasets.length) patch({ datasetId: datasets[0].id });
-  }, [s.datasetId, datasets, patch]);
-
   const vizPatches = clampInt(s.ringNPatches, 36, 4, 96);
   const vizFourier = clampInt(s.ringNFourier, 6, 0, 40);
   const vizRingWidth = clampFloat(s.ringWidth, 0.24, 0.02, 1.0);
@@ -609,47 +630,177 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
     onStarted();
   };
 
+  const applyDataRoot = async () => {
+    const nextRoot = rootDraft.trim();
+    if (!nextRoot) return;
+    setRootError(null);
+    setRootNote(null);
+    try {
+      const next = await setDataRoot(nextRoot);
+      setRootDraft(next.data_root);
+      resetDataset();
+      await queryClient.invalidateQueries();
+      setRootNote(`${next.n_datasets} datasets`);
+    } catch (e) {
+      setRootError((e as Error).message);
+    }
+  };
+
+  const onFolderPicked = (files: FileList | null) => {
+    const first = files?.[0] as (File & { path?: string }) | undefined;
+    if (!first) return;
+    const rel = first.webkitRelativePath;
+    const folderName = rel.split("/")[0] || first.name;
+    if (first.path && rel && first.path.endsWith(rel)) {
+      const root = first.path.slice(0, first.path.length - rel.length).replace(/[\\/]$/, "");
+      setRootDraft(root);
+      setRootNote(`Selected ${folderName}`);
+      setRootError(null);
+    } else {
+      setRootNote(`Selected ${folderName}`);
+      setRootError("Paste the full folder path, then apply.");
+    }
+    if (folderInputRef.current) folderInputRef.current.value = "";
+  };
+
+  const stageStatus = DATASET_STAGE_BADGES.map((stage) => ({
+    ...stage,
+    exists: selectedDataset?.stages.some((s) => s.name === stage.key && s.exists) ?? false,
+  }));
+  const availableStageCount = stageStatus.filter((stage) => stage.exists).length;
+  const missingStageCount = stageStatus.length - availableStageCount;
+  const rootStatus = rootError
+    ? rootError
+    : rootNote ??
+      (dataRootQ.data
+        ? `${dataRootQ.data.raw_exists ? "raw" : "no raw"} · ${dataRootQ.data.processed_exists ? "processed" : "no processed"} · ${dataRootQ.data.n_datasets} datasets`
+        : " ");
+  const readinessLabel = selectedDataset
+    ? missingStageCount === 0
+      ? "All expected files available"
+      : `${availableStageCount}/${stageStatus.length} files available`
+    : "No dataset selected";
+
   return (
     <div className="config-page">
-      {/* ----------------------------------------------------- run toolbar */}
-      <div className="card config-toolbar">
-        <Field label="Dataset" grow>
-          <select
-            value={s.datasetId}
-            onChange={(e) => patch({ datasetId: e.target.value })}
-          >
-            {datasets.map((d) => (
-              <option key={d.id} value={d.id} title={d.raw_name}>
-                {d.temperature ?? d.stem}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <div className="toolbar-actions">
-          <Switch
-            label="Force"
-            checked={s.force}
-            onChange={(v) => patch({ force: v })}
-          />
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={onRun}
-            disabled={s.running || !s.datasetId}
-          >
-            {s.running && <span className="spin" />}
-            {s.running ? "Running…" : "Run pipeline"}
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={onStarted}
-            disabled={!s.running}
-          >
-            View execution →
-          </button>
+      {/* ----------------------------------------------------------- data card */}
+      <section className="card data-card">
+        <div className="data-card-head">
+          <div>
+            <h3>DATA</h3>
+            <span className="data-card-subtitle">{readinessLabel}</span>
+          </div>
+          <div className="data-actions">
+            <Switch
+              label="Force"
+              checked={s.force}
+              onChange={(v) => patch({ force: v })}
+            />
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={onRun}
+              disabled={s.running || !datasetId}
+            >
+              {s.running && <span className="spin" />}
+              {s.running ? "Running…" : "Run pipeline"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={onStarted}
+              disabled={!s.running}
+            >
+              View execution →
+            </button>
+          </div>
         </div>
-      </div>
+
+        <div className="dataset-stage-board" aria-label="Available dataset files">
+          {stageStatus.map((stage) => (
+            <div
+              key={stage.key}
+              className={`dataset-stage-item ${stage.exists ? "ok" : "missing"}`}
+              title={`${stage.group} · ${stage.label}: ${stage.exists ? "available" : "missing"}`}
+            >
+              <span className="dataset-stage-dot" />
+              <span className="dataset-stage-label">{stage.label}</span>
+              <span className="dataset-stage-state">
+                {stage.exists ? "available" : "missing"}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div className="data-card-grid">
+          <div className="data-source-panel">
+            <Field label="Data folder" grow>
+              <div className="data-root-row">
+                <input
+                  type="text"
+                  value={rootDraft}
+                  placeholder="/path/to/data"
+                  onChange={(e) => {
+                    setRootDraft(e.target.value);
+                    setRootError(null);
+                    setRootNote(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void applyDataRoot();
+                  }}
+                />
+                <input
+                  ref={folderInputRef}
+                  type="file"
+                  className="visually-hidden"
+                  // @ts-expect-error Chromium directory picker attribute.
+                  webkitdirectory=""
+                  directory=""
+                  multiple
+                  onChange={(e) => onFolderPicked(e.target.files)}
+                />
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => folderInputRef.current?.click()}
+                >
+                  Browse
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={!rootDraft.trim() || dataRootQ.isFetching}
+                  onClick={() => void applyDataRoot()}
+                >
+                  Apply
+                </button>
+              </div>
+              <span className={`data-root-status${rootError ? " error" : ""}`}>
+                {rootStatus}
+              </span>
+            </Field>
+          </div>
+
+          <div className="dataset-panel">
+            <Field label="Dataset" grow>
+              <select
+                value={datasetId ?? ""}
+                onChange={(e) => setDataset(e.target.value)}
+              >
+                {datasets.map((d) => (
+                  <option key={d.id} value={d.id} title={d.raw_name}>
+                    {d.temperature ?? d.stem}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <div className="dataset-meta">
+              <span>{selectedDataset?.raw_name ?? "No raw file selected"}</span>
+              <span>{datasets.length} datasets in folder</span>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* ------------------------------------------------- per-stage cards */}
       <div className="config-cards">

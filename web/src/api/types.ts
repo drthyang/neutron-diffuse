@@ -17,6 +17,13 @@ export interface Dataset {
   stages: StageStatus[];
 }
 
+export interface DataRoot {
+  data_root: string;
+  raw_exists: boolean;
+  processed_exists: boolean;
+  n_datasets: number;
+}
+
 export interface Lattice {
   a: number | null;
   b: number | null;

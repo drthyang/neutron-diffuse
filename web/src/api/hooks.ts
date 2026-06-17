@@ -3,6 +3,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import {
+  fetchDataRoot,
   fetchDatasets,
   fetchDpdfMeta,
   fetchDpdfSlice,
@@ -21,6 +22,10 @@ export function useHealth() {
 
 export function useDatasets() {
   return useQuery({ queryKey: ["datasets"], queryFn: fetchDatasets });
+}
+
+export function useDataRoot() {
+  return useQuery({ queryKey: ["dataRoot"], queryFn: fetchDataRoot });
 }
 
 export function useMeta(volumeId: string | undefined) {

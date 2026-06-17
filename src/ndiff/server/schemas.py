@@ -20,6 +20,17 @@ class DatasetOut(BaseModel):
     stages: list[StageStatusOut]
 
 
+class DataRootIn(BaseModel):
+    data_root: str
+
+
+class DataRootOut(BaseModel):
+    data_root: str
+    raw_exists: bool
+    processed_exists: bool
+    n_datasets: int
+
+
 class LatticeOut(BaseModel):
     a: float | None
     b: float | None

@@ -22,14 +22,12 @@ export const AXIS_INDEX: Record<FixedAxis, 0 | 1 | 2> = { H: 0, K: 1, L: 2 };
 export const REAL_AXIS_INDEX: Record<RealAxis, 0 | 1 | 2> = { X: 0, Y: 1, Z: 2 };
 
 interface ViewerState {
-  datasetId?: string;
   fixedAxis: FixedAxis;
   cutIndex: number; // index along the fixed axis
   contrast: number; // multiplies the robust auto colour scale
   log: boolean;
   colormap: string;
   divColormap: string;
-  setDataset: (id: string) => void;
   setFixedAxis: (a: FixedAxis) => void;
   setCutIndex: (i: number) => void;
   setContrast: (c: number) => void;
@@ -45,7 +43,6 @@ export const useViewerStore = create<ViewerState>((set) => ({
   log: false,
   colormap: "inferno",
   divColormap: "RdBu_r",
-  setDataset: (datasetId) => set({ datasetId }),
   setFixedAxis: (fixedAxis) => set({ fixedAxis }),
   setCutIndex: (cutIndex) => set({ cutIndex }),
   setContrast: (contrast) => set({ contrast }),

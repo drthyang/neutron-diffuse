@@ -10,6 +10,7 @@ import { create } from "zustand";
 
 import { cancelJob, runPipeline } from "../api/client";
 import type { JobEvent, StageParamsIn } from "../api/types";
+import { useDatasetStore } from "./datasetStore";
 
 export const STAGES = ["rings", "punch", "backfill", "flatten", "pdf"] as const;
 
@@ -31,7 +32,6 @@ export type PunchPlane = "hk" | "hl" | "kl";
 // All editable configuration form values.  Strings mirror the raw <input>
 // values (empty = "use the backend default"); the run action converts them.
 interface PipelineConfig {
-  datasetId: string;
   flatten: boolean;
   force: boolean;
   ringModel: string; // "patched" | "parametric"
@@ -82,7 +82,6 @@ function closeStream() {
 }
 
 export const usePipelineStore = create<PipelineState>((set, get) => ({
-  datasetId: "",
   flatten: true,
   force: false,
   ringModel: "patched",
@@ -118,6 +117,7 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
 
   run: async () => {
     const s = get();
+    const datasetId = useDatasetStore.getState().datasetId ?? "";
     closeStream();
     set({ events: [], terminal: null, running: true, jobId: null });
 
@@ -152,7 +152,7 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
 
     try {
       const job = await runPipeline({
-        dataset_id: s.datasetId,
+        dataset_id: datasetId,
         flatten_enabled: s.flatten,
         force: s.force,
         params,

@@ -13,6 +13,7 @@ import { COLORMAPS, DIVERGING_NAMES, DIVERGING_NAME } from "../colormaps/luts";
 import { SliceCanvas } from "../components/SliceCanvas";
 import { UnitCellGrid } from "../components/UnitCellGrid";
 import { EmptyState, Field, MetaStrip, Slider, Switch } from "../components/ui";
+import { useDatasetStore, useInitializeDataset } from "../state/datasetStore";
 import { useDpdfStore } from "../state/dpdfStore";
 
 const PLANES = [
@@ -41,12 +42,16 @@ function axisValue(
 
 export function MultiTempViewer() {
   const datasetsQ = useDatasets();
+  const datasets = useMemo(() => datasetsQ.data ?? [], [datasetsQ.data]);
+  useInitializeDataset(datasets);
+  const datasetId = useDatasetStore((s) => s.datasetId);
+  const setDataset = useDatasetStore((s) => s.setDataset);
   const temps = useMemo(
     () =>
-      (datasetsQ.data ?? [])
+      datasets
         .filter((d) => d.stages.some((s) => s.name === "delta_pdf" && s.exists))
         .sort((a, b) => tempNum(a.temperature) - tempNum(b.temperature)),
-    [datasetsQ.data],
+    [datasets],
   );
 
   const cutX = useDpdfStore((s) => s.cutX);
@@ -67,8 +72,10 @@ export function MultiTempViewer() {
   const center = useDpdfStore((s) => s.center);
   const halfWindow = windowFull / 2;
 
-  const firstVolId = temps[0]?.stages.find((s) => s.name === "delta_pdf")?.volume_id;
-  const meta = useDpdfMeta(firstVolId).data;
+  const selectedDpdfDataset = temps.find((d) => d.id === datasetId);
+  const metaDataset = selectedDpdfDataset ?? temps[0];
+  const metaVolId = metaDataset?.stages.find((s) => s.name === "delta_pdf")?.volume_id;
+  const meta = useDpdfMeta(metaVolId).data;
   const a = meta?.lattice.a ?? null;
   const b = meta?.lattice.b ?? null;
   const c = meta?.lattice.c ?? null;
@@ -124,6 +131,18 @@ export function MultiTempViewer() {
   return (
     <div className="page-body">
       <div className="toolbar">
+        <Field label="Dataset">
+          <select
+            value={datasetId ?? ""}
+            onChange={(e) => setDataset(e.target.value)}
+          >
+            {datasets.map((d) => (
+              <option key={d.id} value={d.id} title={d.raw_name}>
+                {d.temperature ?? d.stem}
+              </option>
+            ))}
+          </select>
+        </Field>
         <Slider
           grow
           label="x_H"
@@ -202,7 +221,7 @@ export function MultiTempViewer() {
           ))}
           {temps.map((t, ri) => (
             <Fragment key={t.id}>
-              <div className="row-head">
+              <div className={`row-head${t.id === datasetId ? " selected" : ""}`}>
                 <span className="temp-badge">{tempLabel(t.temperature, t.stem)}</span>
               </div>
               {PLANES.map((p, ci) => {
@@ -242,6 +261,12 @@ export function MultiTempViewer() {
         <MetaStrip
           items={[
             { key: "Temperatures", value: `${temps.length}` },
+            {
+              key: "Reference",
+              value: selectedDpdfDataset
+                ? tempLabel(selectedDpdfDataset.temperature, selectedDpdfDataset.stem)
+                : "first available ΔPDF",
+            },
             {
               key: "Window",
               value: `${windowFull.toFixed(0)} × ${windowFull.toFixed(0)} Å`,
