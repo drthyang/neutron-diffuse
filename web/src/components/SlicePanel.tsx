@@ -16,6 +16,13 @@ interface Props {
   vmin?: number;
   log: boolean;
   width?: number;
+  bands?: [number, number];
+  cutDistance?: number;
+  latX?: number;
+  latY?: number;
+  latCut?: number;
+  windowA?: number;
+  diverging?: boolean;
 }
 
 export function SlicePanel({
@@ -29,6 +36,13 @@ export function SlicePanel({
   vmin = 0,
   log,
   width = 320,
+  bands,
+  cutDistance,
+  latX,
+  latY,
+  latCut,
+  windowA,
+  diverging = false,
 }: Props) {
   return (
     <div className="panel-card">
@@ -49,6 +63,14 @@ export function SlicePanel({
             vmin={vmin}
             log={log}
             width={width}
+            bands={bands}
+            cutDistance={cutDistance}
+            latX={latX}
+            latY={latY}
+            latCut={latCut}
+            windowA={windowA}
+            size={width}
+            diverging={diverging}
           />
         ) : (
           <div className="skeleton" style={{ width, height: width }} />

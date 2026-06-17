@@ -88,9 +88,19 @@ export function ReciprocalViewer() {
   // Snap a typed cut value to the nearest available data point.
   const commitCut = (v: number) => {
     if (!axisInfo || axisInfo.step === 0) return;
-    const i = Math.round((v - axisInfo.min) / axisInfo.step);
-    setCutIndex(Math.max(0, Math.min(axisInfo.n - 1, i)));
+    const bounded = Math.max(axisInfo.min, Math.min(v, axisInfo.max));
+    const rawIdx = (bounded - axisInfo.min) / axisInfo.step;
+    setCutIndex(Math.round(rawIdx));
   };
+
+  const a = meta?.lattice.a ?? 1;
+  const b = meta?.lattice.b ?? 1;
+  const c = meta?.lattice.c ?? 1;
+
+  let latX = 1, latY = 1, latCut = 1;
+  if (fixedAxis === "H") { latCut = a; latX = b; latY = c; }
+  else if (fixedAxis === "K") { latCut = b; latX = a; latY = c; }
+  else if (fixedAxis === "L") { latCut = c; latX = a; latY = b; }
 
   // Displayed slices at the current cut (one per stage).
   const sliceResults = useQueries({
@@ -225,6 +235,9 @@ export function ReciprocalViewer() {
             lut={lut}
             vmax={vmax}
             log={log}
+            latX={latX}
+            latY={latY}
+            latCut={latCut}
           />
         ))}
       </div>

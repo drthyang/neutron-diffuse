@@ -632,6 +632,7 @@ def consistency_reconstruction(
     p: DeltaPdfParams,
     *,
     q_band: tuple[float, float] | None = None,
+    r_band: tuple[float, float] | None = None,
     h_values: Sequence[float] = _CHECK_H_VALUES,
 ) -> dict:
     """Band-limit (optional) → ΔPDF → inverse-FFT → compare; return sliceable volumes.
@@ -652,6 +653,21 @@ def consistency_reconstruction(
         gaussian_sigma=p.gaussian_sigma, zero_pad=p.zero_pad,
         subtract_mean=p.subtract_mean, real_space_angstrom=True,
         crop_hkl=None, subtract_smooth_bg=p.subtract_smooth_bg)
+    
+    # max R for the UI scale
+    r_data_max = float(np.sqrt(
+        max(dpdf.x_axis[0]**2, dpdf.x_axis[-1]**2) +
+        max(dpdf.y_axis[0]**2, dpdf.y_axis[-1]**2) +
+        max(dpdf.z_axis[0]**2, dpdf.z_axis[-1]**2)
+    ))
+    
+    if r_band is not None:
+        rmin, rmax = r_band
+        X, Y, Z = np.meshgrid(dpdf.x_axis, dpdf.y_axis, dpdf.z_axis, indexing="ij")
+        R = np.sqrt(X**2 + Y**2 + Z**2)
+        r_mask = (R >= rmin) & (R <= rmax)
+        dpdf.data = np.where(r_mask, dpdf.data, 0.0)
+
     recon = invert_delta_pdf(dpdf, deapodize=True)
     data = np.where(np.isfinite(vol_c.masked_data()), vol_c.data, 0.0)
     region = recon.mask & np.isfinite(data) & in_band
@@ -659,6 +675,8 @@ def consistency_reconstruction(
         recon.data, data, region, recon.h_axis, h_values)
     metrics["q_data_max"] = float(vol_c.q_magnitude().max())
     metrics["q_band"] = list(q_band) if q_band else None
+    metrics["r_data_max"] = r_data_max
+    metrics["r_band"] = list(r_band) if r_band else None
     metrics["crop_hkl"] = list(p.crop_hkl) if p.crop_hkl else None
     metrics["apodization"] = p.apodization
 
@@ -667,7 +685,7 @@ def consistency_reconstruction(
     data_vol = dataclasses.replace(vol_c, data=data, sigma=zeros, mask=ones)
     resid_vol = dataclasses.replace(recon, data=data - recon.data)
     return {"metrics": metrics, "recon": recon, "data": data_vol,
-            "residual": resid_vol}
+            "residual": resid_vol, "dpdf": dpdf}
 
 
 def _write_consistency_figure(rows: list, out_png: Path) -> None:

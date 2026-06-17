@@ -11,10 +11,12 @@ import type {
   VolumeMeta,
 } from "./types";
 
-function qBandParams(qMin?: number, qMax?: number): string {
+function bandParams(qMin?: number, qMax?: number, rMin?: number, rMax?: number): string {
   const p = new URLSearchParams();
   if (qMin != null) p.set("q_min", String(qMin));
   if (qMax != null) p.set("q_max", String(qMax));
+  if (rMin != null) p.set("r_min", String(rMin));
+  if (rMax != null) p.set("r_max", String(rMax));
   return p.toString();
 }
 
@@ -85,8 +87,10 @@ export function fetchConsistencyMeta(
   datasetId: string,
   qMin?: number,
   qMax?: number,
+  rMin?: number,
+  rMax?: number,
 ): Promise<ConsistencyMeta> {
-  const qs = qBandParams(qMin, qMax);
+  const qs = bandParams(qMin, qMax, rMin, rMax);
   const url = `/api/consistency/${encodeURIComponent(datasetId)}/meta${qs ? `?${qs}` : ""}`;
   return getJSON<ConsistencyMeta>(url);
 }
@@ -98,10 +102,14 @@ export function fetchConsistencySlice(
   value: number,
   qMin?: number,
   qMax?: number,
+  rMin?: number,
+  rMax?: number,
 ): Promise<Slice> {
   const params = new URLSearchParams({ panel, plane, value: String(value) });
   if (qMin != null) params.set("q_min", String(qMin));
   if (qMax != null) params.set("q_max", String(qMax));
+  if (rMin != null) params.set("r_min", String(rMin));
+  if (rMax != null) params.set("r_max", String(rMax));
   return fetchEnvelope(
     `/api/consistency/${encodeURIComponent(datasetId)}/slice?${params.toString()}`,
   );

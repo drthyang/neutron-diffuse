@@ -53,7 +53,9 @@ export interface ConsistencyMetrics {
   n_voxels: number;
   per_plane_r: Record<string, number>;
   q_band: [number, number] | null;
+  r_band: [number, number] | null;
   q_data_max: number;
+  r_data_max: number;
   crop_hkl: number[] | null;
   apodization: string;
 }
@@ -63,9 +65,14 @@ export interface ConsistencyMeta {
   h_range: [number, number];
   k_range: [number, number];
   l_range: [number, number];
+  dpdf_shape: [number, number, number];
+  x_range: [number, number];
+  y_range: [number, number];
+  z_range: [number, number];
   lattice: Lattice;
   planes: string[];
   q_data_max: number;
+  r_data_max: number;
   metrics: ConsistencyMetrics;
 }
 

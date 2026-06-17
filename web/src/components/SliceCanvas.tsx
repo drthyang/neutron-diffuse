@@ -27,6 +27,11 @@ interface Props {
   fit?: boolean; // letterbox to fill the parent box (preserves aspect)
   windowA?: number; // half-extent in Å — crop to a square physical window
   size?: number; // square display size in px (used with windowA)
+  bands?: [number, number]; // [min, max] band for circle overlays
+  cutDistance?: number; // distance from origin for intersection
+  latX?: number;
+  latY?: number;
+  latCut?: number;
 }
 
 export function SliceCanvas({
@@ -40,31 +45,42 @@ export function SliceCanvas({
   fit = false,
   windowA,
   size,
+  bands,
+  cutDistance,
+  latX,
+  latY,
+  latCut,
 }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const { nx, ny } = slice.header;
+  const { nx, ny, x_axis: xs, y_axis: ys } = slice.header;
+
+  let ix0 = 0;
+  let ix1 = nx - 1;
+  let iy0 = 0;
+  let iy1 = ny - 1;
+  if (windowA != null) {
+    while (ix0 < ix1 && xs[ix0] < -windowA) ix0++;
+    while (ix1 > ix0 && xs[ix1] > windowA) ix1--;
+    while (iy0 < iy1 && ys[iy0] < -windowA) iy0++;
+    while (iy1 > iy0 && ys[iy1] > windowA) iy1--;
+  }
+  const cw = ix1 - ix0 + 1;
+  const ch_raw = iy1 - iy0 + 1;
+  
+  const dx = nx > 1 ? (xs[nx - 1] - xs[0]) / (nx - 1) : 1;
+  const dy = ny > 1 ? (ys[ny - 1] - ys[0]) / (ny - 1) : 1;
+  const qScaleX = latX ? 2 * Math.PI / latX : 1;
+  const qScaleY = latY ? 2 * Math.PI / latY : 1;
+  const dx_Q = dx * qScaleX;
+  const dy_Q = dy * qScaleY;
+  const qScaleCut = latCut ? 2 * Math.PI / latCut : 1;
+  const ch = Math.round(cw * (ny / nx) * Math.abs(dy_Q / dx_Q));
 
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-
-    // Crop to the square physical window [-windowA, +windowA] on both axes.
-    const xs = slice.header.x_axis;
-    const ys = slice.header.y_axis;
-    let ix0 = 0;
-    let ix1 = nx - 1;
-    let iy0 = 0;
-    let iy1 = ny - 1;
-    if (windowA != null) {
-      while (ix0 < ix1 && xs[ix0] < -windowA) ix0++;
-      while (ix1 > ix0 && xs[ix1] > windowA) ix1--;
-      while (iy0 < iy1 && ys[iy0] < -windowA) iy0++;
-      while (iy1 > iy0 && ys[iy1] > windowA) iy1--;
-    }
-    const cw = ix1 - ix0 + 1;
-    const ch = iy1 - iy0 + 1;
 
     canvas.width = cw;
     canvas.height = ch;
@@ -76,8 +92,8 @@ export function SliceCanvas({
     const logMax = Math.log10(vmaxSafe + 1) || 1;
 
     for (let rr = 0; rr < ch; rr++) {
-      // flip vertically: top output row is the largest y.
-      const srcRow = (iy1 - rr) * nx;
+      // nearest-neighbor scale rows to match physical aspect ratio
+      const srcRow = (iy1 - Math.floor(rr * (ch_raw / ch))) * nx;
       const dstRow = rr * cw;
       for (let cc = 0; cc < cw; cc++) {
         const v = data[srcRow + ix0 + cc];
@@ -105,31 +121,75 @@ export function SliceCanvas({
       }
     }
     ctx.putImageData(img, 0, 0);
-  }, [slice, lut, vmax, vmin, log, diverging, nx, ny, windowA]);
+  }, [slice, lut, vmax, vmin, log, diverging, nx, ny, windowA, cw, ch, ix0, ix1, iy0, iy1, xs, ys]);
 
   // A windowA crop is always shown as a physical square: either at a fixed `size`
   // (single ΔPDF viewer) or filling its square parent cell (multi-temp grid).
-  let style: React.CSSProperties;
+  let wrapperStyle: React.CSSProperties;
   if (windowA != null) {
-    style =
+    wrapperStyle =
       size != null
-        ? { width: size, height: size, imageRendering: "auto" }
-        : {
-            // Responsive square: fill the column width and force a 1:1 box
-            // (overriding the raster's native aspect) so the physical window
-            // renders square and in-flow — same region as the fixed-size ΔPDF
-            // panels, without collapsing the grid track.
-            width: "100%",
-            height: "auto",
-            aspectRatio: "1 / 1",
-            display: "block",
-            imageRendering: "auto",
-          };
+        ? { width: size, height: size, position: "relative" }
+        : { width: "100%", aspectRatio: "1 / 1", display: "block", position: "relative" };
   } else if (fit) {
-    style = { maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto" };
+    wrapperStyle = { maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", position: "relative", display: "inline-block" };
   } else {
-    style = { width, height: "auto" };
+    wrapperStyle = { width, height: "auto", position: "relative", display: "inline-block" };
   }
 
-  return <canvas ref={ref} className="slice-canvas" style={style} />;
+  const vX = (xs[ix0] - dx / 2) * qScaleX;
+  const vW = cw * dx_Q;
+  const vH = ch_raw * dy_Q;
+
+  const circles: number[] = [];
+  if (bands && cutDistance != null) {
+    const [bMin, bMax] = bands;
+    const cutPhys = cutDistance * qScaleCut;
+    const cutSq = cutPhys * cutPhys;
+
+    if (bMin > 0) {
+      const rSq1 = bMin * bMin - cutSq;
+      if (rSq1 > 0) circles.push(Math.sqrt(rSq1));
+    }
+    if (bMax > 0) {
+      const rSq2 = bMax * bMax - cutSq;
+      if (rSq2 > 0) circles.push(Math.sqrt(rSq2));
+    }
+  }
+
+  return (
+    <div style={wrapperStyle}>
+      <canvas ref={ref} className="slice-canvas" style={{ width: "100%", height: "100%", display: "block", imageRendering: "auto" }} />
+      {circles.length > 0 && (
+        <svg
+          style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none" }}
+          viewBox={`${vX} ${-((ys[iy1] + Math.abs(dy) / 2) * qScaleY)} ${vW} ${Math.abs(vH)}`}
+          preserveAspectRatio="none"
+        >
+          <g transform="scale(1, -1)">
+            {circles.map((r, i) => (
+              <g key={i}>
+                <circle
+                  cx={0}
+                  cy={0}
+                  r={r}
+                  fill="none"
+                  stroke="rgba(0, 0, 0, 0.8)"
+                  strokeWidth={vW / 100}
+                />
+                <circle
+                  cx={0}
+                  cy={0}
+                  r={r}
+                  fill="none"
+                  stroke="rgba(255, 255, 255, 0.9)"
+                  strokeWidth={vW / 150}
+                />
+              </g>
+            ))}
+          </g>
+        </svg>
+      )}
+    </div>
+  );
 }

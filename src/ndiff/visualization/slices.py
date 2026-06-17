@@ -12,6 +12,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ndiff.core import HKLVolume
+from ndiff.analysis.delta_pdf import DeltaPDF
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -37,6 +38,18 @@ _PLANE: dict[str, tuple[str, int, str, str, str, str, bool]] = {
 # Mantid-style names for the three principal (non-transposed) planes.
 _ALIASES: dict[str, str] = {
     "0kl": "kl", "h0l": "hl", "hk0": "hk",
+}
+
+_PLANE_DPDF: dict[str, tuple[str, int, str, str, str, str, bool]] = {
+    # fixed X (array axis 0); natural remaining order is (Y, Z)
+    "yz": ("x_axis", 0, "z_axis", "y_axis", "Z (Å)", "Y (Å)", True),
+    "zy": ("x_axis", 0, "y_axis", "z_axis", "Y (Å)", "Z (Å)", False),
+    # fixed Y (array axis 1); natural remaining order is (X, Z)
+    "xz": ("y_axis", 1, "z_axis", "x_axis", "Z (Å)", "X (Å)", True),
+    "zx": ("y_axis", 1, "x_axis", "z_axis", "X (Å)", "Z (Å)", False),
+    # fixed Z (array axis 2); natural remaining order is (X, Y)
+    "xy": ("z_axis", 2, "y_axis", "x_axis", "Y (Å)", "X (Å)", True),
+    "yx": ("z_axis", 2, "x_axis", "y_axis", "X (Å)", "Y (Å)", False),
 }
 
 
@@ -111,6 +124,57 @@ def extract_slice(
         y_label=y_label,
         x_label=x_label,
         cut_label=f"{fixed_name} = {actual:.4g} r.l.u.",
+    )
+
+
+def extract_slice_dpdf(
+    vol: DeltaPDF,
+    plane: str = "xy",
+    value: float = 0.0,
+    interp: bool = False,
+) -> SliceData:
+    """Extract a 2D slice from a 3D-Delta PDF along the fixed axis at *value*.
+    
+    Parameters
+    ----------
+    vol : DeltaPDF
+    plane : str
+        Which two axes to show: ``'xy'``, ``'yx'``, ``'yz'``, ``'zy'``, ``'xz'``, ``'zx'``.
+    value : float
+        Coordinate of the cut along the fixed axis (Å).
+    interp : bool
+        If False (default), snap to the nearest grid plane. If True, linearly
+        interpolate between the two bracketing planes.
+    """
+    key = plane.lower()
+    if key not in _PLANE_DPDF:
+        raise ValueError(f"plane must be one of {list(_PLANE_DPDF)}; got {plane!r}")
+
+    fixed_attr, array_dim, y_attr, x_attr, y_label, x_label, transpose = _PLANE_DPDF[key]
+    fixed_axis: NDArray[np.float64] = getattr(vol, fixed_attr)
+    data: NDArray[np.float64] = vol.data
+
+    if interp:
+        data_2d, actual = _interp_plane(data, fixed_axis, float(value), array_dim)
+    else:
+        idx = int(np.argmin(np.abs(fixed_axis - value)))
+        actual = float(fixed_axis[idx])
+        data_2d = np.take(data, idx, axis=array_dim)
+
+    if transpose:
+        data_2d = data_2d.T
+
+    y_axis: NDArray[np.float64] = getattr(vol, y_attr)
+    x_axis: NDArray[np.float64] = getattr(vol, x_attr)
+    fixed_name = fixed_attr[0].upper()  # 'X', 'Y', or 'Z'
+
+    return SliceData(
+        data=data_2d,
+        y_axis=y_axis,
+        x_axis=x_axis,
+        y_label=y_label,
+        x_label=x_label,
+        cut_label=f"{fixed_name} = {actual:.2g} Å",
     )
 
 

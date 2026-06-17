@@ -22,9 +22,10 @@ from ndiff.server.config import ServerConfig
 from ndiff.server.datasets import find_dataset
 from ndiff.server.volumes import PLANES, lattice_constants, load_volume, pack_slice
 from ndiff.visualization import extract_slice
+from ndiff.visualization.slices import extract_slice_dpdf
 
 #: The three comparison volumes the viewer can slice.
-PANELS: tuple[str, ...] = ("data", "recon", "residual")
+PANELS: tuple[str, ...] = ("data", "recon", "residual", "dpdf")
 
 _CACHE_MAX = 4
 _cache: OrderedDict[tuple, dict] = OrderedDict()
@@ -44,22 +45,22 @@ def pdf_input_path(cfg: ServerConfig, dataset_id: str) -> Path | None:
     return None
 
 
-def _qkey(q_band: tuple[float, float] | None) -> tuple | None:
-    if q_band is None:
-        return None
-    return (round(float(q_band[0]), 4), round(float(q_band[1]), 4))
+def _band_key(q_band: tuple[float, float] | None, r_band: tuple[float, float] | None) -> tuple:
+    qk = (round(float(q_band[0]), 4), round(float(q_band[1]), 4)) if q_band else None
+    rk = (round(float(r_band[0]), 4), round(float(r_band[1]), 4)) if r_band else None
+    return (qk, rk)
 
 
-def reconstruction(path: Path, q_band: tuple[float, float] | None) -> dict:
-    """LRU-cached ``consistency_reconstruction`` for *path* + |Q| band."""
-    key = (str(path), path.stat().st_mtime, _qkey(q_band))
+def reconstruction(path: Path, q_band: tuple[float, float] | None, r_band: tuple[float, float] | None) -> dict:
+    """LRU-cached ``consistency_reconstruction`` for *path* + bands."""
+    key = (str(path), path.stat().st_mtime, _band_key(q_band, r_band))
     with _lock:
         hit = _cache.get(key)
         if hit is not None:
             _cache.move_to_end(key)
             return hit
     vol = load_volume(path)  # shared with the slice viewers' cache
-    res = consistency_reconstruction(vol, DeltaPdfParams(), q_band=q_band)
+    res = consistency_reconstruction(vol, DeltaPdfParams(crop_hkl=None), q_band=q_band, r_band=r_band)
     with _lock:
         _cache[key] = res
         _cache.move_to_end(key)
@@ -68,9 +69,9 @@ def reconstruction(path: Path, q_band: tuple[float, float] | None) -> dict:
     return res
 
 
-def consistency_meta(path: Path, q_band: tuple[float, float] | None) -> dict:
-    """Grid ranges, available |Q| span, and the agreement metrics."""
-    res = reconstruction(path, q_band)
+def consistency_meta(path: Path, q_band: tuple[float, float] | None, r_band: tuple[float, float] | None) -> dict:
+    """Grid ranges, available span, and the agreement metrics."""
+    res = reconstruction(path, q_band, r_band)
     recon = res["recon"]
     a, b, c = lattice_constants(recon)
     return {
@@ -78,18 +79,26 @@ def consistency_meta(path: Path, q_band: tuple[float, float] | None) -> dict:
         "h_range": [float(recon.h_axis[0]), float(recon.h_axis[-1])],
         "k_range": [float(recon.k_axis[0]), float(recon.k_axis[-1])],
         "l_range": [float(recon.l_axis[0]), float(recon.l_axis[-1])],
+        "dpdf_shape": [int(n) for n in res["dpdf"].data.shape],
+        "x_range": [float(res["dpdf"].x_axis[0]), float(res["dpdf"].x_axis[-1])],
+        "y_range": [float(res["dpdf"].y_axis[0]), float(res["dpdf"].y_axis[-1])],
+        "z_range": [float(res["dpdf"].z_axis[0]), float(res["dpdf"].z_axis[-1])],
         "lattice": {"a": a, "b": b, "c": c},
         "planes": list(PLANES),
         "q_data_max": res["metrics"]["q_data_max"],
+        "r_data_max": res["metrics"]["r_data_max"],
         "metrics": res["metrics"],
     }
 
 
 def consistency_slice_envelope(
-    path: Path, q_band: tuple[float, float] | None,
+    path: Path, q_band: tuple[float, float] | None, r_band: tuple[float, float] | None,
     panel: str, plane: str, value: float,
 ) -> bytes:
     """Binary slice envelope of one comparison *panel* at *plane*/*value*."""
-    res = reconstruction(path, q_band)
-    sd = extract_slice(res[panel], plane=plane, value=value)
+    res = reconstruction(path, q_band, r_band)
+    if panel == "dpdf":
+        sd = extract_slice_dpdf(res["dpdf"], plane=plane, value=value)
+    else:
+        sd = extract_slice(res[panel], plane=plane, value=value)
     return pack_slice(sd)

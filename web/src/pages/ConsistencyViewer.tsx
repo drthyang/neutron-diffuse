@@ -9,7 +9,7 @@ import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
 
 import { fetchConsistencyMeta, fetchConsistencySlice } from "../api/client";
 import { useDatasets } from "../api/hooks";
-import { COLORMAPS, SEQUENTIAL_NAMES } from "../colormaps/luts";
+import { COLORMAPS, SEQUENTIAL_NAMES, DIVERGING_NAME } from "../colormaps/luts";
 import { SlicePanel } from "../components/SlicePanel";
 import {
   ColormapBar,
@@ -22,9 +22,10 @@ import {
   Slider,
   Switch,
 } from "../components/ui";
-import { AXIS_INDEX, AXIS_TO_PLANE, type FixedAxis } from "../state/viewerStore";
+import { AXIS_INDEX, AXIS_TO_PLANE, type FixedAxis, REAL_AXIS_INDEX, REAL_AXIS_TO_PLANE, type RealAxis } from "../state/viewerStore";
 
 const AXES: FixedAxis[] = ["H", "K", "L"];
+const REAL_AXES: RealAxis[] = ["X", "Y", "Z"];
 const PANELS = [
   { key: "data", title: "Data (band-limited)" },
   { key: "recon", title: "Back-FFT  IFFT[ΔPDF]" },
@@ -58,6 +59,15 @@ export function ConsistencyViewer() {
   const [draftMin, setDraftMin] = useState(0);
   const [draftMax, setDraftMax] = useState(0);
 
+  const [rBand, setRBand] = useState<{ min: number; max: number } | null>(null);
+  const [draftRMin, setDraftRMin] = useState(0);
+  const [draftRMax, setDraftRMax] = useState(0);
+
+  const [dpdfFixedAxis, setDpdfFixedAxis] = useState<RealAxis>("Z");
+  const [dpdfCutIndex, setDpdfCutIndex] = useState(0);
+  const [windowFull, setWindowFull] = useState(40);
+  const [dpdfContrast, setDpdfContrast] = useState(1);
+
   useEffect(() => {
     if (!datasetId && usable.length) setDatasetId(usable[0].id);
   }, [datasetId, usable]);
@@ -65,18 +75,24 @@ export function ConsistencyViewer() {
   // Meta drives the metrics + grid ranges + |Q| span; it recomputes the (heavy)
   // round trip whenever the committed band changes.
   const metaQ = useQuery({
-    queryKey: ["consMeta", datasetId, band?.min, band?.max],
-    queryFn: () => fetchConsistencyMeta(datasetId as string, band?.min, band?.max),
+    queryKey: ["consMeta", datasetId, band?.min, band?.max, rBand?.min, rBand?.max],
+    queryFn: () =>
+      fetchConsistencyMeta(datasetId as string, band?.min, band?.max, rBand?.min, rBand?.max),
     enabled: Boolean(datasetId),
     placeholderData: keepPreviousData,
   });
   const meta = metaQ.data;
-  const spanMax = meta?.q_data_max ?? 0;
+  const spanMax = meta ? Math.ceil(meta.q_data_max) : 0;
+  const rSpanMax = meta ? Math.ceil(meta.r_data_max) : 0;
 
   // Initialise the band drafts to the full |Q| span once it is known.
   useEffect(() => {
     if (spanMax > 0 && draftMax === 0) setDraftMax(spanMax);
   }, [spanMax, draftMax]);
+
+  useEffect(() => {
+    if (rSpanMax > 0 && draftRMax === 0) setDraftRMax(rSpanMax);
+  }, [rSpanMax, draftRMax]);
 
   const axisInfo = useMemo(() => {
     if (!meta) return null;
@@ -90,10 +106,36 @@ export function ConsistencyViewer() {
     if (axisInfo) setCutIndex(Math.floor(axisInfo.n / 2));
   }, [axisInfo]);
 
+  const a = meta?.lattice.a ?? 1;
+  const b = meta?.lattice.b ?? 1;
+  const c = meta?.lattice.c ?? 1;
+
+  let latX = 1, latY = 1, latCut = 1;
+  if (fixedAxis === "H") { latCut = a; latX = b; latY = c; }
+  else if (fixedAxis === "K") { latCut = b; latX = a; latY = c; }
+  else if (fixedAxis === "L") { latCut = c; latX = a; latY = b; }
+
+  const dpdfAxisInfo = useMemo(() => {
+    if (!meta || !meta.x_range || !meta.dpdf_shape) return null;
+    const i = REAL_AXIS_INDEX[dpdfFixedAxis];
+    const [min, max] = [meta.x_range, meta.y_range, meta.z_range][i];
+    const n = meta.dpdf_shape[i];
+    return { min, max, n, step: n > 1 ? (max - min) / (n - 1) : 0 };
+  }, [meta, dpdfFixedAxis]);
+
+  useEffect(() => {
+    if (dpdfAxisInfo) setDpdfCutIndex(Math.floor(dpdfAxisInfo.n / 2));
+  }, [dpdfAxisInfo]);
+
   const idx = axisInfo ? Math.min(cutIndex, axisInfo.n - 1) : 0;
   const value = axisInfo ? axisInfo.min + idx * axisInfo.step : 0;
   const plane = AXIS_TO_PLANE[fixedAxis];
+
+  const dpdfIdx = dpdfAxisInfo ? Math.min(dpdfCutIndex, dpdfAxisInfo.n - 1) : 0;
+  const dpdfValue = dpdfAxisInfo ? dpdfAxisInfo.min + dpdfIdx * dpdfAxisInfo.step : 0;
+  const dpdfPlane = REAL_AXIS_TO_PLANE[dpdfFixedAxis];
   const seqLut = COLORMAPS[colormap] ?? COLORMAPS.inferno;
+  const divLut = COLORMAPS[DIVERGING_NAME];
 
   const commitCut = (v: number) => {
     if (!axisInfo || axisInfo.step === 0) return;
@@ -103,14 +145,24 @@ export function ConsistencyViewer() {
 
   const sliceResults = useQueries({
     queries: PANELS.map((p) => ({
-      queryKey: ["consSlice", datasetId, p.key, plane, value, band?.min, band?.max],
+      queryKey: ["consSlice", datasetId, p.key, plane, value, band?.min, band?.max, rBand?.min, rBand?.max],
       queryFn: () =>
         fetchConsistencySlice(
-          datasetId as string, p.key, plane, value, band?.min, band?.max,
+          datasetId as string, p.key, plane, value, band?.min, band?.max, rBand?.min, rBand?.max,
         ),
       enabled: Boolean(datasetId && axisInfo),
       placeholderData: keepPreviousData,
     })),
+  });
+
+  const dpdfSliceResult = useQuery({
+    queryKey: ["consSlice", datasetId, "dpdf", dpdfPlane, dpdfValue, band?.min, band?.max, rBand?.min, rBand?.max],
+    queryFn: () =>
+      fetchConsistencySlice(
+        datasetId as string, "dpdf", dpdfPlane, dpdfValue, band?.min, band?.max, rBand?.min, rBand?.max,
+      ),
+    enabled: Boolean(datasetId && dpdfAxisInfo),
+    placeholderData: keepPreviousData,
   });
 
   const rmOf = (i: number) => {
@@ -119,10 +171,13 @@ export function ConsistencyViewer() {
   };
   const seqVmax = (Math.max(rmOf(0), rmOf(1)) || 1) * contrast;
   const residScale = (rmOf(2) || 1) * contrast;
+  const dpdfVmax = (dpdfSliceResult.data?.header.robust_max || 1) * dpdfContrast;
 
   const m = meta?.metrics;
   const bandApplied = band !== null;
   const canApply = draftMax > draftMin;
+  const rBandApplied = rBand !== null;
+  const canApplyR = draftRMax > draftRMin;
 
   return (
     <div className="page-body">
@@ -209,24 +264,45 @@ export function ConsistencyViewer() {
             setDraftMax(hi);
           }}
         />
+        <RangeSlider
+          grow
+          label="|R| band (band-limit back-FFT)"
+          readout={`${draftRMin.toFixed(2)} … ${draftRMax.toFixed(2)} Å`}
+          min={0}
+          max={rSpanMax || 1}
+          step={1}
+          valueMin={draftRMin}
+          valueMax={draftRMax}
+          disabled={!rSpanMax}
+          onChange={(lo, hi) => {
+            setDraftRMin(lo);
+            setDraftRMax(hi);
+          }}
+        />
         <Field label="Recompute">
           <div style={{ display: "flex", gap: 8 }}>
             <button
               type="button"
               className="btn btn-primary"
-              disabled={!canApply || metaQ.isFetching}
-              onClick={() => setBand({ min: draftMin, max: draftMax })}
+              disabled={(!canApply && !canApplyR) || metaQ.isFetching}
+              onClick={() => {
+                setBand({ min: draftMin, max: draftMax });
+                setRBand({ min: draftRMin, max: draftRMax });
+              }}
             >
-              {metaQ.isFetching ? "Computing…" : "Apply |Q| band"}
+              {metaQ.isFetching ? "Computing…" : "Apply bounds"}
             </button>
             <button
               type="button"
               className="btn btn-ghost"
-              disabled={!bandApplied && draftMin === 0 && draftMax === spanMax}
+              disabled={(!bandApplied && draftMin === 0 && draftMax === spanMax) && (!rBandApplied && draftRMin === 0 && draftRMax === rSpanMax)}
               onClick={() => {
                 setBand(null);
                 setDraftMin(0);
                 setDraftMax(spanMax);
+                setRBand(null);
+                setDraftRMin(0);
+                setDraftRMax(rSpanMax);
               }}
             >
               Full
@@ -258,21 +334,96 @@ export function ConsistencyViewer() {
         />
       )}
 
-      <div className="panel-grid">
-        {PANELS.map((p, i) => (
-          <SlicePanel
-            key={p.key}
-            title={p.title}
-            data={sliceResults[i]?.data}
-            isFetching={sliceResults[i]?.isFetching || metaQ.isFetching}
-            isError={sliceResults[i]?.isError}
-            error={sliceResults[i]?.error as Error | null}
-            lut={seqLut}
-            vmax={p.key === "residual" ? residScale : seqVmax}
-            vmin={0}
-            log={p.key === "residual" ? false : log}
+      <div className="toolbar" style={{ marginTop: 16 }}>
+        <Field label="3D-ΔPDF fixed axis">
+          <Segmented
+            options={REAL_AXES}
+            value={dpdfFixedAxis}
+            onChange={(a) => setDpdfFixedAxis(a as RealAxis)}
           />
-        ))}
+        </Field>
+        <Slider
+          grow
+          label={`Cut along ${dpdfFixedAxis}`}
+          readout={dpdfAxisInfo ? undefined : "—"}
+          valueInput={
+            dpdfAxisInfo
+              ? {
+                  value: dpdfValue,
+                  prefix: `${dpdfFixedAxis} =`,
+                  suffix: "Å",
+                  onCommit: (v) => {
+                    if (!dpdfAxisInfo || dpdfAxisInfo.step === 0) return;
+                    const i = Math.round((v - dpdfAxisInfo.min) / dpdfAxisInfo.step);
+                    setDpdfCutIndex(Math.max(0, Math.min(dpdfAxisInfo.n - 1, i)));
+                  },
+                }
+              : undefined
+          }
+          min={0}
+          max={dpdfAxisInfo ? dpdfAxisInfo.n - 1 : 0}
+          value={dpdfIdx}
+          disabled={!dpdfAxisInfo}
+          onChange={setDpdfCutIndex}
+        />
+        <Slider
+          label="Window"
+          readout={`${windowFull.toFixed(0)} Å`}
+          min={10}
+          max={160}
+          step={2}
+          value={windowFull}
+          onChange={setWindowFull}
+        />
+        <Slider
+          label="Contrast"
+          readout={`× ${dpdfContrast.toFixed(1)}`}
+          min={0.1}
+          max={20}
+          step={0.1}
+          value={dpdfContrast}
+          onChange={setDpdfContrast}
+        />
+      </div>
+
+      <div className="panel-grid">
+        {PANELS.map((p, i) => {
+          const isData = p.key === "data";
+          return (
+            <SlicePanel
+              key={p.key}
+              title={p.title}
+              data={sliceResults[i]?.data}
+              isFetching={sliceResults[i]?.isFetching || metaQ.isFetching}
+              isError={sliceResults[i]?.isError}
+              error={sliceResults[i]?.error as Error | null}
+              lut={seqLut}
+              vmax={p.key === "residual" ? residScale : seqVmax}
+              vmin={0}
+              log={p.key === "residual" ? false : log}
+              bands={isData ? [draftMin, draftMax] : undefined}
+              cutDistance={isData ? value : undefined}
+              latX={latX}
+              latY={latY}
+              latCut={latCut}
+            />
+          );
+        })}
+        <SlicePanel
+          title="3D-ΔPDF (Real Space)"
+          data={dpdfSliceResult.data}
+          isFetching={dpdfSliceResult.isFetching || metaQ.isFetching}
+          isError={dpdfSliceResult.isError}
+          error={dpdfSliceResult.error as Error | null}
+          lut={divLut}
+          vmax={dpdfVmax}
+          vmin={0}
+          log={false}
+          diverging={true}
+          bands={[draftRMin, draftRMax]}
+          cutDistance={dpdfValue}
+          windowA={windowFull / 2}
+        />
       </div>
 
       {m && (
@@ -288,6 +439,12 @@ export function ConsistencyViewer() {
               value: m.q_band
                 ? `${m.q_band[0].toFixed(2)} … ${m.q_band[1].toFixed(2)} Å⁻¹`
                 : `full (0 … ${spanMax.toFixed(2)})`,
+            },
+            {
+              key: "|R| band",
+              value: m.r_band
+                ? `${m.r_band[0].toFixed(2)} … ${m.r_band[1].toFixed(2)} Å`
+                : `full (0 … ${rSpanMax.toFixed(2)})`,
             },
             {
               key: "per-plane r",
