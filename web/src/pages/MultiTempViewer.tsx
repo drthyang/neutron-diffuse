@@ -9,10 +9,10 @@ import { keepPreviousData, useQueries } from "@tanstack/react-query";
 
 import { fetchDpdfSlice } from "../api/client";
 import { useDatasets, useDpdfMeta } from "../api/hooks";
-import { COLORMAPS, DIVERGING_NAME } from "../colormaps/luts";
+import { COLORMAPS, DIVERGING_NAMES, DIVERGING_NAME } from "../colormaps/luts";
 import { SliceCanvas } from "../components/SliceCanvas";
 import { UnitCellGrid } from "../components/UnitCellGrid";
-import { EmptyState, MetaStrip, Slider, Switch } from "../components/ui";
+import { EmptyState, Field, MetaStrip, Slider, Switch } from "../components/ui";
 import { useDpdfStore } from "../state/dpdfStore";
 
 const PLANES = [
@@ -55,6 +55,8 @@ export function MultiTempViewer() {
   const contrast = useDpdfStore((s) => s.contrast);
   const windowFull = useDpdfStore((s) => s.windowFull);
   const gridlines = useDpdfStore((s) => s.gridlines);
+  const colormap = useDpdfStore((s) => s.colormap);
+  const setColormap = useDpdfStore((s) => s.setColormap);
   const centered = useDpdfStore((s) => s.centered);
   const setCutX = useDpdfStore((s) => s.setCutX);
   const setCutY = useDpdfStore((s) => s.setCutY);
@@ -117,7 +119,7 @@ export function MultiTempViewer() {
     pooled[p.key] = m || 1;
   });
 
-  const lut = COLORMAPS[DIVERGING_NAME];
+  const lut = COLORMAPS[colormap] ?? COLORMAPS[DIVERGING_NAME];
 
   return (
     <div className="page-body">
@@ -171,6 +173,13 @@ export function MultiTempViewer() {
           onChange={setContrast}
         />
         <Switch label="Unit cells" checked={gridlines} onChange={setGridlines} />
+        <Field label="Colormap">
+          <select value={colormap} onChange={(e) => setColormap(e.target.value)}>
+            {DIVERGING_NAMES.map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+        </Field>
       </div>
 
       {datasetsQ.isSuccess && temps.length === 0 && (

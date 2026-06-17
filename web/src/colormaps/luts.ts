@@ -112,6 +112,30 @@ const RDBU_R: Stop[] = [
   [1.0, [103, 0, 31]],
 ];
 
+const COOLWARM: Stop[] = [
+  [0.0, [59, 76, 192]],
+  [0.25, [140, 171, 255]],
+  [0.5, [221, 221, 221]],
+  [0.75, [244, 148, 128]],
+  [1.0, [180, 4, 38]],
+];
+
+const SEISMIC: Stop[] = [
+  [0.0, [0, 0, 76]],
+  [0.25, [0, 0, 255]],
+  [0.5, [255, 255, 255]],
+  [0.75, [255, 0, 0]],
+  [1.0, [127, 0, 0]],
+];
+
+const PIYG: Stop[] = [
+  [0.0, [142, 1, 82]],
+  [0.25, [222, 119, 174]],
+  [0.5, [247, 247, 247]],
+  [0.75, [127, 188, 65]],
+  [1.0, [39, 100, 25]],
+];
+
 export const COLORMAPS: Record<string, Uint8ClampedArray> = {
   inferno: buildLut(INFERNO),
   viridis: buildLut(VIRIDIS),
@@ -123,6 +147,9 @@ export const COLORMAPS: Record<string, Uint8ClampedArray> = {
   hot: buildLut(HOT),
   gray: buildLut(GRAY),
   RdBu_r: buildLut(RDBU_R),
+  coolwarm: buildLut(COOLWARM),
+  seismic: buildLut(SEISMIC),
+  PiYG: buildLut(PIYG),
 };
 
 export const SEQUENTIAL_NAMES = [
@@ -135,5 +162,11 @@ export const SEQUENTIAL_NAMES = [
   "rainbow",
   "hot",
   "gray",
+];
+export const DIVERGING_NAMES = [
+  "RdBu_r",
+  "coolwarm",
+  "seismic",
+  "PiYG",
 ];
 export const DIVERGING_NAME = "RdBu_r";

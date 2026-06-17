@@ -9,7 +9,7 @@ import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
 
 import { fetchConsistencyMeta, fetchConsistencySlice } from "../api/client";
 import { useDatasets } from "../api/hooks";
-import { COLORMAPS, SEQUENTIAL_NAMES, DIVERGING_NAME } from "../colormaps/luts";
+import { COLORMAPS, SEQUENTIAL_NAMES, DIVERGING_NAMES, DIVERGING_NAME } from "../colormaps/luts";
 import { SlicePanel } from "../components/SlicePanel";
 import {
   ColormapBar,
@@ -55,6 +55,7 @@ export function ConsistencyViewer() {
   const [contrast, setContrast] = useState(1);
   const [log, setLog] = useState(false);
   const [colormap, setColormap] = useState("inferno");
+  const [divColormap, setDivColormap] = useState(DIVERGING_NAME);
   const [band, setBand] = useState<{ min: number; max: number } | null>(null);
   const [draftMin, setDraftMin] = useState(0);
   const [draftMax, setDraftMax] = useState(0);
@@ -135,7 +136,7 @@ export function ConsistencyViewer() {
   const dpdfValue = dpdfAxisInfo ? dpdfAxisInfo.min + dpdfIdx * dpdfAxisInfo.step : 0;
   const dpdfPlane = REAL_AXIS_TO_PLANE[dpdfFixedAxis];
   const seqLut = COLORMAPS[colormap] ?? COLORMAPS.inferno;
-  const divLut = COLORMAPS[DIVERGING_NAME];
+  const divLut = COLORMAPS[divColormap] ?? COLORMAPS[DIVERGING_NAME];
 
   const commitCut = (v: number) => {
     if (!axisInfo || axisInfo.step === 0) return;
@@ -236,18 +237,24 @@ export function ConsistencyViewer() {
 
         <Switch label="Log scale" checked={log} onChange={setLog} />
 
-        <Field label="Colormap">
+        <Field label="Seq CM">
           <select value={colormap} onChange={(e) => setColormap(e.target.value)}>
-            {SEQUENTIAL_NAMES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
+            {SEQUENTIAL_NAMES.map((name) => (
+              <option key={name} value={name}>{name}</option>
             ))}
           </select>
           <ColormapBar lut={seqLut} />
         </Field>
+        <Field label="Div CM">
+          <select value={divColormap} onChange={(e) => setDivColormap(e.target.value)}>
+            {DIVERGING_NAMES.map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+          <ColormapBar lut={divLut} />
+        </Field>
       </div>
-
+      
       <div className="toolbar">
         <RangeSlider
           grow

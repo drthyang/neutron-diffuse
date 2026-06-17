@@ -28,12 +28,14 @@ interface ViewerState {
   contrast: number; // multiplies the robust auto colour scale
   log: boolean;
   colormap: string;
+  divColormap: string;
   setDataset: (id: string) => void;
   setFixedAxis: (a: FixedAxis) => void;
   setCutIndex: (i: number) => void;
   setContrast: (c: number) => void;
   setLog: (b: boolean) => void;
   setColormap: (c: string) => void;
+  setDivColormap: (c: string) => void;
 }
 
 export const useViewerStore = create<ViewerState>((set) => ({
@@ -42,10 +44,12 @@ export const useViewerStore = create<ViewerState>((set) => ({
   contrast: 1,
   log: false,
   colormap: "inferno",
+  divColormap: "RdBu_r",
   setDataset: (datasetId) => set({ datasetId }),
   setFixedAxis: (fixedAxis) => set({ fixedAxis }),
   setCutIndex: (cutIndex) => set({ cutIndex }),
   setContrast: (contrast) => set({ contrast }),
   setLog: (log) => set({ log }),
   setColormap: (colormap) => set({ colormap }),
+  setDivColormap: (divColormap) => set({ divColormap }),
 }));

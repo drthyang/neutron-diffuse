@@ -5,7 +5,7 @@
 import { useEffect, useMemo } from "react";
 
 import { useDatasets, useDpdfMeta } from "../api/hooks";
-import { COLORMAPS, DIVERGING_NAME } from "../colormaps/luts";
+import { COLORMAPS, DIVERGING_NAMES, DIVERGING_NAME } from "../colormaps/luts";
 import { DpdfPanel } from "../components/DpdfPanel";
 import { EmptyState, Field, MetaStrip, Slider, Switch } from "../components/ui";
 import { useDpdfStore } from "../state/dpdfStore";
@@ -40,6 +40,8 @@ export function DeltaPdfViewer() {
   const cutZ = useDpdfStore((s) => s.cutZ);
   const contrast = useDpdfStore((s) => s.contrast);
   const gridlines = useDpdfStore((s) => s.gridlines);
+  const colormap = useDpdfStore((s) => s.colormap);
+  const setColormap = useDpdfStore((s) => s.setColormap);
   const centered = useDpdfStore((s) => s.centered);
   const setDataset = useDpdfStore((s) => s.setDataset);
   const setCutX = useDpdfStore((s) => s.setCutX);
@@ -73,7 +75,7 @@ export function DeltaPdfViewer() {
     }
   }, [meta, centered, center]);
 
-  const lut = COLORMAPS[DIVERGING_NAME];
+  const lut = COLORMAPS[colormap] ?? COLORMAPS[DIVERGING_NAME];
   const a = meta?.lattice.a ?? null;
   const b = meta?.lattice.b ?? null;
   const c = meta?.lattice.c ?? null;
@@ -119,6 +121,13 @@ export function DeltaPdfViewer() {
         />
 
         <Switch label="Unit cells" checked={gridlines} onChange={setGridlines} />
+        <Field label="Colormap">
+          <select value={colormap} onChange={(e) => setColormap(e.target.value)}>
+            {DIVERGING_NAMES.map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+        </Field>
       </div>
 
       {datasetsQ.isSuccess && !volumeId && (
