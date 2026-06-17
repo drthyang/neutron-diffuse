@@ -200,8 +200,10 @@ export function ConsistencyViewer() {
             ))}
           </select>
         </Field>
+      </div>
 
-        <Field label="Fixed axis">
+      <div className="toolbar">
+        <Field label="Q-space fixed axis">
           <Segmented
             options={AXES}
             value={fixedAxis}
@@ -244,6 +246,66 @@ export function ConsistencyViewer() {
             ))}
           </select>
           <ColormapBar lut={seqLut} />
+        </Field>
+      </div>
+
+      <div className="toolbar">
+        <Field label="3D-ΔPDF fixed axis">
+          <Segmented
+            options={REAL_AXES}
+            value={dpdfFixedAxis}
+            onChange={(a) => setDpdfFixedAxis(a as RealAxis)}
+          />
+        </Field>
+        <Slider
+          grow
+          label={`Cut along ${dpdfFixedAxis}`}
+          readout={dpdfAxisInfo ? undefined : "—"}
+          valueInput={
+            dpdfAxisInfo
+              ? {
+                  value: dpdfValue,
+                  prefix: `${dpdfFixedAxis} =`,
+                  suffix: "Å",
+                  onCommit: (v) => {
+                    if (!dpdfAxisInfo || dpdfAxisInfo.step === 0) return;
+                    const i = Math.round((v - dpdfAxisInfo.min) / dpdfAxisInfo.step);
+                    setDpdfCutIndex(Math.max(0, Math.min(dpdfAxisInfo.n - 1, i)));
+                  },
+                }
+              : undefined
+          }
+          min={0}
+          max={dpdfAxisInfo ? dpdfAxisInfo.n - 1 : 0}
+          value={dpdfIdx}
+          disabled={!dpdfAxisInfo}
+          onChange={setDpdfCutIndex}
+        />
+        <Slider
+          label="Contrast"
+          readout={`× ${dpdfContrast.toFixed(1)}`}
+          min={0.1}
+          max={20}
+          step={0.1}
+          value={dpdfContrast}
+          onChange={setDpdfContrast}
+        />
+        <Slider
+          label="Window"
+          readout={`${windowFull.toFixed(0)} Å`}
+          min={10}
+          max={160}
+          step={2}
+          value={windowFull}
+          onChange={setWindowFull}
+        />
+        <Field label="Div CM">
+          <select value={divColormap} onChange={(e) => setDivColormap(e.target.value)}>
+            {DIVERGING_NAMES.map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+          <ColormapBar lut={divLut} />
         </Field>
       </div>
       
@@ -332,66 +394,6 @@ export function ConsistencyViewer() {
           hint={(metaQ.error as Error)?.message}
         />
       )}
-
-      <div className="toolbar" style={{ marginTop: 16 }}>
-        <Field label="3D-ΔPDF fixed axis">
-          <Segmented
-            options={REAL_AXES}
-            value={dpdfFixedAxis}
-            onChange={(a) => setDpdfFixedAxis(a as RealAxis)}
-          />
-        </Field>
-        <Field label="Div CM">
-          <select value={divColormap} onChange={(e) => setDivColormap(e.target.value)}>
-            {DIVERGING_NAMES.map((name) => (
-              <option key={name} value={name}>{name}</option>
-            ))}
-          </select>
-          <ColormapBar lut={divLut} />
-        </Field>
-        <Slider
-          grow
-          label={`Cut along ${dpdfFixedAxis}`}
-          readout={dpdfAxisInfo ? undefined : "—"}
-          valueInput={
-            dpdfAxisInfo
-              ? {
-                  value: dpdfValue,
-                  prefix: `${dpdfFixedAxis} =`,
-                  suffix: "Å",
-                  onCommit: (v) => {
-                    if (!dpdfAxisInfo || dpdfAxisInfo.step === 0) return;
-                    const i = Math.round((v - dpdfAxisInfo.min) / dpdfAxisInfo.step);
-                    setDpdfCutIndex(Math.max(0, Math.min(dpdfAxisInfo.n - 1, i)));
-                  },
-                }
-              : undefined
-          }
-          min={0}
-          max={dpdfAxisInfo ? dpdfAxisInfo.n - 1 : 0}
-          value={dpdfIdx}
-          disabled={!dpdfAxisInfo}
-          onChange={setDpdfCutIndex}
-        />
-        <Slider
-          label="Window"
-          readout={`${windowFull.toFixed(0)} Å`}
-          min={10}
-          max={160}
-          step={2}
-          value={windowFull}
-          onChange={setWindowFull}
-        />
-        <Slider
-          label="Contrast"
-          readout={`× ${dpdfContrast.toFixed(1)}`}
-          min={0.1}
-          max={20}
-          step={0.1}
-          value={dpdfContrast}
-          onChange={setDpdfContrast}
-        />
-      </div>
 
       <div className="panel-grid">
         {PANELS.map((p, i) => {
