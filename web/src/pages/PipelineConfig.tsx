@@ -686,9 +686,24 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
       {/* ----------------------------------------------------------- data card */}
       <section className="card data-card">
         <div className="data-card-head">
-          <div>
+          <div className="data-card-title">
             <h3>DATA</h3>
             <span className="data-card-subtitle">{readinessLabel}</span>
+          </div>
+          <div className="dataset-stage-board" aria-label="Available dataset files">
+            {stageStatus.map((stage) => (
+              <div
+                key={stage.key}
+                className={`dataset-stage-item ${stage.exists ? "ok" : "missing"}`}
+                title={`${stage.group} · ${stage.label}: ${stage.exists ? "available" : "missing"}`}
+              >
+                <span className="dataset-stage-dot" />
+                <span className="dataset-stage-label">{stage.label}</span>
+                <span className="dataset-stage-state">
+                  {stage.exists ? "available" : "missing"}
+                </span>
+              </div>
+            ))}
           </div>
           <div className="data-actions">
             <Switch
@@ -714,22 +729,6 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
               View execution →
             </button>
           </div>
-        </div>
-
-        <div className="dataset-stage-board" aria-label="Available dataset files">
-          {stageStatus.map((stage) => (
-            <div
-              key={stage.key}
-              className={`dataset-stage-item ${stage.exists ? "ok" : "missing"}`}
-              title={`${stage.group} · ${stage.label}: ${stage.exists ? "available" : "missing"}`}
-            >
-              <span className="dataset-stage-dot" />
-              <span className="dataset-stage-label">{stage.label}</span>
-              <span className="dataset-stage-state">
-                {stage.exists ? "available" : "missing"}
-              </span>
-            </div>
-          ))}
         </div>
 
         <div className="data-card-grid">

@@ -1208,9 +1208,12 @@ input[type="range"]::-moz-range-track {
 }
 .data-card-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 18px;
+  gap: 14px;
+}
+.data-card-title {
+  flex: none;
 }
 .data-card-head h3 {
   margin: 0;
@@ -1229,8 +1232,9 @@ input[type="range"]::-moz-range-track {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 10px 14px;
+  flex: none;
+  flex-wrap: nowrap;
+  gap: 10px;
 }
 .data-card-grid {
   display: grid;
@@ -1273,7 +1277,8 @@ input[type="range"]::-moz-range-track {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: -2px;
+  flex: 1 1 auto;
+  min-width: 220px;
 }
 .dataset-stage-item {
   display: inline-flex;
