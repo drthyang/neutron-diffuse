@@ -245,14 +245,6 @@ export function ConsistencyViewer() {
           </select>
           <ColormapBar lut={seqLut} />
         </Field>
-        <Field label="Div CM">
-          <select value={divColormap} onChange={(e) => setDivColormap(e.target.value)}>
-            {DIVERGING_NAMES.map((name) => (
-              <option key={name} value={name}>{name}</option>
-            ))}
-          </select>
-          <ColormapBar lut={divLut} />
-        </Field>
       </div>
       
       <div className="toolbar">
@@ -348,6 +340,14 @@ export function ConsistencyViewer() {
             value={dpdfFixedAxis}
             onChange={(a) => setDpdfFixedAxis(a as RealAxis)}
           />
+        </Field>
+        <Field label="Div CM">
+          <select value={divColormap} onChange={(e) => setDivColormap(e.target.value)}>
+            {DIVERGING_NAMES.map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+          <ColormapBar lut={divLut} />
         </Field>
         <Slider
           grow
