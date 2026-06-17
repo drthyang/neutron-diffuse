@@ -4,6 +4,7 @@
 
 import type { Slice } from "../api/types";
 import { SliceCanvas } from "./SliceCanvas";
+import { UnitCellGrid } from "./UnitCellGrid";
 
 interface Props {
   title: string;
@@ -23,6 +24,7 @@ interface Props {
   latCut?: number;
   windowA?: number;
   diverging?: boolean;
+  gridlines?: boolean;
 }
 
 export function SlicePanel({
@@ -43,6 +45,7 @@ export function SlicePanel({
   latCut,
   windowA,
   diverging = false,
+  gridlines = false,
 }: Props) {
   return (
     <div className="panel-card">
@@ -56,22 +59,27 @@ export function SlicePanel({
             {error?.message}
           </div>
         ) : data ? (
-          <SliceCanvas
-            slice={data}
-            lut={lut}
-            vmax={vmax}
-            vmin={vmin}
-            log={log}
-            width={width}
-            bands={bands}
-            cutDistance={cutDistance}
-            latX={latX}
-            latY={latY}
-            latCut={latCut}
-            windowA={windowA}
-            size={width}
-            diverging={diverging}
-          />
+          <div style={{ position: "relative", width, height: windowA != null ? width : "auto" }}>
+            <SliceCanvas
+              slice={data}
+              lut={lut}
+              vmax={vmax}
+              vmin={vmin}
+              log={log}
+              width={width}
+              bands={bands}
+              cutDistance={cutDistance}
+              latX={latX}
+              latY={latY}
+              latCut={latCut}
+              windowA={windowA}
+              size={width}
+              diverging={diverging}
+            />
+            {gridlines && windowA != null && (
+              <UnitCellGrid half={windowA} latX={latX ?? null} latY={latY ?? null} />
+            )}
+          </div>
         ) : (
           <div className="skeleton" style={{ width, height: width }} />
         )}

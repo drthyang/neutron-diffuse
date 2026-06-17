@@ -66,6 +66,7 @@ export function ConsistencyViewer() {
   const dpdfContrast = useDpdfStore((s) => s.contrast);
   const windowFull = useDpdfStore((s) => s.windowFull);
   const dpdfColormap = useDpdfStore((s) => s.colormap);
+  const dpdfGridlines = useDpdfStore((s) => s.gridlines);
   const cutX = useDpdfStore((s) => s.cutX);
   const cutY = useDpdfStore((s) => s.cutY);
   const cutZ = useDpdfStore((s) => s.cutZ);
@@ -73,6 +74,7 @@ export function ConsistencyViewer() {
   const setDpdfContrast = useDpdfStore((s) => s.setContrast);
   const setWindowFull = useDpdfStore((s) => s.setWindowFull);
   const setDpdfColormap = useDpdfStore((s) => s.setColormap);
+  const setDpdfGridlines = useDpdfStore((s) => s.setGridlines);
   const setCutX = useDpdfStore((s) => s.setCutX);
   const setCutY = useDpdfStore((s) => s.setCutY);
   const setCutZ = useDpdfStore((s) => s.setCutZ);
@@ -135,6 +137,11 @@ export function ConsistencyViewer() {
   if (fixedAxis === "H") { latCut = a; latX = b; latY = c; }
   else if (fixedAxis === "K") { latCut = b; latX = a; latY = c; }
   else if (fixedAxis === "L") { latCut = c; latX = a; latY = b; }
+
+  let dpdfLatX = a, dpdfLatY = b;
+  if (dpdfFixedAxis === "X") { dpdfLatX = b; dpdfLatY = c; }
+  else if (dpdfFixedAxis === "Y") { dpdfLatX = c; dpdfLatY = a; }
+  else if (dpdfFixedAxis === "Z") { dpdfLatX = a; dpdfLatY = b; }
 
   const dpdfAxisInfo = useMemo(() => {
     if (!meta || !meta.x_range || !meta.dpdf_shape) return null;
@@ -276,7 +283,7 @@ export function ConsistencyViewer() {
       </div>
 
       <div className="toolbar">
-        <Field label="3D-ΔPDF fixed axis">
+        <Field label="Fixed axis">
           <Segmented
             options={REAL_AXES}
             value={dpdfFixedAxis}
@@ -316,6 +323,7 @@ export function ConsistencyViewer() {
           value={dpdfContrast}
           onChange={setDpdfContrast}
         />
+        <Switch label="Unit cells" checked={dpdfGridlines} onChange={setDpdfGridlines} />
         <Slider
           label="Window"
           readout={`${windowFull.toFixed(0)} Å`}
@@ -457,7 +465,10 @@ export function ConsistencyViewer() {
           diverging={true}
           bands={[draftRMin, draftRMax]}
           cutDistance={dpdfValue}
+          latX={dpdfLatX}
+          latY={dpdfLatY}
           windowA={windowFull / 2}
+          gridlines={dpdfGridlines}
         />
       </div>
 
