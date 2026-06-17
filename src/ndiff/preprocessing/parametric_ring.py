@@ -700,7 +700,7 @@ class ParametricRingModel:
         w = w0.copy()
         c = np.zeros(n_basis, dtype=np.float64)
         for _ in range(max(1, self.texture_irls_iter)):
-            c = _solve(w)
+            c = _solve(w)  # type: ignore[assignment]
             resid = ratio - B @ c
             mad = float(np.median(np.abs(resid - np.median(resid)))) + 1e-12
             scale_r = 1.4826 * mad
@@ -895,15 +895,15 @@ class ParametricRingModel:
 
         # restrict to confirmed shells (envelope + per-shell ceiling) when given
         if self.allowed_ring_centers is not None and self.allowed_ring_centers.size:
-            env = self._shell_envelope(centers)
+            env = self._shell_envelope(centers)  # type: ignore[arg-type]
             coeffs *= env[:, None]
             if self.allowed_ring_ceilings is not None:
-                cap = self._shell_ceiling(centers)
+                cap = self._shell_ceiling(centers)  # type: ignore[arg-type]
                 np.minimum(coeffs[:, 0], cap, out=coeffs[:, 0])
 
         return FittedParametricRingModel(
             plane=self.plane, n_fourier=self.n_fourier, symmetric=self.symmetric,
-            mode="rolling", roll_centers=centers, roll_coeffs=coeffs,
+            mode="rolling", roll_centers=centers, roll_coeffs=coeffs,  # type: ignore[arg-type]
             q_grid=q_grid, pooled_profile=pooled_f, baseline=baseline)
 
     def _shell_envelope(self, centers: NDArray[np.float64]) -> NDArray[np.float64]:

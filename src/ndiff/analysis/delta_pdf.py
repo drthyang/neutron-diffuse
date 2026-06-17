@@ -272,8 +272,8 @@ def compute_delta_pdf(
         z_axis=z_axis,
         q_max=q_max,
         apodization=apodization,
-        pad_width=tuple(tuple(p) for p in pad_width),
-        cropped_shape=cropped_shape,
+        pad_width=tuple(tuple(p) for p in pad_width),  # type: ignore[misc]
+        cropped_shape=cropped_shape,  # type: ignore[arg-type]
         window_axes=window_axes,
         subtracted_mean=subtracted_mean,
         smooth_bg=smooth_bg,
