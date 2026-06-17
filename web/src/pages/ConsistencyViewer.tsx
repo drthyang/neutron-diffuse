@@ -22,7 +22,7 @@ import {
   Slider,
   Switch,
 } from "../components/ui";
-import { AXIS_INDEX, AXIS_TO_PLANE, type FixedAxis, REAL_AXIS_INDEX, REAL_AXIS_TO_PLANE, type RealAxis } from "../state/viewerStore";
+import { AXIS_INDEX, AXIS_TO_PLANE, type FixedAxis, REAL_AXIS_INDEX, REAL_AXIS_TO_PLANE, type RealAxis, useViewerStore } from "../state/viewerStore";
 
 const AXES: FixedAxis[] = ["H", "K", "L"];
 const REAL_AXES: RealAxis[] = ["X", "Y", "Z"];
@@ -49,13 +49,21 @@ export function ConsistencyViewer() {
     [datasets],
   );
 
-  const [datasetId, setDatasetId] = useState<string | undefined>();
-  const [fixedAxis, setFixedAxis] = useState<FixedAxis>("H");
-  const [cutIndex, setCutIndex] = useState(0);
-  const [contrast, setContrast] = useState(1);
-  const [log, setLog] = useState(false);
-  const [colormap, setColormap] = useState("inferno");
-  const [divColormap, setDivColormap] = useState(DIVERGING_NAME);
+  const datasetId = useViewerStore((s) => s.datasetId);
+  const fixedAxis = useViewerStore((s) => s.fixedAxis);
+  const cutIndex = useViewerStore((s) => s.cutIndex);
+  const contrast = useViewerStore((s) => s.contrast);
+  const log = useViewerStore((s) => s.log);
+  const colormap = useViewerStore((s) => s.colormap);
+  const divColormap = useViewerStore((s) => s.divColormap);
+  const setDatasetId = useViewerStore((s) => s.setDataset);
+  const setFixedAxis = useViewerStore((s) => s.setFixedAxis);
+  const setCutIndex = useViewerStore((s) => s.setCutIndex);
+  const setContrast = useViewerStore((s) => s.setContrast);
+  const setLog = useViewerStore((s) => s.setLog);
+  const setColormap = useViewerStore((s) => s.setColormap);
+  const setDivColormap = useViewerStore((s) => s.setDivColormap);
+
   const [band, setBand] = useState<{ min: number; max: number } | null>(null);
   const [draftMin, setDraftMin] = useState(0);
   const [draftMax, setDraftMax] = useState(0);
@@ -71,7 +79,7 @@ export function ConsistencyViewer() {
 
   useEffect(() => {
     if (!datasetId && usable.length) setDatasetId(usable[0].id);
-  }, [datasetId, usable]);
+  }, [datasetId, usable, setDatasetId]);
 
   // Meta drives the metrics + grid ranges + |Q| span; it recomputes the (heavy)
   // round trip whenever the committed band changes.
@@ -138,6 +146,17 @@ export function ConsistencyViewer() {
   const seqLut = COLORMAPS[colormap] ?? COLORMAPS.inferno;
   const divLut = COLORMAPS[divColormap] ?? COLORMAPS[DIVERGING_NAME];
 
+  useEffect(() => {
+    // When the global dataset changes (e.g. from Reciprocal Viewer),
+    // we need to reset the bands so they re-calculate limits.
+    setBand(null);
+    setDraftMin(0);
+    setDraftMax(0);
+    setRBand(null);
+    setDraftRMin(0);
+    setDraftRMax(0);
+  }, [datasetId]);
+
   const commitCut = (v: number) => {
     if (!axisInfo || axisInfo.step === 0) return;
     const i = Math.round((v - axisInfo.min) / axisInfo.step);
@@ -186,12 +205,7 @@ export function ConsistencyViewer() {
         <Field label="Dataset">
           <select
             value={datasetId ?? ""}
-            onChange={(e) => {
-              setDatasetId(e.target.value);
-              setBand(null);
-              setDraftMin(0);
-              setDraftMax(0);
-            }}
+            onChange={(e) => setDatasetId(e.target.value)}
           >
             {usable.map((d) => (
               <option key={d.id} value={d.id} title={d.raw_name}>
@@ -203,7 +217,7 @@ export function ConsistencyViewer() {
       </div>
 
       <div className="toolbar">
-        <Field label="Q-space fixed axis">
+        <Field label="Fixed axis">
           <Segmented
             options={AXES}
             value={fixedAxis}
@@ -239,7 +253,7 @@ export function ConsistencyViewer() {
 
         <Switch label="Log scale" checked={log} onChange={setLog} />
 
-        <Field label="Seq CM">
+        <Field label="Colormap">
           <select value={colormap} onChange={(e) => setColormap(e.target.value)}>
             {SEQUENTIAL_NAMES.map((name) => (
               <option key={name} value={name}>{name}</option>
@@ -299,7 +313,7 @@ export function ConsistencyViewer() {
           value={windowFull}
           onChange={setWindowFull}
         />
-        <Field label="Div CM">
+        <Field label="Colormap">
           <select value={divColormap} onChange={(e) => setDivColormap(e.target.value)}>
             {DIVERGING_NAMES.map((name) => (
               <option key={name} value={name}>{name}</option>
