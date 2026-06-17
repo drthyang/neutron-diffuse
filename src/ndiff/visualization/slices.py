@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING, NamedTuple
 import numpy as np
 from numpy.typing import NDArray
 
-from ndiff.core import HKLVolume
 from ndiff.analysis.delta_pdf import DeltaPDF
+from ndiff.core import HKLVolume
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes

@@ -51,7 +51,9 @@ def _band_key(q_band: tuple[float, float] | None, r_band: tuple[float, float] | 
     return (qk, rk)
 
 
-def reconstruction(path: Path, q_band: tuple[float, float] | None, r_band: tuple[float, float] | None) -> dict:
+def reconstruction(
+    path: Path, q_band: tuple[float, float] | None, r_band: tuple[float, float] | None
+) -> dict:
     """LRU-cached ``consistency_reconstruction`` for *path* + bands."""
     key = (str(path), path.stat().st_mtime, _band_key(q_band, r_band))
     with _lock:
@@ -60,7 +62,9 @@ def reconstruction(path: Path, q_band: tuple[float, float] | None, r_band: tuple
             _cache.move_to_end(key)
             return hit
     vol = load_volume(path)  # shared with the slice viewers' cache
-    res = consistency_reconstruction(vol, DeltaPdfParams(crop_hkl=None), q_band=q_band, r_band=r_band)
+    res = consistency_reconstruction(
+        vol, DeltaPdfParams(crop_hkl=None), q_band=q_band, r_band=r_band
+    )
     with _lock:
         _cache[key] = res
         _cache.move_to_end(key)
@@ -69,7 +73,9 @@ def reconstruction(path: Path, q_band: tuple[float, float] | None, r_band: tuple
     return res
 
 
-def consistency_meta(path: Path, q_band: tuple[float, float] | None, r_band: tuple[float, float] | None) -> dict:
+def consistency_meta(
+    path: Path, q_band: tuple[float, float] | None, r_band: tuple[float, float] | None
+) -> dict:
     """Grid ranges, available span, and the agreement metrics."""
     res = reconstruction(path, q_band, r_band)
     recon = res["recon"]
