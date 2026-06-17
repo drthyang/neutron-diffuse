@@ -22,6 +22,7 @@ import {
   Slider,
   Switch,
 } from "../components/ui";
+import { useDpdfStore } from "../state/dpdfStore";
 import { AXIS_INDEX, AXIS_TO_PLANE, type FixedAxis, REAL_AXIS_INDEX, REAL_AXIS_TO_PLANE, type RealAxis, useViewerStore } from "../state/viewerStore";
 
 const AXES: FixedAxis[] = ["H", "K", "L"];
@@ -55,14 +56,26 @@ export function ConsistencyViewer() {
   const contrast = useViewerStore((s) => s.contrast);
   const log = useViewerStore((s) => s.log);
   const colormap = useViewerStore((s) => s.colormap);
-  const divColormap = useViewerStore((s) => s.divColormap);
   const setDatasetId = useViewerStore((s) => s.setDataset);
   const setFixedAxis = useViewerStore((s) => s.setFixedAxis);
   const setCutIndex = useViewerStore((s) => s.setCutIndex);
   const setContrast = useViewerStore((s) => s.setContrast);
   const setLog = useViewerStore((s) => s.setLog);
   const setColormap = useViewerStore((s) => s.setColormap);
-  const setDivColormap = useViewerStore((s) => s.setDivColormap);
+
+  const dpdfContrast = useDpdfStore((s) => s.contrast);
+  const windowFull = useDpdfStore((s) => s.windowFull);
+  const dpdfColormap = useDpdfStore((s) => s.colormap);
+  const cutX = useDpdfStore((s) => s.cutX);
+  const cutY = useDpdfStore((s) => s.cutY);
+  const cutZ = useDpdfStore((s) => s.cutZ);
+
+  const setDpdfContrast = useDpdfStore((s) => s.setContrast);
+  const setWindowFull = useDpdfStore((s) => s.setWindowFull);
+  const setDpdfColormap = useDpdfStore((s) => s.setColormap);
+  const setCutX = useDpdfStore((s) => s.setCutX);
+  const setCutY = useDpdfStore((s) => s.setCutY);
+  const setCutZ = useDpdfStore((s) => s.setCutZ);
 
   const [band, setBand] = useState<{ min: number; max: number } | null>(null);
   const [draftMin, setDraftMin] = useState(0);
@@ -73,9 +86,8 @@ export function ConsistencyViewer() {
   const [draftRMax, setDraftRMax] = useState(0);
 
   const [dpdfFixedAxis, setDpdfFixedAxis] = useState<RealAxis>("Z");
-  const [dpdfCutIndex, setDpdfCutIndex] = useState(0);
-  const [windowFull, setWindowFull] = useState(40);
-  const [dpdfContrast, setDpdfContrast] = useState(1);
+  const dpdfCutIndex = dpdfFixedAxis === "X" ? cutX : dpdfFixedAxis === "Y" ? cutY : cutZ;
+  const setDpdfCutIndex = dpdfFixedAxis === "X" ? setCutX : dpdfFixedAxis === "Y" ? setCutY : setCutZ;
 
   useEffect(() => {
     if (!datasetId && usable.length) setDatasetId(usable[0].id);
@@ -144,7 +156,7 @@ export function ConsistencyViewer() {
   const dpdfValue = dpdfAxisInfo ? dpdfAxisInfo.min + dpdfIdx * dpdfAxisInfo.step : 0;
   const dpdfPlane = REAL_AXIS_TO_PLANE[dpdfFixedAxis];
   const seqLut = COLORMAPS[colormap] ?? COLORMAPS.inferno;
-  const divLut = COLORMAPS[divColormap] ?? COLORMAPS[DIVERGING_NAME];
+  const divLut = COLORMAPS[dpdfColormap] ?? COLORMAPS[DIVERGING_NAME];
 
   useEffect(() => {
     // When the global dataset changes (e.g. from Reciprocal Viewer),
@@ -314,7 +326,7 @@ export function ConsistencyViewer() {
           onChange={setWindowFull}
         />
         <Field label="Colormap">
-          <select value={divColormap} onChange={(e) => setDivColormap(e.target.value)}>
+          <select value={dpdfColormap} onChange={(e) => setDpdfColormap(e.target.value)}>
             {DIVERGING_NAMES.map((name) => (
               <option key={name} value={name}>{name}</option>
             ))}
