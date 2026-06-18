@@ -27,7 +27,7 @@ ndiff-web                       # serves http://127.0.0.1:8000 and opens a brows
 # ndiff-web --no-browser                # headless / remote
 ```
 
-It reads `./data` by default (the `raw/` + `processed/` layout). The four views
+It reads `./data` by default (the `raw/` + `processed/` layout). The five views
 sit in the left sidebar; a typical session runs top to bottom:
 
 1. **Run pipeline** (the landing view) — pick a dataset (auto-discovered from
@@ -47,6 +47,10 @@ sit in the left sidebar; a typical session runs top to bottom:
    toggle the gray dashed unit-cell overlay to read off correlation distances.
 4. **Multi-temperature** — compare 22 / 45 / 100 K side by side once each has a
    ΔPDF output, with shared cut, window, and contrast.
+5. **Consistency check** — finish by inverse-transforming the ΔPDF back to
+   reciprocal space and comparing **data | back-FFT | residual**. Use the `|Q|`
+   and real-space `r` bands to isolate which parts of the data support a feature;
+   the metrics report Pearson `r`, normalised RMS, and per-plane `r`.
 
 For the API, endpoints, and the Vite dev-server workflow, see [web.md](web.md).
 
@@ -55,7 +59,7 @@ For the API, endpoints, and the Vite dev-server workflow, see [web.md](web.md).
 `examples/run_pipeline.py` runs:
 
 ```text
-ring removal -> Bragg punch -> Bragg backfill -> radial-background flatten -> DeltaPDF
+ring removal -> Bragg punch -> Bragg backfill -> radial-background flatten -> DeltaPDF -> consistency check
 ```
 
 Step 4, the **radial-background flatten, is the explicit background-removal step
@@ -64,7 +68,9 @@ and is on by default** (disable with `FLATTEN=0`). The DeltaPDF's own Gaussian
 
 It skips stages whose output files already exist. Add `FORCE=1` to recompute
 everything, or `FORCE_FROM=punch` to recompute from one stage onward. Valid
-`FORCE_FROM` stages are `rings`, `punch`, `backfill`, `flatten`, and `pdf`.
+`FORCE_FROM` stages are `rings`, `punch`, `backfill`, `flatten`, `pdf`, and
+`check`. Set `CONSISTENCY=0` only when you intentionally want to skip the final
+round-trip QA.
 
 Ring removal processes H-slices/KL planes by default. To process the same volume
 as K-slices/HL planes or L-slices/HK planes, add `SLICE_AXIS=K` or
@@ -164,6 +170,27 @@ $PY examples/explore_delta_pdf_ortho.py
 PDF_FILE="data/processed/TbTi3Bi4_100K_delta_pdf.h5" \
 $PY examples/explore_delta_pdf_ortho.py
 ```
+
+## Check DeltaPDF Consistency
+
+Use this as the endpoint of a single-temperature workflow. It starts from the
+flattened diffuse volume (or a backfilled volume if flattening was disabled),
+computes the ΔPDF, inverse-transforms it back to reciprocal space, and writes a
+`data | back-FFT | residual` figure plus metrics on stdout.
+
+```bash
+# auto-detects a 22 K flattened/backfilled input when DATA_FILE is omitted
+$PY examples/delta_pdf_consistency.py
+
+# explicit input/output
+DATA_FILE="data/processed/TbTi3Bi4_22K_mmm_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved_braggpunched_backfilled_flattened.h5" \
+OUT_PNG="data/processed/TbTi3Bi4_22K_mmm_delta_pdf_consistency.png" \
+$PY examples/delta_pdf_consistency.py
+```
+
+A faithful transform should give Pearson `r` close to 1 and a small normalised
+RMS residual over the reliably recovered reciprocal-space region. For interactive
+band-limited checks, use the web UI's **Consistency check** view.
 
 ## Compare DeltaPDF Across Temperatures
 

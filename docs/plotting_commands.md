@@ -21,11 +21,11 @@ If your Python 3.10+ environment is already active, replace `$PY` with
 
 ## Full Pipeline: Raw Volume To DeltaPDF
 
-Runs all five processing stages (ring removal → Bragg punch → backfill →
-radial-background flatten → 3D-DeltaPDF) and then opens the cleanup QA viewer and
-the DeltaPDF orthoslice viewer. Already-computed stages are skipped automatically.
-Background removal is step 4 (the flatten, on by default); the transform's own
-Gaussian `SUBTRACT_BG` blur defaults off.
+Runs the full workflow (ring removal → Bragg punch → backfill →
+radial-background flatten → 3D-DeltaPDF → consistency check) and then opens the
+cleanup QA viewer and the DeltaPDF orthoslice viewer. Already-computed stages are
+skipped automatically. Background removal is step 4 (the flatten, on by
+default); the transform's own Gaussian `SUBTRACT_BG` blur defaults off.
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
@@ -37,10 +37,11 @@ Key environment overrides:
 | Variable | Effect |
 |---|---|
 | `DATA_FILE=/path/to/file.nxs` | Override auto-detected input (default: 22 K `cc_sub_bkg`) |
-| `NO_VIEWER=1` | Stop after writing `_delta_pdf.h5`; skip GUI stages |
+| `NO_VIEWER=1` | Stop after writing `_delta_pdf.h5` and the consistency figure; skip GUI stages |
 | `FORCE=1` | Recompute every stage even if output exists |
-| `FORCE_FROM=rings\|punch\|backfill\|flatten\|pdf` | Recompute from that stage onward |
+| `FORCE_FROM=rings\|punch\|backfill\|flatten\|pdf\|check` | Recompute from that stage onward |
 | `FLATTEN=0` | Skip the radial-background flatten (step 4) |
+| `CONSISTENCY=0` | Skip the final back-FFT consistency check |
 
 The script auto-detects the 22 K dataset in `data/raw/`. For other temperatures pass
 `DATA_FILE` explicitly:
@@ -93,6 +94,24 @@ PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
 ---
 
 ## Interactive Viewers
+
+### DeltaPDF Consistency Check
+
+Use this as the endpoint for a single-temperature ΔPDF workflow. It recomputes
+the forward transform from the cleaned diffuse input, inverse-transforms it back
+to reciprocal space, and writes a `data | back-FFT | residual` figure while
+printing Pearson `r`, normalised RMS, and per-plane correlations.
+
+```bash
+PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
+  DATA_FILE="data/processed/TbTi3Bi4_22K_mmm_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved_braggpunched_backfilled_flattened.h5" \
+  OUT_PNG="data/processed/TbTi3Bi4_22K_mmm_delta_pdf_consistency.png" \
+  $PY examples/delta_pdf_consistency.py
+```
+
+The browser **Consistency check** view serves the same round trip interactively
+through `/api/consistency/{dataset_id}`, with adjustable `|Q|` and real-space
+`r` bands.
 
 ### Single-Temperature DeltaPDF Orthoslice Viewer
 

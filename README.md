@@ -5,8 +5,8 @@ diffuse scattering volumes and preparing them for 3D-DeltaPDF analysis.
 
 The current workflow is built around symmetrised Mantid HKL volumes. It removes
 powder-ring backgrounds, punches sharp Bragg and satellite peaks, fills the
-punched holes with a diffuse-background estimate, and Fourier-transforms the
-cleaned volume into a real-space 3D-DeltaPDF.
+punched holes with a diffuse-background estimate, Fourier-transforms the cleaned
+volume into a real-space 3D-DeltaPDF, and ends with a back-FFT consistency check.
 
 ```text
 Mantid / symmetrised HKL volume
@@ -15,9 +15,10 @@ Mantid / symmetrised HKL volume
   1. powder-ring subtraction        examples/remove_rings_3d.py
   2. Bragg/satellite punch          examples/punch_bragg_3d.py
   3. Bragg-hole backfill            examples/backfill_bragg_3d.py
-  4. 3D-DeltaPDF transform          examples/delta_pdf.py
-  5. cleanup QA viewer              examples/explore_slice.py
-  6. DeltaPDF orthoslice viewer     examples/explore_delta_pdf_ortho.py
+  4. radial-background flatten      examples/flatten_background_3d.py
+  5. 3D-DeltaPDF transform          examples/delta_pdf.py
+  6. back-FFT consistency check     examples/delta_pdf_consistency.py
+  7. cleanup / DeltaPDF viewers     examples/explore_slice.py, examples/explore_delta_pdf_ortho.py
 ```
 
 For a **3D-PDF** (total scattering with the Bragg peaks *kept* — a Patterson-like
@@ -36,11 +37,11 @@ pip install -e ".[web]"
 ndiff-web        # serves http://127.0.0.1:8000 and opens a browser
 ```
 
-A sidebar console with four views — a pipeline runner (the default landing
-view), reciprocal-space cleanup, 3D-ΔPDF orthoslices, and a multi-temperature
-comparison — that replace the standalone `examples/explore_*.py` viewers (which
-remain as a fallback). See [docs/web.md](docs/web.md) for details and the
-development workflow.
+A sidebar console with five views — a pipeline runner (the default landing
+view), reciprocal-space cleanup, 3D-ΔPDF orthoslices, multi-temperature
+comparison, and the consistency check — replaces the standalone
+`examples/explore_*.py` viewers (which remain as a fallback). See
+[docs/web.md](docs/web.md) for details and the development workflow.
 
 ## Install
 
@@ -105,23 +106,24 @@ python3 examples/run_pipeline.py
 ```
 
 `examples/run_pipeline.py` runs all compute stages, skips stages whose outputs
-already exist, writes the 3D-DeltaPDF, then opens the cleanup and DeltaPDF
-viewers. The stages are: (1) ring removal, (2) Bragg punch, (3) Bragg backfill,
-(4) **radial-background flatten** — the explicit background-removal step (default
-on; `FLATTEN=0` to skip), (5) 3D-DeltaPDF FFT. The background is removed at
-step 4, not by a hidden blur inside the FFT: the transform's own Gaussian
-`SUBTRACT_BG` is off by default because it is the *alternative* remover (see
-step 5 below).
+already exist, writes the 3D-DeltaPDF, runs the consistency check, then opens the
+cleanup and DeltaPDF viewers. The stages are: (1) ring removal, (2) Bragg punch,
+(3) Bragg backfill, (4) **radial-background flatten** — the explicit
+background-removal step (default on; `FLATTEN=0` to skip), (5) 3D-DeltaPDF FFT,
+(6) back-FFT consistency check. The background is removed at step 4, not by a
+hidden blur inside the FFT: the transform's own Gaussian `SUBTRACT_BG` is off by
+default because it is the *alternative* remover (see step 5 below).
 
 Useful overrides:
 
 | Variable | Effect |
 | --- | --- |
 | `DATA_FILE=/path/to/file.nxs` | Use a specific input file. |
-| `NO_VIEWER=1` | Stop after writing outputs; do not open GUI viewers. |
+| `NO_VIEWER=1` | Stop after writing outputs and the consistency check; do not open GUI viewers. |
 | `FORCE=1` | Recompute every stage. |
-| `FORCE_FROM=rings|punch|backfill|flatten|pdf` | Recompute from one stage onward. |
+| `FORCE_FROM=rings|punch|backfill|flatten|pdf|check` | Recompute from one stage onward. |
 | `FLATTEN=0` | Skip the radial-background flatten (step 4). |
+| `CONSISTENCY=0` | Skip the final back-FFT consistency check. |
 
 ## Run Stages Manually
 
@@ -217,6 +219,20 @@ per-H-plane Gaussian background inside the FFT. Use the flatten **or**
 per-H-plane blur (σ_H=0) destroys the on-axis H-direction signal that the
 flatten preserves.
 
+### 6. Check DeltaPDF Consistency
+
+```bash
+PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
+DATA_FILE=data/processed/your_volume_ringremoved_braggpunched_backfilled_flattened.h5 \
+python3 examples/delta_pdf_consistency.py
+```
+
+The check computes the ΔPDF with the standard settings, inverse-transforms it
+back to reciprocal space, and compares **data | back-FFT | residual**. A faithful
+transform gives Pearson `r` close to 1 with a small normalised RMS residual. The
+web UI exposes the same check interactively, including adjustable `|Q|` and
+real-space `r` bands.
+
 ## Visual QA
 
 Inspect cleanup across H:
@@ -282,7 +298,7 @@ Key pages:
 | --- | --- |
 | [docs/algorithms/powder_rings.md](docs/algorithms/powder_rings.md) | Powder-ring model and subtraction strategy. |
 | [docs/algorithms/bragg_cleanup.md](docs/algorithms/bragg_cleanup.md) | Bragg/satellite detection, punching, and backfill. |
-| [docs/algorithms/delta_pdf.md](docs/algorithms/delta_pdf.md) | 3D-DeltaPDF transform, centring, and background subtraction. |
+| [docs/algorithms/delta_pdf.md](docs/algorithms/delta_pdf.md) | 3D-DeltaPDF transform, centring, background subtraction, and consistency checks. |
 | [docs/quick_start.md](docs/quick_start.md) | Concise workflow and plotting commands for 22 K, 45 K, and 100 K data. |
 | [docs/web.md](docs/web.md) | Browser UI (FastAPI + React): viewers and pipeline runner. |
 | [docs/interactive.md](docs/interactive.md) | Matplotlib viewer usage and visualization API. |
@@ -314,7 +330,8 @@ GitHub Actions runs the same checks on Python 3.10, 3.11, and 3.12.
 
 ## Status
 
-Version 0.1.0. The end-to-end workflow is operational: powder-ring removal,
-Bragg cleanup, Bragg-hole backfill, 3D-DeltaPDF transform, and interactive QA
-viewers. Current development focuses on artifact reduction, parameter tuning,
-and physical interpretation of the cleaned DeltaPDF maps.
+Version 0.1.0. The recommended workflow is operational and now ends with the
+back-FFT consistency check: powder-ring removal, Bragg cleanup, Bragg-hole
+backfill, radial flatten, 3D-DeltaPDF transform, consistency QA, and interactive
+viewers. The package is still marked alpha; promote a stable release after the
+current dev workflow is tagged, tested, and packaged.

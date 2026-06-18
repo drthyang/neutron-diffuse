@@ -25,17 +25,17 @@ build the frontend first (see below) — otherwise only the API is served.
 
 ## What it does
 
-A single-page console with a left sidebar; the four views (in sidebar order)
+A single-page console with a left sidebar; the five views (in sidebar order)
 replace the standalone `examples/explore_*.py` viewers, which remain as a
 fallback:
 
 | View | Replaces | What |
 | --- | --- | --- |
-| **Run pipeline** | `run_pipeline.py` | Pick a dataset and tune the key parameters per stage — ring removal (azimuthal **patches** and texture **Fourier order**), punch, backfill, flatten, and ΔPDF — then run all stages with a live stage stepper and log. Existing outputs are skipped unless *force* is on. This is the default landing view. |
+| **Run pipeline** | `run_pipeline.py` / `ndiff.pipeline.run_pipeline` | Pick a dataset and tune the key parameters per stage — ring removal (azimuthal **patches** and texture **Fourier order**), punch, backfill, flatten, ΔPDF, and consistency check — then run all stages with a live stage stepper and log. Existing outputs are skipped unless *force* is on. This is the default landing view. |
 | **Reciprocal cleanup** | `explore_slice.py` | One panel per HKLVolume stage (raw / ring-removed / Bragg-punched / backfilled / flattened) sharing an H/K/L plane selector, cut, contrast, log, and colormap. All panels share **one fixed global colour scale** (pooled from the centre cut), so stages are directly comparable and the scale stays put while you scrub. The cut readout is an **editable box** — type a value (e.g. `0.3333`) and it snaps to the nearest plane. |
 | **3D-ΔPDF** | `explore_delta_pdf_ortho.py` | Three linked real-space orthoslices (x_H–y_K, x_H–z_L, y_K–z_L) shown as square **windows** (adjustable size, default 80 Å), each with its own cut slider directly above it, plus contrast and a gray dashed unit-cell overlay. |
 | **Multi-temperature** | `explore_delta_pdf_multi.py` | 22 / 45 / 100 K × the three planes as a square grid, sharing the cut, window, and contrast; a per-plane colour scale pooled across temperatures. |
-| **Consistency check** | `delta_pdf_consistency.py` | End-of-workflow back-FFT check: inverse-transforms the ΔPDF to reciprocal space and shows **data \| back-FFT \| residual** at a shared plane/cut, with the agreement metrics (Pearson r, normalised RMS, per-plane r). An adjustable **\|Q\| band** (min/max sliders → *Apply*) band-limits the data before the round trip, so you can isolate which signals come from low- vs high-\|Q\| (frequency). Served by `/api/consistency/{dataset}` (recon LRU-cached per \|Q\| band). |
+| **Consistency check** | `delta_pdf_consistency.py` | End-of-workflow back-FFT check: inverse-transforms the ΔPDF to reciprocal space and shows **data \| back-FFT \| residual** at a shared plane/cut, with the agreement metrics (Pearson r, normalised RMS, per-plane r). Adjustable **\|Q\|** and real-space **r** bands (min/max sliders → *Apply*) isolate which reciprocal- or real-space ranges support a signal. Served by `/api/consistency/{dataset_id}/...` and LRU-cached per band. |
 
 ## Architecture
 
@@ -44,6 +44,7 @@ Browser (React/TS SPA)  ──HTTP/SSE──►  FastAPI (uvicorn)  ──►  n
   client-side colormap                  /api/datasets          extract_slice
   cut / contrast / log                  /api/volumes/.../slice  (visualization)
   pipeline param forms                  /api/deltapdf/.../slice
+  consistency bands                     /api/consistency/...     back-FFT check
   SSE progress + log                    /api/pipeline/run + SSE  ndiff.pipeline
 ```
 
@@ -68,6 +69,8 @@ Browser (React/TS SPA)  ──HTTP/SSE──►  FastAPI (uvicorn)  ──►  n
 | GET | `/api/volumes/{id}/slice?plane=&value=&interp=` | binary 2D slice |
 | GET | `/api/deltapdf/{id}/meta` | ΔPDF shape, ranges, lattice, |Q|max |
 | GET | `/api/deltapdf/{id}/slice?plane=xy\|xz\|yz&value=` | binary ΔPDF orthoslice |
+| GET | `/api/consistency/{dataset_id}/meta?q_min=&q_max=&r_min=&r_max=` | back-FFT metadata and agreement metrics |
+| GET | `/api/consistency/{dataset_id}/slice?panel=data\|recon\|residual\|dpdf&plane=&value=&q_min=&q_max=&r_min=&r_max=` | binary consistency slice |
 | POST | `/api/pipeline/run` | start a job; returns `{id, status, ...}` |
 | GET | `/api/pipeline/jobs/{id}/events` | SSE progress stream |
 | POST | `/api/pipeline/jobs/{id}/cancel` | terminate a running job |

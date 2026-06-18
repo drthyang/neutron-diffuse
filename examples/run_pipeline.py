@@ -1,6 +1,7 @@
-"""End-to-end neutron-diffuse workflow: raw .nxs → 3D-ΔPDF → interactive viewer.
+"""End-to-end neutron-diffuse workflow: raw .nxs → 3D-ΔPDF → consistency QA.
 
-Runs the five processing stages in order, then opens the orthoslice viewer:
+Runs the processing stages in order, runs the back-FFT consistency check, then
+opens the interactive viewers:
 
     1. remove_rings_3d.py     raw .nxs                  → *_ringremoved.h5
     2. punch_bragg_3d.py      *_ringremoved.h5          → *_braggpunched.h5
@@ -8,10 +9,11 @@ Runs the five processing stages in order, then opens the orthoslice viewer:
     4. flatten_background_3d.py  *_backfilled.h5        → *_flattened.h5
                               (isotropic radial-background flatten — the explicit
                                background-removal step; default ON, FLATTEN=0 to skip)
-    5. delta_pdf.py           *_flattened.h5            → examples/_delta_pdf.h5
-    6. explore_slice.py       (4-panel KL QA: data | ring removed | punched |
+    5. delta_pdf.py           *_flattened.h5            → *_delta_pdf.h5
+    6. delta_pdf_consistency.py  back-FFT ΔPDF check    → *_consistency.png
+    7. explore_slice.py       (4-panel KL QA: data | ring removed | punched |
                                backfilled — H + vmin/vmax sliders)
-    7. explore_delta_pdf_ortho.py   (ΔPDF real-space orthoslices, sliders)
+    8. explore_delta_pdf_ortho.py   (ΔPDF real-space orthoslices, sliders)
 
 Background removal is an explicit step (4 — the radial flatten), NOT a hidden
 blur inside the FFT: the ΔPDF's own Gaussian `SUBTRACT_BG` is OFF by default
@@ -35,12 +37,14 @@ Run::
 Env:
     DATA_FILE   raw input .nxs (default: auto-detect 22K mmm cc_sub_bkg in data/raw)
     FORCE       1 → recompute every stage even if its output exists
-    FORCE_FROM  rings | punch | backfill | flatten | pdf — recompute from here on
+    FORCE_FROM  rings | punch | backfill | flatten | pdf | check — recompute from here on
     FLATTEN     radial-background flatten (step 4) — default ON.  FLATTEN=0 skips
                 it (then NO background is removed unless you pass an explicit
                 SUBTRACT_BG).  The flatten preserves the on-axis H-direction
                 signal; judge its effect on the L=0 (H-K) plane.
-    NO_VIEWER   1 → stop after the ΔPDF is written (no GUI)
+    CONSISTENCY 1 → run the back-FFT consistency check after the ΔPDF (default).
+                Set CONSISTENCY=0 to skip it.
+    NO_VIEWER   1 → stop after the ΔPDF and consistency check are written (no GUI)
     RMAX        viewer half-window in Å (default 50)
     # ΔPDF knobs (override the defaults below):
     SUBTRACT_BG (default 0 = OFF; the step-4 flatten replaces it).  Set e.g.
@@ -101,7 +105,8 @@ CHAIN_KEYS = ("DATA_FILE", "OUT_FILE", "PROC_FILE", "PDF_FILE")
 FORCE = os.environ.get("FORCE", "0") == "1"
 FORCE_FROM = os.environ.get("FORCE_FROM", "").strip().lower()
 FLATTEN = os.environ.get("FLATTEN", "1") != "0"
-ORDER = ["rings", "punch", "backfill", "flatten", "pdf"]
+CONSISTENCY = os.environ.get("CONSISTENCY", "1") != "0"
+ORDER = ["rings", "punch", "backfill", "flatten", "pdf", "check"]
 if FORCE_FROM and FORCE_FROM not in ORDER:
     sys.exit(f"FORCE_FROM={FORCE_FROM!r}; choose one of {ORDER}")
 
@@ -177,6 +182,7 @@ flatten_out = PROC / f"{fill_out.stem}_flattened.h5"
 # cache (see _pdf_is_current).
 pdf_input = flatten_out if FLATTEN else fill_out
 pdf_out = PROC / f"{fill_out.stem}_delta_pdf.h5"
+consistency_png = PROC / f"{pdf_out.stem}_consistency.png"
 PROC.mkdir(parents=True, exist_ok=True)
 
 print(f"input : {raw.name}")
@@ -186,18 +192,18 @@ print(f"chain : ringremoved → braggpunched → backfilled {flatten_link}→ _d
 # ------------------------------------------------------------------
 # stages 1–4 (rings, punch, backfill, background flatten)
 # ------------------------------------------------------------------
-_stage("rings", "1/7 ring removal", "remove_rings_3d.py", ring_out, "DATA_FILE", raw)
-_stage("punch", "2/7 Bragg punch", "punch_bragg_3d.py", punch_out, "DATA_FILE", ring_out)
-_stage("backfill", "3/7 Bragg backfill", "backfill_bragg_3d.py", fill_out, "DATA_FILE", punch_out)
+_stage("rings", "1/8 ring removal", "remove_rings_3d.py", ring_out, "DATA_FILE", raw)
+_stage("punch", "2/8 Bragg punch", "punch_bragg_3d.py", punch_out, "DATA_FILE", ring_out)
+_stage("backfill", "3/8 Bragg backfill", "backfill_bragg_3d.py", fill_out, "DATA_FILE", punch_out)
 if FLATTEN:
-    _stage("flatten", "4/7 radial background flatten (background removal)",
+    _stage("flatten", "4/8 radial background flatten (background removal)",
            "flatten_background_3d.py", flatten_out, "DATA_FILE", fill_out)
 else:
-    print("[skip] 4/7 radial background flatten: FLATTEN=0 — background NOT "
+    print("[skip] 4/8 radial background flatten: FLATTEN=0 — background NOT "
           "removed unless an explicit SUBTRACT_BG is set", flush=True)
 
 # ------------------------------------------------------------------
-# stage 4: 3D-ΔPDF  (delta_pdf.py uses PROC_FILE in, fixed output _delta_pdf.h5)
+# stage 5: 3D-ΔPDF  (delta_pdf.py uses PROC_FILE in, fixed output _delta_pdf.h5)
 # The output name is fixed, so guard against a STALE cache from a different
 # dataset or transform configuration. delta_pdf.py stamps source_file and
 # transform_config into the .h5; recompute unless both match this run.
@@ -258,33 +264,51 @@ if FLATTEN and _sbg_on:
 print(f"[background] step-4 radial flatten: {'ON' if FLATTEN else 'OFF'}   |   "
       f"ΔPDF SUBTRACT_BG (legacy blur): {_sbg if _sbg_on else 'off'}", flush=True)
 pdf_config = _pdf_transform_config(pdf_env)
+ran_pdf = False
 if _pdf_is_current(pdf_out, pdf_input.name, pdf_config) and not _forced("pdf"):
-    print(f"[skip] 5/7 3D-ΔPDF: {pdf_out.name} is current for this dataset "
+    print(f"[skip] 5/8 3D-ΔPDF: {pdf_out.name} is current for this dataset "
           "and transform config (FORCE=1 or FORCE_FROM=pdf to redo)", flush=True)
 else:
     if pdf_out.exists():
         print(f"[stale] {pdf_out.name} is from a different dataset/config — recomputing",
               flush=True)
-    _run("5/7 3D-ΔPDF", "delta_pdf.py", pdf_env)
+    _run("5/8 3D-ΔPDF", "delta_pdf.py", pdf_env)
+    ran_pdf = True
 
 # ------------------------------------------------------------------
-# stages 5–6: interactive viewers (close each window to advance)
+# stage 6: back-FFT round-trip consistency check
+# ------------------------------------------------------------------
+if CONSISTENCY:
+    if consistency_png.exists() and not ran_pdf and not _forced("check"):
+        print(f"[skip] 6/8 consistency check: {consistency_png.name} exists "
+              "(FORCE=1 or FORCE_FROM=check to redo)", flush=True)
+    else:
+        _run(
+            "6/8 consistency check (back-FFT ΔPDF → reciprocal space)",
+            "delta_pdf_consistency.py",
+            _stage_env("pdf", DATA_FILE=pdf_input, OUT_PNG=consistency_png),
+        )
+else:
+    print("[skip] 6/8 consistency check: CONSISTENCY=0", flush=True)
+
+# ------------------------------------------------------------------
+# stages 7–8: interactive viewers (close each window to advance)
 # ------------------------------------------------------------------
 if os.environ.get("NO_VIEWER", "0") == "1":
     print(f"\nNO_VIEWER=1 — done. ΔPDF cached at {pdf_out}", flush=True)
     sys.exit(0)
 
-# 5/6 processed-data QA: 4-panel KL viewer (data | ring removed | punched |
+# 7/8 processed-data QA: 4-panel KL viewer (data | ring removed | punched |
 # backfilled) with H + vmin/vmax sliders, loading the precomputed stages so
 # nothing is recomputed.
-print(f"\n{'='*70}\n▶ 6/7 processed-data QA viewer (KL plane; H + vmin/vmax sliders)"
+print(f"\n{'='*70}\n▶ 7/8 processed-data QA viewer (KL plane; H + vmin/vmax sliders)"
       f"\n{'='*70}", flush=True)
 qa_env = _stage_env("qa", DATA_FILE=raw, RING_FILE=ring_out,
                     PUNCH_FILE=punch_out, BACKFILL_FILE=fill_out)
 subprocess.run([PY, str(HERE / "explore_slice.py")], env=qa_env, cwd=REPO)
 
-# 6/6 ΔPDF real-space orthoslice viewer
-print(f"\n{'='*70}\n▶ 7/7 3D-ΔPDF orthoslice viewer\n{'='*70}", flush=True)
+# 8/8 ΔPDF real-space orthoslice viewer
+print(f"\n{'='*70}\n▶ 8/8 3D-ΔPDF orthoslice viewer\n{'='*70}", flush=True)
 viewer_env = _stage_env("viewer", PDF_FILE=pdf_out)
 subprocess.run([PY, str(HERE / "explore_delta_pdf_ortho.py")], env=viewer_env, cwd=REPO)
 print("workflow complete.", flush=True)

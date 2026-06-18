@@ -2,7 +2,8 @@
 
 The browser console for `neutron-diffuse`: a React + TypeScript single-page app
 (Vite) over the FastAPI backend in `src/ndiff/server/`. It runs the reduction
-pipeline and unifies the cleanup and 3D-ΔPDF viewers.
+pipeline and unifies the cleanup, 3D-ΔPDF, multi-temperature, and consistency
+views.
 
 ## Develop
 
@@ -28,7 +29,7 @@ npm run build          # tsc + vite build → ../src/ndiff/server/static (bundle
 | Path | What |
 | --- | --- |
 | `src/App.tsx` | sidebar shell + view routing |
-| `src/pages/` | one component per sidebar view (pipeline, reciprocal, ΔPDF, multi-temp) |
+| `src/pages/` | one component per sidebar view (pipeline, reciprocal, ΔPDF, multi-temp, consistency) |
 | `src/components/` | shared panels (`SliceCanvas`, `SlicePanel`, `DpdfPanel`, `UnitCellGrid`) and UI primitives (`ui.tsx`) |
 | `src/api/` | typed fetch client (`client.ts`), React Query hooks (`hooks.ts`), response types (`types.ts`) |
 | `src/state/` | zustand stores for the cleanup + ΔPDF view state |

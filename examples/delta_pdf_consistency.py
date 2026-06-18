@@ -35,7 +35,9 @@ Usage::
     python3 examples/delta_pdf_consistency.py
 
 Env: ``DATA_FILE`` (input volume; default = newest 22K ``*_flattened.h5``),
-``H_VALUES`` (comma list, default ``0,0.3333,1.0``), ``OUT_PNG``.
+``H_VALUES`` (comma list, default ``0,0.3333,1.0``), ``OUT_PNG``, and the
+standard ΔPDF knobs: ``CROP_H/K/L``, ``APODIZE``, ``GAUSSIAN_SIGMA``,
+``ZERO_PAD``, ``SUBTRACT_MEAN``, ``SUBTRACT_BG``.
 """
 
 from __future__ import annotations
@@ -63,12 +65,43 @@ def _find_input() -> Path:
     return cands[-1]
 
 
+def _optional_float(name: str) -> float | None:
+    val = os.environ.get(name)
+    return None if val is None or val == "" else float(val)
+
+
+def _subtract_bg_from_env() -> float | tuple[float, float, float] | None:
+    val = os.environ.get("SUBTRACT_BG")
+    if val is None or val.strip() in {"", "0"}:
+        return None
+    if "," in val:
+        parts = tuple(float(x) for x in val.split(","))
+        if len(parts) != 3:
+            raise ValueError("SUBTRACT_BG must be a scalar or three comma-separated values")
+        return parts
+    return float(val)
+
+
+def _params_from_env() -> DeltaPdfParams:
+    crop = tuple(_optional_float(k) for k in ("CROP_H", "CROP_K", "CROP_L"))
+    crop_hkl = None if all(v is None for v in crop) else tuple(
+        0.0 if v is None else v for v in crop)
+    return DeltaPdfParams(
+        apodization=os.environ.get("APODIZE", "gaussian"),
+        gaussian_sigma=float(os.environ.get("GAUSSIAN_SIGMA", "0.4")),
+        zero_pad=os.environ.get("ZERO_PAD", "1") != "0",
+        subtract_mean=os.environ.get("SUBTRACT_MEAN", "1") != "0",
+        crop_hkl=crop_hkl,  # type: ignore[arg-type]
+        subtract_smooth_bg=_subtract_bg_from_env(),
+    )
+
+
 def main() -> None:
     in_path = _find_input()
     print(f"loading {in_path.name}", flush=True)
     vol = ndiff.load(in_path)
 
-    p = DeltaPdfParams()
+    p = _params_from_env()
     print(f"ΔPDF params: apodize={p.apodization} sigma={p.gaussian_sigma} "
           f"crop_hkl={p.crop_hkl} subtract_bg={p.subtract_smooth_bg}", flush=True)
 
