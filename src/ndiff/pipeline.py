@@ -1,6 +1,6 @@
 """Library pipeline orchestration: raw .nxs/HKL volume → 3D-ΔPDF.
 
-This is the in-process, testable home for the five-stage workflow that
+This is the in-process, testable home for the six-stage workflow that
 ``examples/run_pipeline.py`` previously drove by shelling out to per-stage example
 scripts with environment-variable parameters.  Each stage here calls the existing
 library primitives directly:
@@ -11,6 +11,7 @@ library primitives directly:
     3. backfill → :func:`~ndiff.analysis.backfill_bragg`
     4. flatten  → :func:`~ndiff.preprocessing.flatten_radial_background`
     5. pdf      → :func:`~ndiff.analysis.compute_delta_pdf`
+    6. pdf_check → :func:`pdf_consistency_check`
 
 :func:`run_pipeline` chains the stages with the same on-disk file naming, the
 skip-if-exists resume behaviour, and the stale-ΔPDF guard as the original script,

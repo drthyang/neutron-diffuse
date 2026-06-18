@@ -15,13 +15,14 @@ Regenerate those files by rerunning the scripts below.
 
 | Script | Purpose |
 | --- | --- |
-| `run_pipeline.py` | End-to-end 3D-DeltaPDF workflow: ring removal, Bragg punch, backfill, radial-background flatten, 3D-DeltaPDF, and viewers. |
+| `run_pipeline.py` | End-to-end 3D-DeltaPDF workflow: ring removal, Bragg punch, backfill, radial-background flatten, 3D-DeltaPDF, consistency check, and viewers. |
 | `run_pipeline_pdf.py` | End-to-end **3D-PDF** workflow — KEEP Bragg (no punch, no backfill): ring removal → 3D-PDF → viewer. |
 | `remove_rings_3d.py` | Remove powder rings from a raw Mantid HKL volume. |
 | `punch_bragg_3d.py` | Punch Bragg and satellite peaks from a ring-removed volume. |
 | `backfill_bragg_3d.py` | Fill Bragg-punched holes before the DeltaPDF transform. |
 | `flatten_background_3d.py` | Step-4 background removal: flatten the isotropic radial background by `\|Q\|`-shell floor subtraction; on by default (`FLATTEN=0` to skip). |
 | `delta_pdf.py` | Compute and save the full 3D-DeltaPDF (Bragg removed). |
+| `delta_pdf_consistency.py` | Back-FFT round-trip check: compare the 3D-DeltaPDF inverse transform against the cleaned diffuse input. |
 | `pdf_3d.py` | Compute and save the total-scattering 3D-PDF (Bragg kept). |
 
 ## Viewers
@@ -63,6 +64,12 @@ Force recomputation from the DeltaPDF stage:
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl FORCE_FROM=pdf python3 examples/run_pipeline.py
+```
+
+Force only the final consistency check:
+
+```bash
+PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl FORCE_FROM=check python3 examples/run_pipeline.py
 ```
 
 Run the 3D-PDF workflow instead (keeps the Bragg peaks — no punch, no backfill):

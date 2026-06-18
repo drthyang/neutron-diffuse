@@ -127,7 +127,7 @@ export function ConsistencyViewer() {
 
   useEffect(() => {
     if (axisInfo) setCutIndex(Math.floor(axisInfo.n / 2));
-  }, [axisInfo]);
+  }, [axisInfo, setCutIndex]);
 
   const a = meta?.lattice.a ?? 1;
   const b = meta?.lattice.b ?? 1;
@@ -153,7 +153,7 @@ export function ConsistencyViewer() {
 
   useEffect(() => {
     if (dpdfAxisInfo) setDpdfCutIndex(Math.floor(dpdfAxisInfo.n / 2));
-  }, [dpdfAxisInfo]);
+  }, [dpdfAxisInfo, setDpdfCutIndex]);
 
   const idx = axisInfo ? Math.min(cutIndex, axisInfo.n - 1) : 0;
   const value = axisInfo ? axisInfo.min + idx * axisInfo.step : 0;

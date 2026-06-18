@@ -354,5 +354,8 @@ Before treating the pipeline as a stable release candidate:
 - Done: `scripts/check.sh` mirrors GitHub CI (`.github/workflows/ci.yml`) —
   pytest + `ruff check src/ tests/` + `mypy src/ndiff` — and can be installed as
   a `pre-push` hook; the suite is at 162 passing tests.
+- Done for `v0.2.0`: the recommended workflow now has a documented endpoint
+  (`pdf_check` / consistency viewer), and package/web/API version metadata is
+  aligned.
 - Still open: add CI coverage that specifically exercises the Bragg
   guard/exclusion behavior, not just import/type checks.

@@ -303,6 +303,7 @@ Key pages:
 | [docs/web.md](docs/web.md) | Browser UI (FastAPI + React): viewers and pipeline runner. |
 | [docs/interactive.md](docs/interactive.md) | Matplotlib viewer usage and visualization API. |
 | [docs/plotting_commands.md](docs/plotting_commands.md) | Reproducible plotting and multi-temperature command recipes. |
+| [CHANGELOG.md](CHANGELOG.md) | Release notes and version history. |
 
 ## Package Layout
 
@@ -330,8 +331,8 @@ GitHub Actions runs the same checks on Python 3.10, 3.11, and 3.12.
 
 ## Status
 
-Version 0.1.0. The recommended workflow is operational and now ends with the
+Version 0.2.0. The recommended workflow is operational and now ends with the
 back-FFT consistency check: powder-ring removal, Bragg cleanup, Bragg-hole
 backfill, radial flatten, 3D-DeltaPDF transform, consistency QA, and interactive
-viewers. The package is still marked alpha; promote a stable release after the
-current dev workflow is tagged, tested, and packaged.
+viewers. The package remains pre-1.0/alpha while the public API and file formats
+continue to evolve.

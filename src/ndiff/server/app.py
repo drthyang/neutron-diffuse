@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from ndiff import __version__
 from ndiff.server.config import ServerConfig, config_from_env
 from ndiff.server.jobs import JobManager
 from ndiff.server.routers import consistency as consistency_router
@@ -34,7 +35,7 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
     config:
         Server configuration; defaults to :func:`config_from_env`.
     """
-    app = FastAPI(title="neutron-diffuse", version="0.1.0")
+    app = FastAPI(title="neutron-diffuse", version=__version__)
     app.state.config = config or config_from_env()
     app.state.jobs = JobManager()
 

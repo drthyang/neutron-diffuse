@@ -121,7 +121,7 @@ export function SliceCanvas({
       }
     }
     ctx.putImageData(img, 0, 0);
-  }, [slice, lut, vmax, vmin, log, diverging, nx, ny, windowA, cw, ch, ix0, ix1, iy0, iy1, xs, ys]);
+  }, [slice, lut, vmax, vmin, log, diverging, nx, ny, windowA, cw, ch, ch_raw, ix0, ix1, iy0, iy1, xs, ys]);
 
   // A windowA crop is always shown as a physical square: either at a fixed `size`
   // (single ΔPDF viewer) or filling its square parent cell (multi-temp grid).

@@ -35,6 +35,7 @@ viewers, and reproducible command recipes in more detail.
 | [algorithms/inpainting.md](algorithms/inpainting.md) | Compare general inpainting fallbacks such as symmetry and TV. |
 | [interactive.md](interactive.md) | Use the cleanup and DeltaPDF viewers or the plotting API. |
 | [plotting_commands.md](plotting_commands.md) | Reproduce the current plotting and multi-temperature command set. |
+| [../CHANGELOG.md](../CHANGELOG.md) | Review release notes and version history. |
 
 ## Output Locations
 

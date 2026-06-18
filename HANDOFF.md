@@ -6,7 +6,7 @@
 
 ## Current State
 
-The full pipeline now runs end to end through the 3D-ΔPDF:
+The full pipeline now runs end to end through the back-FFT consistency check:
 
 1. Full-3D powder-ring subtraction via `examples/remove_rings_3d.py`.
 2. Guarded Bragg/satellite punch via `examples/punch_bragg_3d.py`.
@@ -142,14 +142,16 @@ Latest visual QA preference:
 
 `examples/run_pipeline.py` chains every stage end-to-end — raw `.nxs` → (1) ring
 removal → (2) Bragg punch → (3) backfill → (4) radial-background flatten →
-(5) 3D-ΔPDF — then opens two interactive viewers: (6) the 4-panel KL cleanup QA
-viewer (`explore_slice.py`: data | ring removed | punched | backfilled, with H +
-vmin/vmax sliders) and (7) the ΔPDF orthoslice viewer
-(`explore_delta_pdf_ortho.py`).  Close each window to advance.  It uses the
+(5) 3D-ΔPDF → (6) back-FFT consistency check — then opens two interactive
+viewers: (7) the 4-panel KL cleanup QA viewer (`explore_slice.py`: data | ring
+removed | punched | backfilled, with H + vmin/vmax sliders) and (8) the ΔPDF
+orthoslice viewer (`explore_delta_pdf_ortho.py`).  Close each window to advance.
+It uses the
 validated `cc_on` / clean-ΔPDF presets below.  Each compute stage is **skipped
 if its output already exists** (resume); pass `FORCE=1` or
-`FORCE_FROM=rings|punch|backfill|flatten|pdf` to recompute, `NO_VIEWER=1` to
-stop after the ΔPDF.
+`FORCE_FROM=rings|punch|backfill|flatten|pdf|check` to recompute,
+`CONSISTENCY=0` to skip the final check, or `NO_VIEWER=1` to stop after the
+DeltaPDF and consistency outputs.
 
 **Background removal is step 4 (the radial flatten), ON by default** — disable
 with `FLATTEN=0`.  The ΔPDF's own Gaussian `SUBTRACT_BG` blur defaults **off**:
@@ -315,17 +317,15 @@ failed, so a bare clone without the dev extras still works.
 
 ## Next Step
 
-The 3D-ΔPDF now produces a physically sensible map (coherent single-sign
-correlation peaks). Remaining tuning / inspection:
+The v0.2.0 workflow has a reproducible endpoint: a 3D-ΔPDF that round-trips back
+to its diffuse reciprocal-space input. Remaining tuning / inspection:
 
 - Reduce the near-origin artifact: residual high-`|Q|` Bragg leakage, backfill
   discontinuities at punch boundaries, and the direct-beam punch all feed it.
   Consider tapered punch boundaries or a softer high-`|Q|` window.
-- The cross along the `y_K=0` / `z_L=0` axes is diagnosed and fixed: it is the
-  FT of the residual smooth diffuse background, removed by `SUBTRACT_BG=<σ rlu>`
-  (smooth-bg subtraction; threshold-clip was tested and rejected — see Resolved
-  Issues). Remaining: re-interpret the cleaned H=1/3 / H=2/3 K–L correlation
-  lattice against the TbTi3Bi4 structure, and pick a default `σ` for batch runs.
+- Keep using the radial flatten as the default background-removal path. The
+  transform-time `SUBTRACT_BG` blur remains a legacy alternative and should not
+  be combined with flattening.
 - Compare `apodization` (`hann` vs `gaussian` vs `none`) for peak sharpness vs
   termination ripple.
 - Interpret the K-L correlation lattice against the TbTi3Bi4 structure and the

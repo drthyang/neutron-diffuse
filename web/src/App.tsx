@@ -24,7 +24,7 @@ const NAV: { id: Tab; label: string; desc: string; icon: ReactNode }[] = [
   {
     id: "config",
     label: "Configure",
-    desc: "Set parameters for the five-stage reduction from raw volume to 3D-ΔPDF, then launch a run.",
+    desc: "Set parameters for the full reduction from raw volume to consistency-checked 3D-ΔPDF, then launch a run.",
     icon: <IconFlow />,
   },
   {
@@ -119,7 +119,7 @@ export function App() {
             {apiUp ? "API connected" : "API offline"}
           </span>
           <span className="ver">
-            <span className="ver-num">v0.1.0</span>
+            <span className="ver-num">v0.2.0</span>
             <span className="ver-tag">alpha</span>
           </span>
           <span className="copyright">© 2026 Tsung-Han Yang</span>
