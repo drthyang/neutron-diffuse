@@ -46,16 +46,16 @@ const NAV: { id: Tab; label: string; desc: string; icon: ReactNode }[] = [
     icon: <IconOrbits />,
   },
   {
-    id: "multi",
-    label: "Multi-temperature",
-    desc: "ΔPDF orthoslices side by side across temperatures, with shared cuts and pooled colour scale.",
-    icon: <IconLayers />,
-  },
-  {
     id: "consistency",
     label: "Consistency check",
     desc: "Inverse-FFT the ΔPDF back to reciprocal space and compare to the data; band-limit |Q| to separate low- vs high-frequency signal.",
     icon: <IconCheck />,
+  },
+  {
+    id: "multi",
+    label: "Multi-temperature",
+    desc: "ΔPDF orthoslices side by side across temperatures, with shared cuts and pooled colour scale.",
+    icon: <IconLayers />,
   },
 ];
 

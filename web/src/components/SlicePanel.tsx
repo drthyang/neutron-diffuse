@@ -19,6 +19,7 @@ interface Props {
   width?: number;
   bands?: [number, number];
   cutDistance?: number;
+  reciprocalAxes?: boolean;
   latX?: number;
   latY?: number;
   latCut?: number;
@@ -40,6 +41,7 @@ export function SlicePanel({
   width = 320,
   bands,
   cutDistance,
+  reciprocalAxes = false,
   latX,
   latY,
   latCut,
@@ -69,6 +71,7 @@ export function SlicePanel({
               width={width}
               bands={bands}
               cutDistance={cutDistance}
+              reciprocalAxes={reciprocalAxes}
               latX={latX}
               latY={latY}
               latCut={latCut}

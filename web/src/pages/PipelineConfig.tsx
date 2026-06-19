@@ -4,12 +4,14 @@
 // Execution page via `onStarted`.
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useShallow } from "zustand/react/shallow";
 
-import { setDataRoot } from "../api/client";
+import { browseDataRoot, fetchMeta, fetchSlice, setDataRoot } from "../api/client";
 import { useDataRoot, useDatasets } from "../api/hooks";
-import { Field, HelpTip, Switch } from "../components/ui";
+import { COLORMAPS } from "../colormaps/luts";
+import { SliceCanvas } from "../components/SliceCanvas";
+import { Field, HelpTip, RangeSlider, Switch } from "../components/ui";
 import { useDatasetStore, useInitializeDataset } from "../state/datasetStore";
 import {
   STAGE_LABELS,
@@ -27,20 +29,24 @@ const DATASET_STAGE_BADGES = [
   { key: "delta_pdf", label: "3D-ΔPDF", group: "Output" },
 ] as const;
 
+const DEFAULT_PDF_CROP = { h: 4, k: 8, l: 15 };
+
 // One pipeline stage rendered as its own card.  `step` shows the matching
 // stepper number so the tiles read in pipeline order regardless of how the
 // masonry packs them.
 function StageCard({
   title,
   step,
+  className = "",
   children,
 }: {
   title: string;
   step?: number;
+  className?: string;
   children: ReactNode;
 }) {
   return (
-    <section className="card stage-card">
+    <section className={`card stage-card ${className}`}>
       <div className="card-head">
         <h3>
           {step != null && <span className="config-step-no">{step}</span>}
@@ -63,6 +69,26 @@ function clampFloat(raw: string, dflt: number, lo: number, hi: number): number {
   const n = raw === "" ? dflt : Number(raw);
   if (!Number.isFinite(n)) return dflt;
   return Math.max(lo, Math.min(hi, n));
+}
+
+function qSpanFromMeta(meta: {
+  h_range: [number, number];
+  k_range: [number, number];
+  l_range: [number, number];
+  lattice: { a: number | null; b: number | null; c: number | null };
+} | null | undefined): number {
+  if (!meta) return 0;
+  const h = Math.min(DEFAULT_PDF_CROP.h, Math.max(Math.abs(meta.h_range[0]), Math.abs(meta.h_range[1])));
+  const k = Math.min(DEFAULT_PDF_CROP.k, Math.max(Math.abs(meta.k_range[0]), Math.abs(meta.k_range[1])));
+  const l = Math.min(DEFAULT_PDF_CROP.l, Math.max(Math.abs(meta.l_range[0]), Math.abs(meta.l_range[1])));
+  const a = meta.lattice.a ?? 1;
+  const b = meta.lattice.b ?? 1;
+  const c = meta.lattice.c ?? 1;
+  return Math.sqrt(
+    (h * 2 * Math.PI / a) ** 2 +
+    (k * 2 * Math.PI / b) ** 2 +
+    (l * 2 * Math.PI / c) ** 2,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -600,6 +626,8 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
       backfillMethod: st.backfillMethod,
       flattenEstimator: st.flattenEstimator,
       pdfApod: st.pdfApod,
+      pdfQMin: st.pdfQMin,
+      pdfQMax: st.pdfQMax,
       running: st.running,
     })),
   );
@@ -624,6 +652,40 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
     unit: isQ ? "Å⁻¹" : "r.l.u.",
     ax: isQ ? ["a*", "b*", "c*"] : ["H", "K", "L"],
   };
+  const pdfPreviewStage = useMemo(() => {
+    if (!selectedDataset) return undefined;
+    return selectedDataset.stages.find((stage) => stage.name === "raw" && stage.exists);
+  }, [selectedDataset]);
+  const pdfInputId = pdfPreviewStage?.volume_id;
+  const pdfMetaQ = useQuery({
+    queryKey: ["meta", pdfInputId, "config-pdf"],
+    queryFn: () => fetchMeta(pdfInputId as string),
+    enabled: Boolean(pdfInputId),
+  });
+  const pdfSliceQ = useQuery({
+    queryKey: ["slice", pdfInputId, "0kl", 0, false, "config-pdf"],
+    queryFn: () => fetchSlice(pdfInputId as string, "0kl", 0, false),
+    enabled: Boolean(pdfInputId),
+  });
+  const pdfQSpanMax = Math.ceil(qSpanFromMeta(pdfMetaQ.data) * 20) / 20;
+  const pdfQMin = s.pdfQMin ? Number(s.pdfQMin) : 0;
+  const pdfQMax = s.pdfQMax ? Number(s.pdfQMax) : pdfQSpanMax;
+  const pdfQBandIsFull = !s.pdfQMin && !s.pdfQMax;
+  const pdfPreviewLatA = pdfMetaQ.data?.lattice.a ?? 1;
+  const pdfPreviewLatB = pdfMetaQ.data?.lattice.b ?? 1;
+  const pdfPreviewLatC = pdfMetaQ.data?.lattice.c ?? 1;
+  const pdfPreviewVmax = (pdfSliceQ.data?.header.robust_max || 1) * 1.5;
+
+  const updatePdfQBand = (lo: number, hi: number) => {
+    if (!pdfQSpanMax) return;
+    const nextLo = Math.max(0, Math.min(lo, pdfQSpanMax));
+    const nextHi = Math.max(nextLo, Math.min(hi, pdfQSpanMax));
+    const isFull = nextLo <= 0 && Math.abs(nextHi - pdfQSpanMax) < 0.025;
+    patch({
+      pdfQMin: isFull ? "" : nextLo.toFixed(2),
+      pdfQMax: isFull ? "" : nextHi.toFixed(2),
+    });
+  };
 
   const onRun = async () => {
     await run();
@@ -646,6 +708,35 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
     }
   };
 
+  const onBrowseFolder = async () => {
+    setRootError(null);
+    setRootNote("Opening folder picker…");
+    try {
+      const next = await browseDataRoot();
+      setRootDraft(next.data_root);
+      resetDataset();
+      await queryClient.invalidateQueries();
+      setRootNote(`${next.n_datasets} datasets`);
+    } catch (e) {
+      const message = (e as Error).message;
+      if (message.startsWith("409 ")) {
+        setRootNote(null);
+        return;
+      }
+      if (
+        message.startsWith("404 ") ||
+        message.startsWith("405 ") ||
+        message.includes("Failed to fetch")
+      ) {
+        setRootNote(null);
+        folderInputRef.current?.click();
+        return;
+      }
+      setRootNote(null);
+      setRootError(message);
+    }
+  };
+
   const onFolderPicked = (files: FileList | null) => {
     const first = files?.[0] as (File & { path?: string }) | undefined;
     if (!first) return;
@@ -658,7 +749,7 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
       setRootError(null);
     } else {
       setRootNote(`Selected ${folderName}`);
-      setRootError("Paste the full folder path, then apply.");
+      setRootError("This browser cannot share the full folder path. Paste it, then apply.");
     }
     if (folderInputRef.current) folderInputRef.current.value = "";
   };
@@ -761,7 +852,7 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                 <button
                   type="button"
                   className="btn btn-ghost"
-                  onClick={() => folderInputRef.current?.click()}
+                  onClick={() => void onBrowseFolder()}
                 >
                   Browse
                 </button>
@@ -803,7 +894,7 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
 
       {/* ------------------------------------------------- per-stage cards */}
       <div className="config-cards">
-        <StageCard title={STAGE_LABELS.rings} step={STAGE_NO.rings}>
+        <StageCard title={STAGE_LABELS.rings} step={STAGE_NO.rings} className="stage-card-wide">
           <div className="config-grid">
             <Field label="Model">
               <select
@@ -884,40 +975,42 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
               />
             </Field>
           </div>
-          {s.ringModel === "parametric" ? (
-            <>
-              <RadialProfileViz mode={s.ringRadialMode} ringWidth={vizRingWidth} />
-              <ParametricRingViz
-                nFourier={vizFourier}
-                radialMode={s.ringRadialMode}
-                ringWidth={vizRingWidth}
-              />
-            </>
-          ) : (
-            <RingTextureViz nPatches={vizPatches} nFourier={vizFourier} />
-          )}
-          <div className="ring-viz-cap">
+          <div className="stage-visual">
             {s.ringModel === "parametric" ? (
-              s.ringRadialMode === "rolling" ? (
-                <>
-                  continuous Ring(|Q|) swept Qmin→Qmax · texture order{" "}
-                  <b>{vizFourier}</b>
-                </>
+              <>
+                <RadialProfileViz mode={s.ringRadialMode} ringWidth={vizRingWidth} />
+                <ParametricRingViz
+                  nFourier={vizFourier}
+                  radialMode={s.ringRadialMode}
+                  ringWidth={vizRingWidth}
+                />
+              </>
+            ) : (
+              <RingTextureViz nPatches={vizPatches} nFourier={vizFourier} />
+            )}
+            <div className="ring-viz-cap">
+              {s.ringModel === "parametric" ? (
+                s.ringRadialMode === "rolling" ? (
+                  <>
+                    continuous Ring(|Q|) swept Qmin→Qmax · texture order{" "}
+                    <b>{vizFourier}</b>
+                  </>
+                ) : (
+                  <>
+                    pseudo-Voigt(|Q|) × per-ring texture order <b>{vizFourier}</b>
+                  </>
+                )
               ) : (
                 <>
-                  pseudo-Voigt(|Q|) × per-ring texture order <b>{vizFourier}</b>
+                  pie = <b>{vizPatches}</b> azimuthal patches · ring = texture order{" "}
+                  <b>{vizFourier}</b>
                 </>
-              )
-            ) : (
-              <>
-                pie = <b>{vizPatches}</b> azimuthal patches · ring = texture order{" "}
-                <b>{vizFourier}</b>
-              </>
-            )}
+              )}
+            </div>
           </div>
         </StageCard>
 
-        <StageCard title={STAGE_LABELS.punch} step={STAGE_NO.punch}>
+        <StageCard title={STAGE_LABELS.punch} step={STAGE_NO.punch} className="stage-card-wide">
           <div className="config-grid">
             <Field label="Method">
               <select
@@ -1093,21 +1186,27 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
               axis-aligned half-radii plus a separate tail.
             </HelpTip>
           </div>
-          <PunchShapeViz
-            method={s.punchMethod}
-            geom={punchGeom}
-            plane={s.punchPlane}
-            onPlane={(p) => patch({ punchPlane: p })}
-          />
-          <div className="ring-viz-cap">
-            r = (<b>{punchGeom.r0}</b>, <b>{punchGeom.r1}</b>, <b>{punchGeom.r2}</b>){" "}
-            {punchGeom.unit} along {punchGeom.ax.join("/")} · margin{" "}
-            <b>{punchGeom.margin}</b> · φ-tail <b>{punchGeom.phiTail}</b> · mode{" "}
-            <b>{punchGeom.mode}</b>
+          <div className="stage-visual">
+            <PunchShapeViz
+              method={s.punchMethod}
+              geom={punchGeom}
+              plane={s.punchPlane}
+              onPlane={(p) => patch({ punchPlane: p })}
+            />
+            <div className="ring-viz-cap">
+              r = (<b>{punchGeom.r0}</b>, <b>{punchGeom.r1}</b>, <b>{punchGeom.r2}</b>){" "}
+              {punchGeom.unit} along {punchGeom.ax.join("/")} · margin{" "}
+              <b>{punchGeom.margin}</b> · φ-tail <b>{punchGeom.phiTail}</b> · mode{" "}
+              <b>{punchGeom.mode}</b>
+            </div>
           </div>
         </StageCard>
 
-        <StageCard title={STAGE_LABELS.backfill} step={STAGE_NO.backfill}>
+        <StageCard
+          title={STAGE_LABELS.backfill}
+          step={STAGE_NO.backfill}
+          className="stage-card-compact"
+        >
           <Field label="Method">
             <select
               value={s.backfillMethod}
@@ -1121,7 +1220,11 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
           </Field>
         </StageCard>
 
-        <StageCard title={STAGE_LABELS.flatten} step={STAGE_NO.flatten}>
+        <StageCard
+          title={STAGE_LABELS.flatten}
+          step={STAGE_NO.flatten}
+          className="stage-card-compact"
+        >
           <Switch
             label="Enable stage"
             checked={s.flatten}
@@ -1141,7 +1244,7 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
           </Field>
         </StageCard>
 
-        <StageCard title={STAGE_LABELS.pdf} step={STAGE_NO.pdf}>
+        <StageCard title={STAGE_LABELS.pdf} step={STAGE_NO.pdf} className="stage-card-wide">
           <Field label="Apodization">
             <select
               value={s.pdfApod}
@@ -1152,6 +1255,54 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
               <option value="none">none</option>
             </select>
           </Field>
+          <RangeSlider
+            grow
+            label="|Q| band"
+            readout={
+              pdfQBandIsFull
+                ? `full 0.00 … ${(pdfQSpanMax || 0).toFixed(2)} Å⁻¹`
+                : `${pdfQMin.toFixed(2)} … ${pdfQMax.toFixed(2)} Å⁻¹`
+            }
+            min={0}
+            max={pdfQSpanMax || 1}
+            step={0.05}
+            valueMin={pdfQMin}
+            valueMax={pdfQMax || 1}
+            disabled={!pdfQSpanMax}
+            onChange={updatePdfQBand}
+          />
+          <div className="pdf-q-preview">
+            {pdfSliceQ.data ? (
+              <SliceCanvas
+                slice={pdfSliceQ.data}
+                lut={COLORMAPS.inferno}
+                vmax={pdfPreviewVmax}
+                log={false}
+                width={260}
+                bands={[pdfQMin, pdfQMax]}
+                cutDistance={0}
+                reciprocalAxes
+                latX={pdfPreviewLatB}
+                latY={pdfPreviewLatC}
+                latCut={pdfPreviewLatA}
+              />
+            ) : (
+              <div className="pdf-q-preview-empty">
+                {pdfInputId ? "Loading raw H=0 preview…" : "Raw volume needed"}
+              </div>
+            )}
+            <div className="pdf-q-note">
+              Raw H=0 preview only; ΔPDF runs on cleaned/backfilled data.
+            </div>
+            <div className="ring-viz-cap">
+              source <b>{pdfPreviewStage?.name ?? "none"}</b> · transform band{" "}
+              <b>
+                {pdfQBandIsFull
+                  ? "full"
+                  : `${pdfQMin.toFixed(2)}–${pdfQMax.toFixed(2)} Å⁻¹`}
+              </b>
+            </div>
+          </div>
         </StageCard>
       </div>
     </div>

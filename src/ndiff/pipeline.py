@@ -210,6 +210,7 @@ class DeltaPdfParams:
     zero_pad: bool = True
     subtract_mean: bool = True
     crop_hkl: tuple[float, float, float] | None = (4.0, 8.0, 15.0)
+    q_band: tuple[float, float] | None = None
     # None = off; float = isotropic blur σ; (σ_H, σ_K, σ_L) = per-axis.
     subtract_smooth_bg: float | tuple[float, float, float] | None = None
 
@@ -470,7 +471,7 @@ def delta_pdf(vol: HKLVolume, params: DeltaPdfParams | None = None, *,
         vol, apodization=p.apodization,  # type: ignore[arg-type]
         gaussian_sigma=p.gaussian_sigma,
         zero_pad=p.zero_pad, subtract_mean=p.subtract_mean,
-        real_space_angstrom=True, crop_hkl=p.crop_hkl,
+        real_space_angstrom=True, crop_hkl=p.crop_hkl, q_band=p.q_band,
         subtract_smooth_bg=p.subtract_smooth_bg,
     )
     _emit(progress, "pdf", "done", 1.0,
@@ -498,6 +499,7 @@ def delta_pdf_transform_config(p: DeltaPdfParams) -> str:
         f"zero_pad={int(p.zero_pad)}",
         f"subtract_mean={int(p.subtract_mean)}",
         f"crop_hkl={_param_string(p.crop_hkl)}",
+        f"q_band={_param_string(p.q_band)}",
         f"subtract_bg={_param_string(p.subtract_smooth_bg)}",
     ))
 
@@ -523,6 +525,7 @@ def write_delta_pdf_h5(dpdf: DeltaPDF, vol: HKLVolume, p: DeltaPdfParams,
         fh.attrs["apodization"] = dpdf.apodization
         fh.attrs["source_file"] = source_name
         fh.attrs["crop_hkl"] = _param_string(p.crop_hkl)
+        fh.attrs["q_band"] = _param_string(p.q_band)
         fh.attrs["subtract_smooth_bg"] = _param_string(p.subtract_smooth_bg)
         fh.attrs["gaussian_sigma"] = p.gaussian_sigma
         fh.attrs["zero_pad"] = int(p.zero_pad)
@@ -610,9 +613,12 @@ def pdf_consistency_check(
     data_vol = _crop_hkl(vol, p.crop_hkl)
     data = np.where(np.isfinite(data_vol.masked_data()), data_vol.data, 0.0)
     region = recon.mask & np.isfinite(data)
+    if p.q_band is not None:
+        region &= _band_limit_q(data_vol, p.q_band)[1]
     metrics, rows = _consistency_metrics(
         recon.data, data, region, recon.h_axis, h_values)
     metrics["crop_hkl"] = list(p.crop_hkl) if p.crop_hkl else None
+    metrics["q_band"] = list(p.q_band) if p.q_band else None
     metrics["apodization"] = p.apodization
     if figure_path is not None:
         _write_consistency_figure(rows, Path(figure_path))

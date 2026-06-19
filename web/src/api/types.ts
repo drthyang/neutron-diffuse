@@ -133,6 +133,8 @@ export interface StageParamsIn {
   pdf_crop_h?: number;
   pdf_crop_k?: number;
   pdf_crop_l?: number;
+  pdf_q_min?: number;
+  pdf_q_max?: number;
 }
 
 export interface PipelineRunRequest {

@@ -233,6 +233,7 @@ export function ReciprocalViewer() {
             lut={lut}
             vmax={vmax}
             log={log}
+            reciprocalAxes
             latX={latX}
             latY={latY}
             latCut={latCut}

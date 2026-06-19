@@ -21,6 +21,7 @@ from ndiff.server import volumes as vol_mod
 from ndiff.server.app import create_app
 from ndiff.server.config import ServerConfig
 from ndiff.server.datasets import discover_datasets
+from ndiff.server.routers import datasets as datasets_router
 from ndiff.visualization import extract_slice
 
 UB = 2 * np.pi * np.eye(3) / 4.0
@@ -113,6 +114,48 @@ def test_data_root_can_be_switched(tmp_path):
 
     missing = client.put("/api/data-root", json={"data_root": str(tmp_path / "nope")})
     assert missing.status_code == 400
+
+
+def test_data_root_browse_switches_selected_folder(tmp_path, monkeypatch):
+    (tmp_path / "raw").mkdir()
+    (tmp_path / "processed").mkdir()
+
+    alt = tmp_path / "picked"
+    (alt / "raw").mkdir(parents=True)
+    (alt / "processed").mkdir()
+    alt_stem = "TbTi3Bi4_100K_picked_cc_sub_bkg"
+    alt_slug = "TbTi3Bi4-100K-picked-cc-sub-bkg"
+    alt_paths = pipeline_paths(alt / "raw" / f"{alt_stem}.nxs",
+                               proc_dir=alt / "processed")
+    ndiff.save(_vol(seed=2), alt_paths.ringremoved)
+
+    monkeypatch.setattr(datasets_router, "_choose_directory", lambda _initial: alt)
+
+    app = create_app(ServerConfig(data_root=tmp_path))
+    client = TestClient(app)
+
+    blocked = client.post("/api/data-root/browse")
+    assert blocked.status_code == 403
+
+    picked = client.post("/api/data-root/browse", headers={"X-Ndiff-Local": "1"})
+    assert picked.status_code == 200
+    body = picked.json()
+    assert body["data_root"] == str(alt)
+    assert body["n_datasets"] == 1
+    assert client.get("/api/datasets").json()[0]["id"] == alt_slug
+
+
+def test_data_root_browse_cancel_leaves_root(tmp_path, monkeypatch):
+    (tmp_path / "raw").mkdir()
+    (tmp_path / "processed").mkdir()
+    monkeypatch.setattr(datasets_router, "_choose_directory", lambda _initial: None)
+
+    app = create_app(ServerConfig(data_root=tmp_path))
+    client = TestClient(app)
+
+    canceled = client.post("/api/data-root/browse", headers={"X-Ndiff-Local": "1"})
+    assert canceled.status_code == 409
+    assert client.get("/api/data-root").json()["data_root"] == str(tmp_path)
 
 
 @pytest.mark.parametrize("dpdf_name", ["full_chain", "short_legacy", "both"])

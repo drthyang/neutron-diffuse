@@ -4,6 +4,26 @@
 **Repo:** `neutron-diffuse`
 **Current branch:** `main`
 
+## Web UI Notes (2026-06-19)
+
+- The web console is served by `ndiff-web`; local testing used
+  `http://127.0.0.1:8001/` because port 8000 was already occupied.
+- Configure → 3D-ΔPDF now has a real spherical `|Q|` min/max transform control.
+  Defaults are full range, so no band is sent unless the user narrows it.
+  The H=0 preview uses the raw volume for visualization only; the ΔPDF transform
+  still runs on the cleaned/backfilled pipeline input.
+- The sidebar order is now: Configure, Execution, Reciprocal cleanup, 3D-ΔPDF,
+  Consistency check, Multi-temperature.
+- The Configure page layout still needs significant improvement. The current
+  version is functional but not polished: the data card and stage cards should
+  be redesigned as a calmer, workflow-oriented form before more controls are
+  added.
+- Browser folder selection has two paths: `ndiff-web` opens a server-side OS
+  folder picker and applies the selected data root; Vite preview falls back to
+  the browser directory picker, which may not expose an absolute path.
+- Consistency / reciprocal slice overlays now distinguish reciprocal axes from
+  real-space axes so `|R|` boundaries render as circles in the 3D-ΔPDF panel.
+
 ## Current State
 
 The full pipeline now runs end to end through the back-FFT consistency check:

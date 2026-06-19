@@ -63,6 +63,24 @@ export async function setDataRoot(dataRoot: string): Promise<DataRoot> {
   return (await r.json()) as DataRoot;
 }
 
+export async function browseDataRoot(): Promise<DataRoot> {
+  const r = await fetch("/api/data-root/browse", {
+    method: "POST",
+    headers: { "X-Ndiff-Local": "1" },
+  });
+  if (!r.ok) {
+    const body = await r.text();
+    let detail = body;
+    try {
+      detail = (JSON.parse(body) as { detail?: string }).detail ?? body;
+    } catch {
+      // Plain text error body.
+    }
+    throw new Error(`${r.status} ${detail}`);
+  }
+  return (await r.json()) as DataRoot;
+}
+
 export function fetchMeta(volumeId: string): Promise<VolumeMeta> {
   return getJSON<VolumeMeta>(`/api/volumes/${encodeURIComponent(volumeId)}/meta`);
 }

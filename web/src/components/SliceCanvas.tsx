@@ -29,6 +29,7 @@ interface Props {
   size?: number; // square display size in px (used with windowA)
   bands?: [number, number]; // [min, max] band for circle overlays
   cutDistance?: number; // distance from origin for intersection
+  reciprocalAxes?: boolean; // x/y/cut coordinates are r.l.u.; convert to Å^-1
   latX?: number;
   latY?: number;
   latCut?: number;
@@ -47,6 +48,7 @@ export function SliceCanvas({
   size,
   bands,
   cutDistance,
+  reciprocalAxes = false,
   latX,
   latY,
   latCut,
@@ -69,11 +71,11 @@ export function SliceCanvas({
   
   const dx = nx > 1 ? (xs[nx - 1] - xs[0]) / (nx - 1) : 1;
   const dy = ny > 1 ? (ys[ny - 1] - ys[0]) / (ny - 1) : 1;
-  const qScaleX = latX ? 2 * Math.PI / latX : 1;
-  const qScaleY = latY ? 2 * Math.PI / latY : 1;
+  const qScaleX = reciprocalAxes && latX ? 2 * Math.PI / latX : 1;
+  const qScaleY = reciprocalAxes && latY ? 2 * Math.PI / latY : 1;
   const dx_Q = dx * qScaleX;
   const dy_Q = dy * qScaleY;
-  const qScaleCut = latCut ? 2 * Math.PI / latCut : 1;
+  const qScaleCut = reciprocalAxes && latCut ? 2 * Math.PI / latCut : 1;
   const ch = Math.round(cw * (ny / nx) * Math.abs(dy_Q / dx_Q));
 
   useEffect(() => {

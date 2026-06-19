@@ -96,6 +96,8 @@ class StageParamsIn(BaseModel):
     pdf_crop_h: float | None = None
     pdf_crop_k: float | None = None
     pdf_crop_l: float | None = None
+    pdf_q_min: float | None = None
+    pdf_q_max: float | None = None
 
 
 class PipelineRunRequest(BaseModel):

@@ -91,6 +91,7 @@ def compute_delta_pdf(
     subtract_mean: bool = True,
     real_space_angstrom: bool = True,
     crop_hkl: tuple[float, float, float] | None = None,
+    q_band: tuple[float, float] | None = None,
     subtract_smooth_bg: float | tuple[float, float, float] | None = None,
 ) -> DeltaPDF:
     """Compute the 3D-ΔPDF from a diffuse scattering volume.
@@ -123,6 +124,10 @@ def compute_delta_pdf(
         ``|K| ≤ k_max``, ``|L| ≤ l_max`` before the FFT.  Cropping to a
         smaller, more uniform region of Q-space suppresses edge artifacts
         that arise from incomplete coverage or detector gaps at high Q.
+    q_band:
+        Optional spherical ``(q_min, q_max)`` shell in Å⁻¹.  Voxels outside
+        the shell are set to zero before windowing/FFT.  ``None`` keeps the
+        full cropped reciprocal-space range.
     subtract_smooth_bg:
         Optional Gaussian-blur sigma in r.l.u.  When set, a smooth
         Gaussian-blurred background is subtracted from the (filled) volume
@@ -194,6 +199,19 @@ def compute_delta_pdf(
         smooth_bg = gaussian_filter(data, sigma=sigma_px, mode="nearest")
         data = data - smooth_bg
 
+    q_mag = None
+    if q_band is not None:
+        qmin, qmax = q_band
+        if qmax <= qmin:
+            raise ValueError("q_band must satisfy q_max > q_min")
+        H, K, L = np.meshgrid(h_axis, k_axis, l_axis, indexing="ij")
+        hkl = np.stack([H, K, L], axis=-1)
+        q_mag = np.linalg.norm(hkl @ vol.ub_matrix.T, axis=-1)
+        in_band = (q_mag >= qmin) & (q_mag <= qmax)
+        if not np.any(in_band):
+            raise ValueError(f"q_band {q_band} selects no voxels")
+        data = np.where(in_band, data, 0.0)
+
     # Shape of the (cropped, bg-subtracted) volume that actually enters the
     # transform — recorded so invert_delta_pdf can un-pad back to it.
     cropped_shape = data.shape
@@ -263,7 +281,15 @@ def compute_delta_pdf(
     else:
         x_axis, y_axis, z_axis = x_frac, y_frac, z_frac
 
-    q_max = float(np.max(vol.q_magnitude()))
+    if q_mag is None:
+        H, K, L = np.meshgrid(h_axis, k_axis, l_axis, indexing="ij")
+        hkl = np.stack([H, K, L], axis=-1)
+        q_mag = np.linalg.norm(hkl @ vol.ub_matrix.T, axis=-1)
+        q_max = float(np.max(q_mag))
+    else:
+        qmin, qmax_in = q_band
+        retained = q_mag[(q_mag >= qmin) & (q_mag <= qmax_in)]
+        q_max = float(np.max(retained))
 
     return DeltaPDF(
         data=delta_pdf,

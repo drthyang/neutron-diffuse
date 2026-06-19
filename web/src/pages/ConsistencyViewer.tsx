@@ -453,6 +453,7 @@ export function ConsistencyViewer() {
               log={p.key === "residual" ? false : log}
               bands={isData ? [draftMin, draftMax] : undefined}
               cutDistance={isData ? value : undefined}
+              reciprocalAxes
               latX={latX}
               latY={latY}
               latCut={latCut}

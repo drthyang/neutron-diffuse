@@ -58,6 +58,8 @@ interface PipelineConfig {
   backfillMethod: string;
   flattenEstimator: string;
   pdfApod: string;
+  pdfQMin: string;
+  pdfQMax: string;
 }
 
 interface PipelineState extends PipelineConfig {
@@ -107,6 +109,8 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
   backfillMethod: "",
   flattenEstimator: "",
   pdfApod: "",
+  pdfQMin: "",
+  pdfQMax: "",
 
   jobId: null,
   running: false,
@@ -149,6 +153,10 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
     if (s.backfillMethod) params.backfill_method = s.backfillMethod;
     if (s.flattenEstimator) params.flatten_estimator = s.flattenEstimator;
     if (s.pdfApod) params.pdf_apodization = s.pdfApod;
+    if (s.pdfQMin || s.pdfQMax) {
+      params.pdf_q_min = s.pdfQMin ? Number(s.pdfQMin) : 0;
+      if (s.pdfQMax) params.pdf_q_max = Number(s.pdfQMax);
+    }
 
     try {
       const job = await runPipeline({

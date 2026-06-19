@@ -90,6 +90,13 @@ def build_params(req: PipelineRunRequest) -> PipelineParams:
             sp.pdf_crop_k if sp.pdf_crop_k is not None else cur[1],
             sp.pdf_crop_l if sp.pdf_crop_l is not None else cur[2],
         )
+    if sp.pdf_q_min is not None or sp.pdf_q_max is not None:
+        qmin = sp.pdf_q_min if sp.pdf_q_min is not None else 0.0
+        if sp.pdf_q_max is None:
+            raise HTTPException(400, "pdf_q_max is required when setting a |Q| band")
+        if sp.pdf_q_max <= qmin:
+            raise HTTPException(400, "pdf_q_max must be greater than pdf_q_min")
+        dp_kw["q_band"] = (qmin, sp.pdf_q_max)
     if dp_kw:
         p.delta_pdf = dataclasses.replace(p.delta_pdf, **dp_kw)
     return p
