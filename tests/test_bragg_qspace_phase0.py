@@ -73,9 +73,9 @@ def _synthetic_vol() -> HKLVolume:
 # flipped to the Q-anisotropic-adaptive punch (ROADMAP Phase 6 / Phase 4, after
 # the ΔPDF A/B validated it, r=0.9998).  If a future change is *intended* to
 # alter the default punch geometry, regenerate these deliberately.
-_GOLDEN_DEFAULT_PUNCHED = 824
+_GOLDEN_DEFAULT_PUNCHED = 874
 _GOLDEN_DEFAULT_KEEP_SHA256 = (
-    "01b70db783f47a6f9a600d6ce77aa54817b8908135eb71d236b884da371e280d"
+    "ba6a5d1aa3673b1f4b7d5700e941ef854afd21713a8a0c239516f764b1c4ad7b"
 )
 _GOLDEN_INTEGER_ONLY_PUNCHED = 57
 _GOLDEN_SEARCH_ONLY_PUNCHED = 76

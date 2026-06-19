@@ -113,7 +113,7 @@ def test_transform_config_string_format():
     )
     assert cfg == (
         "apodize=gaussian;gaussian_sigma=0.4;zero_pad=1;subtract_mean=1;"
-        "crop_hkl=4,8,15;subtract_bg="
+        "crop_hkl=4,8,15;q_band=;subtract_bg="
     )
 
 

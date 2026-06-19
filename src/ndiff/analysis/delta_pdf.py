@@ -287,9 +287,12 @@ def compute_delta_pdf(
         q_mag = np.linalg.norm(hkl @ vol.ub_matrix.T, axis=-1)
         q_max = float(np.max(q_mag))
     else:
-        qmin, qmax_in = q_band
-        retained = q_mag[(q_mag >= qmin) & (q_mag <= qmax_in)]
-        q_max = float(np.max(retained))
+        if q_band is not None:
+            qmin, qmax_in = q_band
+            retained = q_mag[(q_mag >= qmin) & (q_mag <= qmax_in)]
+            q_max = float(np.max(retained))
+        else:
+            q_max = float(np.max(q_mag))
 
     return DeltaPDF(
         data=delta_pdf,

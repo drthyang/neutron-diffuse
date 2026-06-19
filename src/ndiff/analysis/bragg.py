@@ -971,10 +971,10 @@ class BraggRemover:
             # (2) Q-mode with no per-peak fit (search peaks / shape-fit off): the
             #     fixed Q base ellipsoid + Q-space margin + folded φ-tail.
             if q_shape is not None and peak_rec.radii_hkl is None:
-                a = self._q_shape_matrix(vol, scale=s, margin_q=self.margin)
-                assert a is not None
+                _a = self._q_shape_matrix(vol, scale=s, margin_q=self.margin)
+                assert _a is not None
                 a = self._fold_phi_tail(
-                    vol, a, peak_rec.center_hkl,
+                    vol, _a, peak_rec.center_hkl,
                     max(0.0, float(self.phi_tail_hkl)) * s)
                 self._punch_one(
                     vol, keep, center, self._ellipsoid_bounding_radii(a), 0.0,
