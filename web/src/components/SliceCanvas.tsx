@@ -5,9 +5,9 @@
 // CSS scales it for display.  Display modes:
 //   • width  — fixed display width, height follows the data aspect ratio
 //   • fit    — letterbox to fill the parent box (preserves aspect)
-//   • windowA + size — crop to a square physical window [-windowA, +windowA] Å on
-//     both axes and draw it into a square `size` px box (used by the ΔPDF viewer
-//     so all three orthoslices share one square real-space window)
+//   • windowA + size — crop to a square coordinate window [-windowA, +windowA]
+//     on both axes and draw it into a square `size` px box (used by the ΔPDF
+//     viewer so all three orthoslices share one square real-space window)
 //
 // Colour mapping: sequential data maps [vmin, vmax] → LUT; `diverging` data maps
 // symmetrically about 0 over ±vmax; `log` uses log10(v+1)/log10(vmax+1).
@@ -76,7 +76,7 @@ export function SliceCanvas({
   const dx_Q = dx * qScaleX;
   const dy_Q = dy * qScaleY;
   const qScaleCut = reciprocalAxes && latCut ? 2 * Math.PI / latCut : 1;
-  const ch = Math.round(cw * (ny / nx) * Math.abs(dy_Q / dx_Q));
+  const ch = Math.max(1, Math.round(ch_raw * Math.abs(dy_Q / dx_Q)));
 
   useEffect(() => {
     const canvas = ref.current;

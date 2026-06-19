@@ -413,14 +413,51 @@ function planeAxes(p: PunchPlane, ax: [string, string, string]): [string, string
   return [ax[1], ax[2]];
 }
 
+function planeHklAxes(p: PunchPlane): ["H" | "K" | "L", "H" | "K" | "L"] {
+  if (p === "hk") return ["H", "K"];
+  if (p === "hl") return ["H", "L"];
+  return ["K", "L"];
+}
+
+type LatticeLike = { a: number | null; b: number | null; c: number | null };
+
+function axisLattice(
+  axis: "H" | "K" | "L",
+  lattice?: LatticeLike,
+): number | null | undefined {
+  if (axis === "H") return lattice?.a;
+  if (axis === "K") return lattice?.b;
+  return lattice?.c;
+}
+
+function axisRadiusHkl(
+  axis: "H" | "K" | "L",
+  geom: PunchGeom,
+  lattice?: LatticeLike,
+): number {
+  const idx = axis === "H" ? 0 : axis === "K" ? 1 : 2;
+  const r = idx === 0 ? geom.r0 : idx === 1 ? geom.r1 : geom.r2;
+  if (!geom.isQ) return r;
+  const lat = axisLattice(axis, lattice);
+  return lat ? r * lat / (2 * Math.PI) : r;
+}
+
 function EllipsoidPunchViz({
   geom,
   plane,
   onPlane,
+  slice,
+  lattice,
+  sourceLabel,
+  loading,
 }: {
   geom: PunchGeom;
   plane: PunchPlane;
   onPlane: (p: PunchPlane) => void;
+  slice?: import("../api/types").Slice;
+  lattice?: LatticeLike;
+  sourceLabel?: string;
+  loading?: boolean;
 }) {
   const PV = 200; // viewBox
   const C = 100; // centre
@@ -501,6 +538,15 @@ function EllipsoidPunchViz({
   // off-integer satellite caught by search / both modes
   const satX = C + 1.5 * SP;
   const satY = C - 0.5 * SP;
+  const dataPreview = slice && lattice ? (
+    <PunchDataOverlay
+      slice={slice}
+      geom={geom}
+      plane={plane}
+      lattice={lattice}
+      sourceLabel={sourceLabel}
+    />
+  ) : null;
 
   return (
     <div className="punch-viz">
@@ -521,26 +567,30 @@ function EllipsoidPunchViz({
           );
         })}
       </div>
-      <svg
-        viewBox={`0 0 ${PV} ${PV}`}
-        role="img"
-        aria-label={`Bragg punch ellipsoid cross-section in the ${axX}-${axY} plane (${geom.unit})`}
-      >
-        <g>{grid}</g>
-        {showSat && (
-          <g>
-            <ellipse cx={satX} cy={satY} rx={rx * fp} ry={ry * fp} className="punch-sat" />
-            <circle cx={satX} cy={satY} r={1.6} className="punch-sat-node" />
-          </g>
-        )}
-        <g>{marks}</g>
-        <text x={PV - 12} y={C - 5} textAnchor="end" className="punch-axis">
-          {axX}
-        </text>
-        <text x={C + 5} y={20} className="punch-axis">
-          {axY}
-        </text>
-      </svg>
+      {dataPreview ?? (
+        <svg
+          className="punch-schematic"
+          viewBox={`0 0 ${PV} ${PV}`}
+          role="img"
+          aria-label={`Bragg punch ellipsoid cross-section in the ${axX}-${axY} plane (${geom.unit})`}
+        >
+          <g>{grid}</g>
+          {showSat && (
+            <g>
+              <ellipse cx={satX} cy={satY} rx={rx * fp} ry={ry * fp} className="punch-sat" />
+              <circle cx={satX} cy={satY} r={1.6} className="punch-sat-node" />
+            </g>
+          )}
+          <g>{marks}</g>
+          <text x={PV - 12} y={C - 5} textAnchor="end" className="punch-axis">
+            {axX}
+          </text>
+          <text x={C + 5} y={20} className="punch-axis">
+            {axY}
+          </text>
+        </svg>
+      )}
+      {!dataPreview && loading && <div className="punch-preview-empty">Loading slice…</div>}
       <div className="punch-legend">
         <span>
           <span className="sw fp" />Bragg
@@ -559,22 +609,179 @@ function EllipsoidPunchViz({
   );
 }
 
+function PunchDataOverlay({
+  slice,
+  geom,
+  plane,
+  lattice,
+  sourceLabel,
+}: {
+  slice: import("../api/types").Slice;
+  geom: PunchGeom;
+  plane: PunchPlane;
+  lattice: LatticeLike;
+  sourceLabel?: string;
+}) {
+  const { nx, ny, x_axis: xs, y_axis: ys } = slice.header;
+  const dx = nx > 1 ? (xs[nx - 1] - xs[0]) / (nx - 1) : 1;
+  const dy = ny > 1 ? (ys[ny - 1] - ys[0]) / (ny - 1) : 1;
+  const previewHalf = 4;
+  let ix0 = 0;
+  let ix1 = nx - 1;
+  let iy0 = 0;
+  let iy1 = ny - 1;
+  while (ix0 < ix1 && xs[ix0] < -previewHalf) ix0++;
+  while (ix1 > ix0 && xs[ix1] > previewHalf) ix1--;
+  while (iy0 < iy1 && ys[iy0] < -previewHalf) iy0++;
+  while (iy1 > iy0 && ys[iy1] > previewHalf) iy1--;
+  const x0 = xs[ix0] - Math.abs(dx) / 2;
+  const x1 = xs[ix1] + Math.abs(dx) / 2;
+  const y0 = ys[iy0] - Math.abs(dy) / 2;
+  const y1 = ys[iy1] + Math.abs(dy) / 2;
+  const w = Math.max(Math.abs(x1 - x0), 1);
+  const h = Math.max(Math.abs(y1 - y0), 1);
+  const [axisX, axisY] = planeHklAxes(plane);
+  const rx = axisRadiusHkl(axisX, geom, lattice);
+  const ry = axisRadiusHkl(axisY, geom, lattice);
+  const latX = axisLattice(axisX, lattice) ?? 1;
+  const latY = axisLattice(axisY, lattice) ?? 1;
+  const qScaleX = 2 * Math.PI / latX;
+  const qScaleY = 2 * Math.PI / latY;
+  const qAspect = (w * qScaleX) / (h * qScaleY);
+  const ib: [number, number] = geom.isQ
+    ? [rx * 2, ry * 2]
+    : plane === "hk"
+      ? [PUNCH_IB.h, PUNCH_IB.k]
+      : plane === "hl"
+        ? [PUNCH_IB.h, PUNCH_IB.l]
+        : [PUNCH_IB.k, PUNCH_IB.l];
+  const showTail = !geom.isQ && plane === "kl" && geom.phiTail > 0;
+  const showMargin = !geom.isQ && geom.margin > 0;
+  const showSat = geom.mode !== "integer";
+  const nodes: { x: number; y: number }[] = [];
+  for (let x = Math.ceil(x0); x <= Math.floor(x1); x++) {
+    for (let y = Math.ceil(y0); y <= Math.floor(y1); y++) nodes.push({ x, y });
+  }
+  const stroke = w / 180;
+  const vmax = (slice.header.robust_max || 1) * 1.35;
+
+  return (
+    <div className="punch-preview">
+      <div className="punch-preview-frame" style={{ aspectRatio: qAspect }}>
+        <SliceCanvas
+          slice={slice}
+          lut={COLORMAPS.inferno}
+          vmax={vmax}
+          log={false}
+          windowA={previewHalf}
+          size={260}
+          reciprocalAxes
+          latX={latX}
+          latY={latY}
+        />
+        <svg
+          className="punch-overlay"
+          viewBox={`${x0} ${-y1} ${w} ${h}`}
+          preserveAspectRatio="none"
+          role="img"
+          aria-label={`Bragg punch profile over ${slice.header.x_label} by ${slice.header.y_label}`}
+        >
+          <g transform="scale(1, -1)">
+            {showSat && (
+              <g>
+                <ellipse
+                  cx={1.5}
+                  cy={-0.5}
+                  rx={rx}
+                  ry={ry}
+                  className="punch-sat"
+                  vectorEffect="non-scaling-stroke"
+                />
+                <circle cx={1.5} cy={-0.5} r={stroke * 1.5} className="punch-sat-node" />
+              </g>
+            )}
+            {nodes.map(({ x, y }) => {
+              const key = `${x},${y}`;
+              if (x === 0 && y === 0) {
+                return (
+                  <g key={key}>
+                    <ellipse cx={x} cy={y} rx={ib[0]} ry={ib[1]} className="punch-ib" vectorEffect="non-scaling-stroke" />
+                    <circle cx={x} cy={y} r={stroke * 1.3} className="punch-node" />
+                  </g>
+                );
+              }
+              const ang = (Math.atan2(y, x) * 180) / Math.PI + 90;
+              return (
+                <g key={key}>
+                  {showTail && (
+                    <ellipse
+                      cx={x}
+                      cy={y}
+                      rx={rx + geom.phiTail}
+                      ry={ry}
+                      transform={`rotate(${ang.toFixed(1)} ${x} ${y})`}
+                      className="punch-tail"
+                    />
+                  )}
+                  {showMargin && (
+                    <ellipse
+                      cx={x}
+                      cy={y}
+                      rx={rx + geom.margin}
+                      ry={ry + geom.margin}
+                      className="punch-margin"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  )}
+                  <ellipse cx={x} cy={y} rx={rx} ry={ry} className="punch-fp" vectorEffect="non-scaling-stroke" />
+                  <circle cx={x} cy={y} r={stroke * 1.3} className="punch-node" />
+                </g>
+              );
+            })}
+          </g>
+        </svg>
+      </div>
+      <div className="punch-preview-meta">
+        {sourceLabel ?? "source"} · {slice.header.cut_label}
+      </div>
+    </div>
+  );
+}
+
 function PunchShapeViz({
   method,
   geom,
   plane,
   onPlane,
+  slice,
+  lattice,
+  sourceLabel,
+  loading,
 }: {
   method: string;
   geom: PunchGeom;
   plane: PunchPlane;
   onPlane: (p: PunchPlane) => void;
+  slice?: import("../api/types").Slice;
+  lattice?: LatticeLike;
+  sourceLabel?: string;
+  loading?: boolean;
 }) {
   // method registry seam — add a case per future punch algorithm
   switch (method) {
     case "ellipsoid":
     default:
-      return <EllipsoidPunchViz geom={geom} plane={plane} onPlane={onPlane} />;
+      return (
+        <EllipsoidPunchViz
+          geom={geom}
+          plane={plane}
+          onPlane={onPlane}
+          slice={slice}
+          lattice={lattice}
+          sourceLabel={sourceLabel}
+          loading={loading}
+        />
+      );
   }
 }
 
@@ -656,6 +863,24 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
     if (!selectedDataset) return undefined;
     return selectedDataset.stages.find((stage) => stage.name === "raw" && stage.exists);
   }, [selectedDataset]);
+  const punchPreviewStage = useMemo(() => {
+    if (!selectedDataset) return undefined;
+    return (
+      selectedDataset.stages.find((stage) => stage.name === "ringremoved" && stage.exists) ??
+      selectedDataset.stages.find((stage) => stage.name === "raw" && stage.exists)
+    );
+  }, [selectedDataset]);
+  const punchInputId = punchPreviewStage?.volume_id;
+  const punchMetaQ = useQuery({
+    queryKey: ["meta", punchInputId, "config-punch"],
+    queryFn: () => fetchMeta(punchInputId as string),
+    enabled: Boolean(punchInputId),
+  });
+  const punchSliceQ = useQuery({
+    queryKey: ["slice", punchInputId, s.punchPlane, 0, false, "config-punch"],
+    queryFn: () => fetchSlice(punchInputId as string, s.punchPlane, 0, false),
+    enabled: Boolean(punchInputId),
+  });
   const pdfInputId = pdfPreviewStage?.volume_id;
   const pdfMetaQ = useQuery({
     queryKey: ["meta", pdfInputId, "config-pdf"],
@@ -1192,6 +1417,10 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
               geom={punchGeom}
               plane={s.punchPlane}
               onPlane={(p) => patch({ punchPlane: p })}
+              slice={punchSliceQ.data}
+              lattice={punchMetaQ.data?.lattice}
+              sourceLabel={punchPreviewStage?.name}
+              loading={Boolean(punchInputId) && punchSliceQ.isFetching}
             />
             <div className="ring-viz-cap">
               r = (<b>{punchGeom.r0}</b>, <b>{punchGeom.r1}</b>, <b>{punchGeom.r2}</b>){" "}

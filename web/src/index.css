@@ -1090,11 +1090,55 @@ input[type="range"]::-moz-range-track {
   background: var(--accent-soft);
   border-color: var(--accent);
 }
-.punch-viz svg {
+.punch-viz .punch-schematic {
   display: block;
   width: 100%;
   max-width: 220px;
   margin: 0 auto;
+}
+.punch-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+.punch-preview-frame {
+  position: relative;
+  width: min(260px, 100%);
+  line-height: 0;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.punch-preview-frame > div {
+  width: 100% !important;
+  height: 100% !important;
+}
+.punch-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.punch-preview-meta,
+.punch-preview-empty {
+  max-width: 260px;
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: center;
+}
+.punch-preview-empty {
+  width: min(220px, 100%);
+  min-height: 34px;
+  display: grid;
+  place-items: center;
+  margin: 6px auto 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
 }
 .punch-grid {
   stroke: var(--border);
