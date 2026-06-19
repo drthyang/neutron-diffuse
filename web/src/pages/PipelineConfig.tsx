@@ -1292,175 +1292,181 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
         <StageCard title={STAGE_LABELS.punch} step={STAGE_NO.punch} className="stage-card-wide punch-stage-card">
           <div className="punch-workspace">
             <div className="punch-controls">
-          <div className="config-grid">
-            <Field label="Method">
-              <select
-                value={s.punchMethod}
-                title="Bragg-punch algorithm (more shapes coming)"
-                onChange={(e) => patch({ punchMethod: e.target.value })}
-              >
-                <option value="ellipsoid">Ellipsoid</option>
-              </select>
-            </Field>
-            <Field label="Min I">
-              <input
-                type="number"
-                step="0.1"
-                placeholder="0.8"
-                value={s.punchMinI}
-                title="Minimum intensity above background for a voxel to be punched as Bragg"
-                onChange={(e) => patch({ punchMinI: e.target.value })}
-              />
-            </Field>
-            <Field label="Mode">
-              <select
-                value={s.punchMode}
-                onChange={(e) => patch({ punchMode: e.target.value })}
-              >
-                <option value="">both (default)</option>
-                <option value="integer">integer</option>
-                <option value="search">search</option>
-                <option value="both">both</option>
-              </select>
-            </Field>
-          </div>
-              <div className="config-sub-row">
-                <span className="config-sub-title">
-                  Bragg footprint (Å⁻¹)
-                </span>
-                <HelpTip>
-                  Punch half-radii along a*, b*, c* in Q-space. The run request
-                  always uses Q-space; blank fields use the validated defaults
-                  (0.097, 0.072, 0.115).
-                </HelpTip>
-              </div>
-              <div className="config-grid-3">
-                <Field label={<>r<sub>a*</sub></>}>
+              <div className="config-grid-3 punch-basis">
+                <Field label="Method">
+                  <select
+                    value={s.punchMethod}
+                    title="Bragg-punch algorithm (more shapes coming)"
+                    onChange={(e) => patch({ punchMethod: e.target.value })}
+                  >
+                    <option value="ellipsoid">Ellipsoid</option>
+                  </select>
+                </Field>
+                <Field label="Min I">
                   <input
                     type="number"
-                    step="0.005"
-                    min="0"
-                    placeholder="0.097"
-                    value={s.punchQA}
-                    title="Punch half-radius along a* (Å⁻¹)"
-                    onChange={(e) => patch({ punchQA: e.target.value })}
+                    step="0.1"
+                    placeholder="0.8"
+                    value={s.punchMinI}
+                    title="Minimum intensity above background for a voxel to be punched as Bragg"
+                    onChange={(e) => patch({ punchMinI: e.target.value })}
                   />
                 </Field>
-                <Field label={<>r<sub>b*</sub></>}>
-                  <input
-                    type="number"
-                    step="0.005"
-                    min="0"
-                    placeholder="0.072"
-                    value={s.punchQB}
-                    title="Punch half-radius along b* (Å⁻¹)"
-                    onChange={(e) => patch({ punchQB: e.target.value })}
-                  />
-                </Field>
-                <Field label={<>r<sub>c*</sub></>}>
-                  <input
-                    type="number"
-                    step="0.005"
-                    min="0"
-                    placeholder="0.115"
-                    value={s.punchQC}
-                    title="Punch half-radius along c* (Å⁻¹)"
-                    onChange={(e) => patch({ punchQC: e.target.value })}
-                  />
+                <Field label="Mode">
+                  <select
+                    value={s.punchMode}
+                    onChange={(e) => patch({ punchMode: e.target.value })}
+                  >
+                    <option value="">both (default)</option>
+                    <option value="integer">integer</option>
+                    <option value="search">search</option>
+                    <option value="both">both</option>
+                  </select>
                 </Field>
               </div>
-              <div className="config-grid">
-                <Field label="Margin">
-                  <input
-                    type="number"
-                    step="0.005"
-                    min="0"
-                    placeholder="0.02"
-                    value={s.punchMargin}
-                    title="Q-space guard band added to every punch half-radius (Å⁻¹)"
-                    onChange={(e) => patch({ punchMargin: e.target.value })}
+
+              <div className="punch-group">
+                <div className="punch-group-head">
+                  <span className="punch-group-title">Bragg footprint</span>
+                  <span className="punch-group-unit">Å⁻¹</span>
+                  <HelpTip>
+                    Punch half-radii along a*, b*, c* in Q-space. The run request
+                    always uses Q-space; blank fields use the validated defaults
+                    (0.097, 0.072, 0.115).
+                  </HelpTip>
+                </div>
+                <div className="config-grid-3">
+                  <Field label={<>r<sub>a*</sub></>}>
+                    <input
+                      type="number"
+                      step="0.005"
+                      min="0"
+                      placeholder="0.097"
+                      value={s.punchQA}
+                      title="Punch half-radius along a* (Å⁻¹)"
+                      onChange={(e) => patch({ punchQA: e.target.value })}
+                    />
+                  </Field>
+                  <Field label={<>r<sub>b*</sub></>}>
+                    <input
+                      type="number"
+                      step="0.005"
+                      min="0"
+                      placeholder="0.072"
+                      value={s.punchQB}
+                      title="Punch half-radius along b* (Å⁻¹)"
+                      onChange={(e) => patch({ punchQB: e.target.value })}
+                    />
+                  </Field>
+                  <Field label={<>r<sub>c*</sub></>}>
+                    <input
+                      type="number"
+                      step="0.005"
+                      min="0"
+                      placeholder="0.115"
+                      value={s.punchQC}
+                      title="Punch half-radius along c* (Å⁻¹)"
+                      onChange={(e) => patch({ punchQC: e.target.value })}
+                    />
+                  </Field>
+                </div>
+                <div className="config-grid">
+                  <Field label="Margin">
+                    <input
+                      type="number"
+                      step="0.005"
+                      min="0"
+                      placeholder="0.02"
+                      value={s.punchMargin}
+                      title="Q-space guard band added to every punch half-radius (Å⁻¹)"
+                      onChange={(e) => patch({ punchMargin: e.target.value })}
+                    />
+                  </Field>
+                  <Field label="φ-tail (K–L)">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.12"
+                      value={s.punchPhiTail}
+                      title="Extra K–L tangential half-width along the powder-ring φ direction"
+                      onChange={(e) => patch({ punchPhiTail: e.target.value })}
+                    />
+                  </Field>
+                </div>
+                <div className="switch-row">
+                  <Switch
+                    label="Fit tilted ellipsoid (covariance)"
+                    checked={s.punchFitCovariance}
+                    onChange={(v) => patch({ punchFitCovariance: v })}
                   />
-                </Field>
-                <Field label="φ-tail (K–L)">
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.12"
-                    value={s.punchPhiTail}
-                    title="Extra K–L tangential half-width along the powder-ring φ direction"
-                    onChange={(e) => patch({ punchPhiTail: e.target.value })}
-                  />
-                </Field>
+                  <HelpTip>
+                    Fit a tilted 3×3 ellipsoid to each Bragg peak during punching
+                    and fold the φ-tail into it. The preview uses the exact UB-derived
+                    Q-space floor; the per-peak covariance tilt is fitted from data
+                    during the run and is best checked in the punched slices.
+                  </HelpTip>
+                </div>
               </div>
-              <div className="config-sub-row">
-                <span className="config-sub-title">Direct beam (Å⁻¹)</span>
-                <HelpTip>
-                  Origin-centered incident/direct-beam ellipsoid in Q-space,
-                  using half-radii along a*, b*, c*. The backend converts these
-                  through UB, matching the Bragg footprint geometry.
-                </HelpTip>
-              </div>
-              <div className="config-grid-3">
-                <Field label={<>r<sub>a*</sub></>}>
-                  <input
-                    type="number"
-                    step="0.005"
-                    min="0"
-                    placeholder="0.16"
-                    value={s.incidentBeamQA}
-                    title="Direct-beam half-radius along a* (Å⁻¹)"
-                    onChange={(e) => patch({ incidentBeamQA: e.target.value })}
-                  />
-                </Field>
-                <Field label={<>r<sub>b*</sub></>}>
-                  <input
-                    type="number"
-                    step="0.005"
-                    min="0"
-                    placeholder="0.30"
-                    value={s.incidentBeamQB}
-                    title="Direct-beam half-radius along b* (Å⁻¹)"
-                    onChange={(e) => patch({ incidentBeamQB: e.target.value })}
-                  />
-                </Field>
-                <Field label={<>r<sub>c*</sub></>}>
-                  <input
-                    type="number"
-                    step="0.005"
-                    min="0"
-                    placeholder="0.25"
-                    value={s.incidentBeamQC}
-                    title="Direct-beam half-radius along c* (Å⁻¹)"
-                    onChange={(e) => patch({ incidentBeamQC: e.target.value })}
-                  />
-                </Field>
-              </div>
-              <div className="config-grid">
-                <Field label="Beam margin">
-                  <input
-                    type="number"
-                    step="0.005"
-                    min="0"
-                    placeholder="0.00"
-                    value={s.incidentBeamMargin}
-                    title="Q-space guard band added to every direct-beam half-radius (Å⁻¹)"
-                    onChange={(e) => patch({ incidentBeamMargin: e.target.value })}
-                  />
-                </Field>
-              </div>
-              <div className="switch-row">
-                <Switch
-                  label="Fit tilted ellipsoid (covariance)"
-                  checked={s.punchFitCovariance}
-                  onChange={(v) => patch({ punchFitCovariance: v })}
-                />
-                <HelpTip>
-                  Fit a tilted 3×3 ellipsoid to each Bragg peak during punching
-                  and fold the φ-tail into it. The preview uses the exact UB-derived
-                  Q-space floor; the per-peak covariance tilt is fitted from data
-                  during the run and is best checked in the punched slices.
-                </HelpTip>
+
+              <div className="punch-group">
+                <div className="punch-group-head">
+                  <span className="punch-group-title">Direct beam</span>
+                  <span className="punch-group-unit">Å⁻¹</span>
+                  <HelpTip>
+                    Origin-centered incident/direct-beam ellipsoid in Q-space,
+                    using half-radii along a*, b*, c*. The backend converts these
+                    through UB, matching the Bragg footprint geometry.
+                  </HelpTip>
+                </div>
+                <div className="config-grid-3">
+                  <Field label={<>r<sub>a*</sub></>}>
+                    <input
+                      type="number"
+                      step="0.005"
+                      min="0"
+                      placeholder="0.16"
+                      value={s.incidentBeamQA}
+                      title="Direct-beam half-radius along a* (Å⁻¹)"
+                      onChange={(e) => patch({ incidentBeamQA: e.target.value })}
+                    />
+                  </Field>
+                  <Field label={<>r<sub>b*</sub></>}>
+                    <input
+                      type="number"
+                      step="0.005"
+                      min="0"
+                      placeholder="0.30"
+                      value={s.incidentBeamQB}
+                      title="Direct-beam half-radius along b* (Å⁻¹)"
+                      onChange={(e) => patch({ incidentBeamQB: e.target.value })}
+                    />
+                  </Field>
+                  <Field label={<>r<sub>c*</sub></>}>
+                    <input
+                      type="number"
+                      step="0.005"
+                      min="0"
+                      placeholder="0.25"
+                      value={s.incidentBeamQC}
+                      title="Direct-beam half-radius along c* (Å⁻¹)"
+                      onChange={(e) => patch({ incidentBeamQC: e.target.value })}
+                    />
+                  </Field>
+                </div>
+                <div className="config-grid">
+                  <Field label="Margin">
+                    <input
+                      type="number"
+                      step="0.005"
+                      min="0"
+                      placeholder="0.00"
+                      value={s.incidentBeamMargin}
+                      title="Q-space guard band added to every direct-beam half-radius (Å⁻¹)"
+                      onChange={(e) => patch({ incidentBeamMargin: e.target.value })}
+                    />
+                  </Field>
+                </div>
               </div>
             </div>
             <div className="stage-visual punch-preview-pane">

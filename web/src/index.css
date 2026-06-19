@@ -1168,6 +1168,46 @@ input[type="range"]::-moz-range-track {
 .punch-controls .config-grid-3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
+/* grouped parameter sub-panels inside the Bragg-punch controls */
+.punch-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 13px 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.punch-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.punch-group-title {
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.punch-group-unit {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  line-height: 1.55;
+}
+.punch-group-head .helptip {
+  margin-left: auto;
+}
+/* divider above the covariance toggle that closes the footprint group */
+.punch-group .switch-row {
+  margin-top: 1px;
+  padding-top: 11px;
+  border-top: 1px solid var(--border);
+}
 .punch-preview-controls {
   width: 100%;
   display: grid;
