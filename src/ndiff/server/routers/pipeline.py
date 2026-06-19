@@ -67,6 +67,32 @@ def build_params(req: PipelineRunRequest) -> PipelineParams:
             sp.punch_q_radius_b if sp.punch_q_radius_b is not None else cur[1],
             sp.punch_q_radius_c if sp.punch_q_radius_c is not None else cur[2],
         ))
+    if any(v is not None for v in
+           (sp.incident_beam_q_radius_a, sp.incident_beam_q_radius_b,
+            sp.incident_beam_q_radius_c)):
+        cur = p.punch.incident_beam_q_radii or (0.16, 0.30, 0.25)
+        p.punch = dataclasses.replace(p.punch, incident_beam_q_radii=(
+            sp.incident_beam_q_radius_a
+            if sp.incident_beam_q_radius_a is not None else cur[0],
+            sp.incident_beam_q_radius_b
+            if sp.incident_beam_q_radius_b is not None else cur[1],
+            sp.incident_beam_q_radius_c
+            if sp.incident_beam_q_radius_c is not None else cur[2],
+        ))
+    if sp.incident_beam_q_margin is not None:
+        p.punch = dataclasses.replace(
+            p.punch, incident_beam_q_margin=sp.incident_beam_q_margin)
+    if any(v is not None for v in
+           (sp.incident_beam_radius_h, sp.incident_beam_radius_k,
+            sp.incident_beam_radius_l)):
+        cur = p.punch.incident_beam_ellipsoid_radii_hkl or p.punch.incident_beam_radii
+        p.punch = dataclasses.replace(p.punch, incident_beam_ellipsoid_radii_hkl=(
+            sp.incident_beam_radius_h if sp.incident_beam_radius_h is not None else cur[0],
+            sp.incident_beam_radius_k if sp.incident_beam_radius_k is not None else cur[1],
+            sp.incident_beam_radius_l if sp.incident_beam_radius_l is not None else cur[2],
+        ))
+    if sp.incident_beam_margin is not None:
+        p.punch = dataclasses.replace(p.punch, incident_beam_margin=sp.incident_beam_margin)
     if sp.punch_fit_covariance is not None:
         p.punch = dataclasses.replace(
             p.punch, integer_fit_covariance=sp.punch_fit_covariance)

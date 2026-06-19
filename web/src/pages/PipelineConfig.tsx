@@ -4,14 +4,14 @@
 // Execution page via `onStarted`.
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useShallow } from "zustand/react/shallow";
 
 import { browseDataRoot, fetchMeta, fetchSlice, setDataRoot } from "../api/client";
 import { useDataRoot, useDatasets } from "../api/hooks";
 import { COLORMAPS } from "../colormaps/luts";
 import { SliceCanvas } from "../components/SliceCanvas";
-import { Field, HelpTip, RangeSlider, Switch } from "../components/ui";
+import { Field, HelpTip, RangeSlider, Slider, Switch } from "../components/ui";
 import { useDatasetStore, useInitializeDataset } from "../state/datasetStore";
 import {
   STAGE_LABELS,
@@ -379,18 +379,23 @@ function RingTextureViz({
 // the surrounding stage (lattice grid, axes, plane toggle, legend) is shared.
 // ---------------------------------------------------------------------------
 
-const PUNCH_PLANES: { id: PunchPlane; xl: string; yl: string }[] = [
-  { id: "hk", xl: "H", yl: "K" },
-  { id: "hl", xl: "H", yl: "L" },
-  { id: "kl", xl: "K", yl: "L" },
+type HklAxis = "H" | "K" | "L";
+
+const PUNCH_PLANES: {
+  id: PunchPlane;
+  title: string;
+  xl: string;
+  yl: string;
+  cutAxis: HklAxis;
+  cutLabel: string;
+}[] = [
+  { id: "hk", title: "a*–b*", xl: "a*", yl: "b*", cutAxis: "L", cutLabel: "c*" },
+  { id: "hl", title: "a*–c*", xl: "a*", yl: "c*", cutAxis: "K", cutLabel: "b*" },
+  { id: "kl", title: "b*–c*", xl: "b*", yl: "c*", cutAxis: "H", cutLabel: "a*" },
 ];
 
-// incident-beam ellipsoid default (PunchParams.incident_beam_ellipsoid_radii_hkl)
-const PUNCH_IB = { h: 0.15, k: 0.5, l: 1.0 };
-
 interface PunchGeom {
-  // r0/r1/r2 are the footprint half-radii along the three axes, in the active
-  // frame's units (r.l.u. for HKL, Å⁻¹ for Q).
+  // r0/r1/r2 are the Q-space footprint half-radii along a*, b*, c* in Å⁻¹.
   r0: number;
   r1: number;
   r2: number;
@@ -400,280 +405,231 @@ interface PunchGeom {
   isQ: boolean;
   unit: string;
   ax: [string, string, string]; // axis labels, e.g. [H,K,L] or [a*,b*,c*]
+  directBeamRadiiQ: [number, number, number];
+  directBeamMargin: number;
+  fitCovariance: boolean;
 }
 
-function planeRadii(p: PunchPlane, g: PunchGeom): [number, number] {
-  if (p === "hk") return [g.r0, g.r1];
-  if (p === "hl") return [g.r0, g.r2];
-  return [g.r1, g.r2];
-}
-function planeAxes(p: PunchPlane, ax: [string, string, string]): [string, string] {
-  if (p === "hk") return [ax[0], ax[1]];
-  if (p === "hl") return [ax[0], ax[2]];
-  return [ax[1], ax[2]];
-}
-
-function planeHklAxes(p: PunchPlane): ["H" | "K" | "L", "H" | "K" | "L"] {
+function planeHklAxes(p: PunchPlane): [HklAxis, HklAxis] {
   if (p === "hk") return ["H", "K"];
   if (p === "hl") return ["H", "L"];
   return ["K", "L"];
 }
 
 type LatticeLike = { a: number | null; b: number | null; c: number | null };
+type Matrix3 = [[number, number, number], [number, number, number], [number, number, number]];
 
-function axisLattice(
-  axis: "H" | "K" | "L",
-  lattice?: LatticeLike,
-): number | null | undefined {
+function axisLattice(axis: HklAxis, lattice?: LatticeLike): number | null | undefined {
   if (axis === "H") return lattice?.a;
   if (axis === "K") return lattice?.b;
   return lattice?.c;
 }
 
-function axisRadiusHkl(
-  axis: "H" | "K" | "L",
-  geom: PunchGeom,
-  lattice?: LatticeLike,
-): number {
-  const idx = axis === "H" ? 0 : axis === "K" ? 1 : 2;
-  const r = idx === 0 ? geom.r0 : idx === 1 ? geom.r1 : geom.r2;
-  if (!geom.isQ) return r;
-  const lat = axisLattice(axis, lattice);
-  return lat ? r * lat / (2 * Math.PI) : r;
+function axisIndex(axis: HklAxis): number {
+  if (axis === "H") return 0;
+  if (axis === "K") return 1;
+  return 2;
 }
 
-function EllipsoidPunchViz({
-  geom,
-  plane,
-  onPlane,
-  slice,
-  lattice,
-  sourceLabel,
-  loading,
-}: {
-  geom: PunchGeom;
-  plane: PunchPlane;
-  onPlane: (p: PunchPlane) => void;
-  slice?: import("../api/types").Slice;
-  lattice?: LatticeLike;
-  sourceLabel?: string;
-  loading?: boolean;
-}) {
-  const PV = 200; // viewBox
-  const C = 100; // centre
-  const SP = 34; // px per reciprocal-lattice step
-  const N = 2; // nodes span −N..N
-  const [axX, axY] = planeAxes(plane, geom.ax);
-  const [rx, ry] = planeRadii(plane, geom);
-  // The footprint is anisotropic and its absolute size is unit-dependent, so we
-  // auto-scale: the larger semi-axis fills ~42% of a lattice cell.  The drawing
-  // shows the punch *shape* relative to the reciprocal lattice, not true scale.
-  const fp = (0.42 * SP) / Math.max(rx, ry, 1e-6);
-  // incident beam: HKL has its own ellipsoid radii; Q shows it ≈2× the floor.
-  const ib: [number, number] = geom.isQ
-    ? [rx * 2, ry * 2]
-    : plane === "hk"
-      ? [PUNCH_IB.h, PUNCH_IB.k]
-      : plane === "hl"
-        ? [PUNCH_IB.h, PUNCH_IB.l]
-        : [PUNCH_IB.k, PUNCH_IB.l];
-  // margin (guard band) and φ-tail are r.l.u. concepts — drawn only in HKL so the
-  // Q view stays a clean resolution ellipsoid (they still apply numerically).
-  const showTail = !geom.isQ && plane === "kl" && geom.phiTail > 0;
-  const showMargin = !geom.isQ && geom.margin > 0;
-  const showSat = geom.mode !== "integer";
+function axisRadiusQ(axis: HklAxis, geom: PunchGeom, lattice?: LatticeLike): number {
+  const idx = axisIndex(axis);
+  const r = idx === 0 ? geom.r0 : idx === 1 ? geom.r1 : geom.r2;
+  if (geom.isQ) return r;
+  const lat = axisLattice(axis, lattice);
+  return lat ? r * (2 * Math.PI / lat) : r;
+}
 
-  const grid: ReactNode[] = [];
-  for (let i = -N; i <= N; i++) {
-    const q = C + i * SP;
-    grid.push(<line key={`v${i}`} x1={q} y1={16} x2={q} y2={PV - 16} className="punch-grid" />);
-    grid.push(<line key={`h${i}`} x1={16} y1={q} x2={PV - 16} y2={q} className="punch-grid" />);
+function asMatrix3(raw?: number[][]): Matrix3 | null {
+  if (!raw || raw.length !== 3 || raw.some((row) => row.length !== 3)) return null;
+  if (raw.some((row) => row.some((v) => !Number.isFinite(v)))) return null;
+  return raw as Matrix3;
+}
+
+function qShapeMatrix(geom: PunchGeom, ubRaw?: number[][]): Matrix3 | null {
+  const ub = asMatrix3(ubRaw);
+  if (!ub) return null;
+  const radii = [geom.r0, geom.r1, geom.r2];
+  if (radii.some((r) => r <= 0 || !Number.isFinite(r))) return null;
+  const unit: Matrix3 = [
+    [0, 0, 0],
+    [0, 0, 0],
+    [0, 0, 0],
+  ];
+  for (let col = 0; col < 3; col++) {
+    const norm = Math.hypot(ub[0][col], ub[1][col], ub[2][col]);
+    if (norm <= 0 || !Number.isFinite(norm)) return null;
+    for (let row = 0; row < 3; row++) unit[row][col] = ub[row][col] / norm;
   }
 
-  const marks: ReactNode[] = [];
-  for (let i = -N; i <= N; i++) {
-    for (let j = -N; j <= N; j++) {
-      const cx = C + i * SP;
-      const cy = C - j * SP;
-      const k = `${i},${j}`;
-      if (i === 0 && j === 0) {
-        marks.push(
-          <ellipse key={`ib-${k}`} cx={cx} cy={cy} rx={ib[0] * fp} ry={ib[1] * fp} className="punch-ib" />,
-        );
-      } else {
-        if (showTail) {
-          const ang = (Math.atan2(j, i) * 180) / Math.PI + 90; // local ring tangent
-          marks.push(
-            <ellipse
-              key={`tl-${k}`}
-              cx={cx}
-              cy={cy}
-              rx={(geom.r1 + geom.phiTail) * fp}
-              ry={geom.r1 * fp}
-              transform={`rotate(${ang.toFixed(1)} ${cx} ${cy})`}
-              className="punch-tail"
-            />,
-          );
-        }
-        if (showMargin) {
-          marks.push(
-            <ellipse
-              key={`mg-${k}`}
-              cx={cx}
-              cy={cy}
-              rx={(rx + geom.margin) * fp}
-              ry={(ry + geom.margin) * fp}
-              className="punch-margin"
-            />,
-          );
-        }
-        marks.push(
-          <ellipse key={`fp-${k}`} cx={cx} cy={cy} rx={rx * fp} ry={ry * fp} className="punch-fp" />,
-        );
-      }
-      marks.push(<circle key={`nd-${k}`} cx={cx} cy={cy} r={1.6} className="punch-node" />);
+  const p: Matrix3 = [
+    [0, 0, 0],
+    [0, 0, 0],
+    [0, 0, 0],
+  ];
+  for (let i = 0; i < 3; i++) {
+    for (let j = 0; j < 3; j++) {
+      p[i][j] = unit[0][i] * ub[0][j] + unit[1][i] * ub[1][j] + unit[2][i] * ub[2][j];
     }
   }
 
-  // off-integer satellite caught by search / both modes
-  const satX = C + 1.5 * SP;
-  const satY = C - 0.5 * SP;
-  const dataPreview = slice && lattice ? (
-    <PunchDataOverlay
-      slice={slice}
-      geom={geom}
-      plane={plane}
-      lattice={lattice}
-      sourceLabel={sourceLabel}
-    />
-  ) : null;
+  const a: Matrix3 = [
+    [0, 0, 0],
+    [0, 0, 0],
+    [0, 0, 0],
+  ];
+  for (let j = 0; j < 3; j++) {
+    for (let k = 0; k < 3; k++) {
+      let value = 0;
+      for (let i = 0; i < 3; i++) value += p[i][j] * (1 / (radii[i] * radii[i])) * p[i][k];
+      a[j][k] = value;
+    }
+  }
+  return a;
+}
 
-  return (
-    <div className="punch-viz">
-      <div className="punch-tabs" role="tablist">
-        {PUNCH_PLANES.map((p) => {
-          const [x, y] = planeAxes(p.id, geom.ax);
-          return (
-            <button
-              key={p.id}
-              type="button"
-              role="tab"
-              aria-selected={p.id === plane}
-              className={p.id === plane ? "on" : ""}
-              onClick={() => onPlane(p.id)}
-            >
-              {x}–{y}
-            </button>
-          );
-        })}
-      </div>
-      {dataPreview ?? (
-        <svg
-          className="punch-schematic"
-          viewBox={`0 0 ${PV} ${PV}`}
-          role="img"
-          aria-label={`Bragg punch ellipsoid cross-section in the ${axX}-${axY} plane (${geom.unit})`}
-        >
-          <g>{grid}</g>
-          {showSat && (
-            <g>
-              <ellipse cx={satX} cy={satY} rx={rx * fp} ry={ry * fp} className="punch-sat" />
-              <circle cx={satX} cy={satY} r={1.6} className="punch-sat-node" />
-            </g>
-          )}
-          <g>{marks}</g>
-          <text x={PV - 12} y={C - 5} textAnchor="end" className="punch-axis">
-            {axX}
-          </text>
-          <text x={C + 5} y={20} className="punch-axis">
-            {axY}
-          </text>
-        </svg>
-      )}
-      {!dataPreview && loading && <div className="punch-preview-empty">Loading slice…</div>}
-      <div className="punch-legend">
-        <span>
-          <span className="sw fp" />Bragg
-        </span>
-        <span>
-          <span className="sw ib" />beam
-        </span>
-        {showSat && (
-          <span>
-            <span className="sw sat" />satellite
-          </span>
-        )}
-        <span className="punch-legend-unit">{geom.unit}</span>
-      </div>
-    </div>
+function ellipseFromQuadratic(
+  a00: number,
+  a01: number,
+  a11: number,
+  fallback: { rx: number; ry: number; angle: number },
+): { rx: number; ry: number; angle: number } {
+  if (![a00, a01, a11].every(Number.isFinite)) return fallback;
+  const trace = a00 + a11;
+  const root = Math.hypot(a00 - a11, 2 * a01);
+  const lambdaMin = (trace - root) / 2;
+  const lambdaMax = (trace + root) / 2;
+  if (lambdaMin <= 0 || lambdaMax <= 0) return fallback;
+
+  let vx: number;
+  let vy: number;
+  if (Math.abs(a01) > 1e-12) {
+    vx = a01;
+    vy = lambdaMin - a00;
+  } else if (a00 <= a11) {
+    vx = 1;
+    vy = 0;
+  } else {
+    vx = 0;
+    vy = 1;
+  }
+  const norm = Math.hypot(vx, vy) || 1;
+  const angle = Math.atan2(vy / norm, vx / norm) * 180 / Math.PI;
+  return { rx: 1 / Math.sqrt(lambdaMin), ry: 1 / Math.sqrt(lambdaMax), angle };
+}
+
+function qEllipseForPlane(
+  plane: PunchPlane,
+  geom: PunchGeom,
+  lattice: LatticeLike,
+  ubMatrix?: number[][],
+): { rx: number; ry: number; angle: number } {
+  const [axisX, axisY] = planeHklAxes(plane);
+  const latX = axisLattice(axisX, lattice) ?? 1;
+  const latY = axisLattice(axisY, lattice) ?? 1;
+  const qScaleX = 2 * Math.PI / latX;
+  const qScaleY = 2 * Math.PI / latY;
+  const fallback = {
+    rx: axisRadiusQ(axisX, geom, lattice),
+    ry: axisRadiusQ(axisY, geom, lattice),
+    angle: 0,
+  };
+  const shape = qShapeMatrix(geom, ubMatrix);
+  if (!shape) return fallback;
+  const ix = axisIndex(axisX);
+  const iy = axisIndex(axisY);
+  return ellipseFromQuadratic(
+    shape[ix][ix] / (qScaleX * qScaleX),
+    shape[ix][iy] / (qScaleX * qScaleY),
+    shape[iy][iy] / (qScaleY * qScaleY),
+    fallback,
   );
+}
+
+function axisRange(
+  meta: {
+    h_range: [number, number];
+    k_range: [number, number];
+    l_range: [number, number];
+    shape: number[];
+  } | null | undefined,
+  axis: HklAxis,
+): { min: number; max: number; step: number } {
+  if (!meta) return { min: -1, max: 1, step: 0.01 };
+  const idx = axis === "H" ? 0 : axis === "K" ? 1 : 2;
+  const [min, max] = axis === "H" ? meta.h_range : axis === "K" ? meta.k_range : meta.l_range;
+  const n = meta.shape[idx] ?? 1;
+  return { min, max, step: n > 1 ? Math.abs(max - min) / (n - 1) : 0.01 };
 }
 
 function PunchDataOverlay({
   slice,
   geom,
-  plane,
+  spec,
   lattice,
+  ubMatrix,
   sourceLabel,
+  zoom,
+  vmax,
 }: {
   slice: import("../api/types").Slice;
   geom: PunchGeom;
-  plane: PunchPlane;
+  spec: (typeof PUNCH_PLANES)[number];
   lattice: LatticeLike;
+  ubMatrix?: number[][];
   sourceLabel?: string;
+  zoom: number;
+  vmax: number;
 }) {
-  const { nx, ny, x_axis: xs, y_axis: ys } = slice.header;
-  const dx = nx > 1 ? (xs[nx - 1] - xs[0]) / (nx - 1) : 1;
-  const dy = ny > 1 ? (ys[ny - 1] - ys[0]) / (ny - 1) : 1;
-  const previewHalf = 4;
-  let ix0 = 0;
-  let ix1 = nx - 1;
-  let iy0 = 0;
-  let iy1 = ny - 1;
-  while (ix0 < ix1 && xs[ix0] < -previewHalf) ix0++;
-  while (ix1 > ix0 && xs[ix1] > previewHalf) ix1--;
-  while (iy0 < iy1 && ys[iy0] < -previewHalf) iy0++;
-  while (iy1 > iy0 && ys[iy1] > previewHalf) iy1--;
-  const x0 = xs[ix0] - Math.abs(dx) / 2;
-  const x1 = xs[ix1] + Math.abs(dx) / 2;
-  const y0 = ys[iy0] - Math.abs(dy) / 2;
-  const y1 = ys[iy1] + Math.abs(dy) / 2;
-  const w = Math.max(Math.abs(x1 - x0), 1);
-  const h = Math.max(Math.abs(y1 - y0), 1);
+  const plane = spec.id;
   const [axisX, axisY] = planeHklAxes(plane);
-  const rx = axisRadiusHkl(axisX, geom, lattice);
-  const ry = axisRadiusHkl(axisY, geom, lattice);
+  const braggGeom = geom.isQ
+    ? {
+        ...geom,
+        r0: geom.r0 + geom.margin,
+        r1: geom.r1 + geom.margin,
+        r2: geom.r2 + geom.margin,
+      }
+    : geom;
+  const braggEllipse = qEllipseForPlane(plane, braggGeom, lattice, ubMatrix);
   const latX = axisLattice(axisX, lattice) ?? 1;
   const latY = axisLattice(axisY, lattice) ?? 1;
   const qScaleX = 2 * Math.PI / latX;
   const qScaleY = 2 * Math.PI / latY;
-  const qAspect = (w * qScaleX) / (h * qScaleY);
-  const ib: [number, number] = geom.isQ
-    ? [rx * 2, ry * 2]
-    : plane === "hk"
-      ? [PUNCH_IB.h, PUNCH_IB.k]
-      : plane === "hl"
-        ? [PUNCH_IB.h, PUNCH_IB.l]
-        : [PUNCH_IB.k, PUNCH_IB.l];
+  const qScaleH = 2 * Math.PI / (axisLattice("H", lattice) ?? 1);
+  const qScaleK = 2 * Math.PI / (axisLattice("K", lattice) ?? 1);
+  const qScaleL = 2 * Math.PI / (axisLattice("L", lattice) ?? 1);
+  const baseHalfRlu = 4;
+  const zoomSafe = Math.max(0.5, Math.min(4, zoom));
+  const qHalf = (baseHalfRlu * Math.max(qScaleH, qScaleK, qScaleL)) / zoomSafe;
+  const previewHalfX = qHalf / qScaleX;
+  const previewHalfY = qHalf / qScaleY;
+  const directBeamGeom = {
+    ...geom,
+    r0: geom.directBeamRadiiQ[0] + geom.directBeamMargin,
+    r1: geom.directBeamRadiiQ[1] + geom.directBeamMargin,
+    r2: geom.directBeamRadiiQ[2] + geom.directBeamMargin,
+  };
+  const ib = qEllipseForPlane(plane, directBeamGeom, lattice, ubMatrix);
   const showTail = !geom.isQ && plane === "kl" && geom.phiTail > 0;
   const showMargin = !geom.isQ && geom.margin > 0;
   const showSat = geom.mode !== "integer";
   const nodes: { x: number; y: number }[] = [];
-  for (let x = Math.ceil(x0); x <= Math.floor(x1); x++) {
-    for (let y = Math.ceil(y0); y <= Math.floor(y1); y++) nodes.push({ x, y });
+  for (let x = Math.ceil(-previewHalfX); x <= Math.floor(previewHalfX); x++) {
+    for (let y = Math.ceil(-previewHalfY); y <= Math.floor(previewHalfY); y++) {
+      nodes.push({ x, y });
+    }
   }
-  const stroke = w / 180;
-  const vmax = (slice.header.robust_max || 1) * 1.35;
 
   return (
     <div className="punch-preview">
-      <div className="punch-preview-frame" style={{ aspectRatio: qAspect }}>
+      <div className="punch-preview-frame">
         <SliceCanvas
           slice={slice}
           lut={COLORMAPS.inferno}
           vmax={vmax}
           log={false}
-          windowA={previewHalf}
+          windowX={previewHalfX}
+          windowY={previewHalfY}
           size={260}
           reciprocalAxes
           latX={latX}
@@ -681,60 +637,77 @@ function PunchDataOverlay({
         />
         <svg
           className="punch-overlay"
-          viewBox={`${x0} ${-y1} ${w} ${h}`}
+          viewBox={`${-qHalf} ${-qHalf} ${2 * qHalf} ${2 * qHalf}`}
           preserveAspectRatio="none"
           role="img"
-          aria-label={`Bragg punch profile over ${slice.header.x_label} by ${slice.header.y_label}`}
+          aria-label={`Bragg punch profile over ${spec.title}`}
         >
           <g transform="scale(1, -1)">
             {showSat && (
               <g>
                 <ellipse
-                  cx={1.5}
-                  cy={-0.5}
-                  rx={rx}
-                  ry={ry}
+                  cx={1.5 * qScaleX}
+                  cy={-0.5 * qScaleY}
+                  rx={braggEllipse.rx}
+                  ry={braggEllipse.ry}
+                  transform={`rotate(${braggEllipse.angle.toFixed(2)} ${1.5 * qScaleX} ${-0.5 * qScaleY})`}
                   className="punch-sat"
                   vectorEffect="non-scaling-stroke"
                 />
-                <circle cx={1.5} cy={-0.5} r={stroke * 1.5} className="punch-sat-node" />
               </g>
             )}
             {nodes.map(({ x, y }) => {
               const key = `${x},${y}`;
+              const cx = x * qScaleX;
+              const cy = y * qScaleY;
               if (x === 0 && y === 0) {
                 return (
                   <g key={key}>
-                    <ellipse cx={x} cy={y} rx={ib[0]} ry={ib[1]} className="punch-ib" vectorEffect="non-scaling-stroke" />
-                    <circle cx={x} cy={y} r={stroke * 1.3} className="punch-node" />
+                    <ellipse
+                      cx={cx}
+                      cy={cy}
+                      rx={ib.rx}
+                      ry={ib.ry}
+                      transform={`rotate(${ib.angle.toFixed(2)} ${cx} ${cy})`}
+                      className="punch-ib"
+                      vectorEffect="non-scaling-stroke"
+                    />
                   </g>
                 );
               }
-              const ang = (Math.atan2(y, x) * 180) / Math.PI + 90;
+              const ang = (Math.atan2(cy, cx) * 180) / Math.PI + 90;
               return (
                 <g key={key}>
                   {showTail && (
                     <ellipse
-                      cx={x}
-                      cy={y}
-                      rx={rx + geom.phiTail}
-                      ry={ry}
-                      transform={`rotate(${ang.toFixed(1)} ${x} ${y})`}
+                      cx={cx}
+                      cy={cy}
+                      rx={braggEllipse.rx}
+                      ry={braggEllipse.ry}
+                      transform={`rotate(${ang.toFixed(1)} ${cx} ${cy})`}
                       className="punch-tail"
                     />
                   )}
                   {showMargin && (
                     <ellipse
-                      cx={x}
-                      cy={y}
-                      rx={rx + geom.margin}
-                      ry={ry + geom.margin}
+                      cx={cx}
+                      cy={cy}
+                      rx={braggEllipse.rx + geom.margin * qScaleX}
+                      ry={braggEllipse.ry + geom.margin * qScaleY}
+                      transform={`rotate(${braggEllipse.angle.toFixed(2)} ${cx} ${cy})`}
                       className="punch-margin"
                       vectorEffect="non-scaling-stroke"
                     />
                   )}
-                  <ellipse cx={x} cy={y} rx={rx} ry={ry} className="punch-fp" vectorEffect="non-scaling-stroke" />
-                  <circle cx={x} cy={y} r={stroke * 1.3} className="punch-node" />
+                  <ellipse
+                    cx={cx}
+                    cy={cy}
+                    rx={braggEllipse.rx}
+                    ry={braggEllipse.ry}
+                    transform={`rotate(${braggEllipse.angle.toFixed(2)} ${cx} ${cy})`}
+                    className="punch-fp"
+                    vectorEffect="non-scaling-stroke"
+                  />
                 </g>
               );
             })}
@@ -748,41 +721,99 @@ function PunchDataOverlay({
   );
 }
 
-function PunchShapeViz({
-  method,
+function PunchPreviewGrid({
   geom,
-  plane,
-  onPlane,
-  slice,
+  slices,
+  loading,
   lattice,
   sourceLabel,
-  loading,
+  zoom,
+  contrast,
+  meta,
+  cuts,
+  onCut,
 }: {
-  method: string;
   geom: PunchGeom;
-  plane: PunchPlane;
-  onPlane: (p: PunchPlane) => void;
-  slice?: import("../api/types").Slice;
+  slices: Partial<Record<PunchPlane, import("../api/types").Slice>>;
+  loading: Partial<Record<PunchPlane, boolean>>;
   lattice?: LatticeLike;
   sourceLabel?: string;
-  loading?: boolean;
+  zoom: number;
+  contrast: number;
+  meta?: {
+    h_range: [number, number];
+    k_range: [number, number];
+    l_range: [number, number];
+    shape: number[];
+    ub_matrix?: number[][];
+  };
+  cuts: Record<HklAxis, number>;
+  onCut: (axis: HklAxis, value: number) => void;
 }) {
-  // method registry seam — add a case per future punch algorithm
-  switch (method) {
-    case "ellipsoid":
-    default:
-      return (
-        <EllipsoidPunchViz
-          geom={geom}
-          plane={plane}
-          onPlane={onPlane}
-          slice={slice}
-          lattice={lattice}
-          sourceLabel={sourceLabel}
-          loading={loading}
-        />
-      );
-  }
+  const showSat = geom.mode !== "integer";
+  const contrastSafe = Math.max(0.2, Math.min(6, contrast));
+  const sharedVmax = Math.max(
+    1,
+    ...Object.values(slices).map((slice) => slice?.header.robust_max ?? 0),
+  ) * contrastSafe;
+  return (
+    <div className="punch-preview-grid">
+      {PUNCH_PLANES.map((spec) => {
+        const range = axisRange(meta, spec.cutAxis);
+        const cutValue = Math.max(range.min, Math.min(range.max, cuts[spec.cutAxis] ?? 0));
+        const slice = slices[spec.id];
+        return (
+          <div className="punch-preview-panel" key={spec.id}>
+            <div className="punch-preview-panel-head">
+              <span>{spec.title}</span>
+              <span>
+                cut {spec.cutLabel}
+              </span>
+            </div>
+            <Slider
+              label={`${spec.cutLabel} cut`}
+              readout={`${cutValue.toFixed(3)} r.l.u.`}
+              min={range.min}
+              max={range.max}
+              step={range.step}
+              value={cutValue}
+              disabled={!meta}
+              onChange={(v) => onCut(spec.cutAxis, Number(v.toFixed(4)))}
+            />
+            {slice && lattice ? (
+              <PunchDataOverlay
+                slice={slice}
+                geom={geom}
+                spec={spec}
+                lattice={lattice}
+                ubMatrix={meta?.ub_matrix}
+                sourceLabel={sourceLabel}
+                zoom={zoom}
+                vmax={sharedVmax}
+              />
+            ) : (
+              <div className="punch-preview-empty">
+                {loading[spec.id] ? "Loading slice..." : "Slice unavailable"}
+              </div>
+            )}
+            <div className="punch-legend">
+              <span>
+                <span className="sw fp" />Bragg
+              </span>
+              <span>
+                <span className="sw ib" />beam
+              </span>
+              {showSat && (
+                <span>
+                  <span className="sw sat" />satellite
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -819,17 +850,21 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
       punchMinI: st.punchMinI,
       punchMethod: st.punchMethod,
       punchMode: st.punchMode,
-      punchFrame: st.punchFrame,
       punchQA: st.punchQA,
       punchQB: st.punchQB,
       punchQC: st.punchQC,
       punchFitCovariance: st.punchFitCovariance,
-      punchRH: st.punchRH,
-      punchRK: st.punchRK,
-      punchRL: st.punchRL,
       punchMargin: st.punchMargin,
       punchPhiTail: st.punchPhiTail,
-      punchPlane: st.punchPlane,
+      incidentBeamQA: st.incidentBeamQA,
+      incidentBeamQB: st.incidentBeamQB,
+      incidentBeamQC: st.incidentBeamQC,
+      incidentBeamMargin: st.incidentBeamMargin,
+      punchSliceZoom: st.punchSliceZoom,
+      punchSliceContrast: st.punchSliceContrast,
+      punchCutH: st.punchCutH,
+      punchCutK: st.punchCutK,
+      punchCutL: st.punchCutL,
       backfillMethod: st.backfillMethod,
       flattenEstimator: st.flattenEstimator,
       pdfApod: st.pdfApod,
@@ -844,20 +879,23 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
   const vizPatches = clampInt(s.ringNPatches, 36, 4, 96);
   const vizFourier = clampInt(s.ringNFourier, 6, 0, 40);
   const vizRingWidth = clampFloat(s.ringWidth, 0.24, 0.02, 1.0);
-  const isQ = s.punchFrame === "q";
   const punchGeom: PunchGeom = {
-    r0: isQ ? clampFloat(s.punchQA, 0.097, 0.005, 0.6)
-      : clampFloat(s.punchRH, 0.09, 0.01, 1.2),
-    r1: isQ ? clampFloat(s.punchQB, 0.072, 0.005, 0.6)
-      : clampFloat(s.punchRK, 0.12, 0.01, 1.2),
-    r2: isQ ? clampFloat(s.punchQC, 0.115, 0.005, 0.6)
-      : clampFloat(s.punchRL, 0.45, 0.01, 1.5),
+    r0: clampFloat(s.punchQA, 0.097, 0.005, 0.6),
+    r1: clampFloat(s.punchQB, 0.072, 0.005, 0.6),
+    r2: clampFloat(s.punchQC, 0.115, 0.005, 0.6),
     margin: clampFloat(s.punchMargin, 0.02, 0, 0.5),
     phiTail: clampFloat(s.punchPhiTail, 0.12, 0, 1.0),
     mode: s.punchMode || "both",
-    isQ,
-    unit: isQ ? "Å⁻¹" : "r.l.u.",
-    ax: isQ ? ["a*", "b*", "c*"] : ["H", "K", "L"],
+    isQ: true,
+    unit: "Å⁻¹",
+    ax: ["a*", "b*", "c*"],
+    directBeamRadiiQ: [
+      clampFloat(s.incidentBeamQA, 0.16, 0.005, 2.0),
+      clampFloat(s.incidentBeamQB, 0.30, 0.005, 2.0),
+      clampFloat(s.incidentBeamQC, 0.25, 0.005, 2.0),
+    ],
+    directBeamMargin: clampFloat(s.incidentBeamMargin, 0.0, 0, 1.0),
+    fitCovariance: s.punchFitCovariance,
   };
   const pdfPreviewStage = useMemo(() => {
     if (!selectedDataset) return undefined;
@@ -876,11 +914,27 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
     queryFn: () => fetchMeta(punchInputId as string),
     enabled: Boolean(punchInputId),
   });
-  const punchSliceQ = useQuery({
-    queryKey: ["slice", punchInputId, s.punchPlane, 0, false, "config-punch"],
-    queryFn: () => fetchSlice(punchInputId as string, s.punchPlane, 0, false),
-    enabled: Boolean(punchInputId),
+  const punchCuts: Record<HklAxis, number> = {
+    H: s.punchCutH,
+    K: s.punchCutK,
+    L: s.punchCutL,
+  };
+  const punchSliceQueries = useQueries({
+    queries: PUNCH_PLANES.map((spec) => {
+      const cut = punchCuts[spec.cutAxis] ?? 0;
+      return {
+        queryKey: ["slice", punchInputId, spec.id, cut, false, "config-punch"],
+        queryFn: () => fetchSlice(punchInputId as string, spec.id, cut, false),
+        enabled: Boolean(punchInputId),
+      };
+    }),
   });
+  const punchSlices = Object.fromEntries(
+    PUNCH_PLANES.map((spec, i) => [spec.id, punchSliceQueries[i]?.data]),
+  ) as Partial<Record<PunchPlane, import("../api/types").Slice>>;
+  const punchLoading = Object.fromEntries(
+    PUNCH_PLANES.map((spec, i) => [spec.id, Boolean(punchInputId) && punchSliceQueries[i]?.isFetching]),
+  ) as Partial<Record<PunchPlane, boolean>>;
   const pdfInputId = pdfPreviewStage?.volume_id;
   const pdfMetaQ = useQuery({
     queryKey: ["meta", pdfInputId, "config-pdf"],
@@ -1235,7 +1289,9 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
           </div>
         </StageCard>
 
-        <StageCard title={STAGE_LABELS.punch} step={STAGE_NO.punch} className="stage-card-wide">
+        <StageCard title={STAGE_LABELS.punch} step={STAGE_NO.punch} className="stage-card-wide punch-stage-card">
+          <div className="punch-workspace">
+            <div className="punch-controls">
           <div className="config-grid">
             <Field label="Method">
               <select
@@ -1246,18 +1302,6 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                 <option value="ellipsoid">Ellipsoid</option>
               </select>
             </Field>
-            <Field label="Frame">
-              <select
-                value={s.punchFrame}
-                title="Describe the punch in fractional HKL or in reciprocal Å⁻¹ (Q-space)"
-                onChange={(e) => patch({ punchFrame: e.target.value })}
-              >
-                <option value="hkl">HKL (r.l.u.)</option>
-                <option value="q">Q-space (Å⁻¹)</option>
-              </select>
-            </Field>
-          </div>
-          <div className="config-grid">
             <Field label="Min I">
               <input
                 type="number"
@@ -1280,17 +1324,14 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
               </select>
             </Field>
           </div>
-          {s.punchFrame === "q" ? (
-            <>
               <div className="config-sub-row">
                 <span className="config-sub-title">
-                  Resolution floor (Å⁻¹)
+                  Bragg footprint (Å⁻¹)
                 </span>
                 <HelpTip>
-                  Punch half-radii along the reciprocal axes a*, b*, c*, in Å⁻¹ —
-                  a lattice- and temperature-independent resolution floor, still
-                  modulated by the per-peak fit. Leave blank to use the validated
-                  default (0.097, 0.072, 0.115).
+                  Punch half-radii along a*, b*, c* in Q-space. The run request
+                  always uses Q-space; blank fields use the validated defaults
+                  (0.097, 0.072, 0.115).
                 </HelpTip>
               </div>
               <div className="config-grid-3">
@@ -1328,105 +1369,143 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                   />
                 </Field>
               </div>
-            </>
-          ) : (
-            <>
-              <div className="config-sub-row">
-                <span className="config-sub-title">Ellipsoid half-radii (r.l.u.)</span>
-                <HelpTip>
-                  Punch half-radii along H, K, L in reciprocal-lattice units —
-                  the legacy fractional-coordinate footprint.
-                </HelpTip>
-              </div>
-              <div className="config-grid-3">
-                <Field label={<>r<sub>H</sub></>}>
+              <div className="config-grid">
+                <Field label="Margin">
                   <input
                     type="number"
-                    step="0.01"
+                    step="0.005"
                     min="0"
-                    placeholder="0.09"
-                    value={s.punchRH}
-                    title="Punch half-radius along H (r.l.u.)"
-                    onChange={(e) => patch({ punchRH: e.target.value })}
+                    placeholder="0.02"
+                    value={s.punchMargin}
+                    title="Q-space guard band added to every punch half-radius (Å⁻¹)"
+                    onChange={(e) => patch({ punchMargin: e.target.value })}
                   />
                 </Field>
-                <Field label={<>r<sub>K</sub></>}>
+                <Field label="φ-tail (K–L)">
                   <input
                     type="number"
                     step="0.01"
                     min="0"
                     placeholder="0.12"
-                    value={s.punchRK}
-                    title="Punch half-radius along K (r.l.u.)"
-                    onChange={(e) => patch({ punchRK: e.target.value })}
-                  />
-                </Field>
-                <Field label={<>r<sub>L</sub></>}>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.45"
-                    value={s.punchRL}
-                    title="Punch half-radius along L (r.l.u.)"
-                    onChange={(e) => patch({ punchRL: e.target.value })}
+                    value={s.punchPhiTail}
+                    title="Extra K–L tangential half-width along the powder-ring φ direction"
+                    onChange={(e) => patch({ punchPhiTail: e.target.value })}
                   />
                 </Field>
               </div>
-            </>
-          )}
-          <div className="config-grid">
-            <Field label="Margin">
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0.02"
-                value={s.punchMargin}
-                title="Guard band added to every punch radius"
-                onChange={(e) => patch({ punchMargin: e.target.value })}
+              <div className="config-sub-row">
+                <span className="config-sub-title">Direct beam (Å⁻¹)</span>
+                <HelpTip>
+                  Origin-centered incident/direct-beam ellipsoid in Q-space,
+                  using half-radii along a*, b*, c*. The backend converts these
+                  through UB, matching the Bragg footprint geometry.
+                </HelpTip>
+              </div>
+              <div className="config-grid-3">
+                <Field label={<>r<sub>a*</sub></>}>
+                  <input
+                    type="number"
+                    step="0.005"
+                    min="0"
+                    placeholder="0.16"
+                    value={s.incidentBeamQA}
+                    title="Direct-beam half-radius along a* (Å⁻¹)"
+                    onChange={(e) => patch({ incidentBeamQA: e.target.value })}
+                  />
+                </Field>
+                <Field label={<>r<sub>b*</sub></>}>
+                  <input
+                    type="number"
+                    step="0.005"
+                    min="0"
+                    placeholder="0.30"
+                    value={s.incidentBeamQB}
+                    title="Direct-beam half-radius along b* (Å⁻¹)"
+                    onChange={(e) => patch({ incidentBeamQB: e.target.value })}
+                  />
+                </Field>
+                <Field label={<>r<sub>c*</sub></>}>
+                  <input
+                    type="number"
+                    step="0.005"
+                    min="0"
+                    placeholder="0.25"
+                    value={s.incidentBeamQC}
+                    title="Direct-beam half-radius along c* (Å⁻¹)"
+                    onChange={(e) => patch({ incidentBeamQC: e.target.value })}
+                  />
+                </Field>
+              </div>
+              <div className="config-grid">
+                <Field label="Beam margin">
+                  <input
+                    type="number"
+                    step="0.005"
+                    min="0"
+                    placeholder="0.00"
+                    value={s.incidentBeamMargin}
+                    title="Q-space guard band added to every direct-beam half-radius (Å⁻¹)"
+                    onChange={(e) => patch({ incidentBeamMargin: e.target.value })}
+                  />
+                </Field>
+              </div>
+              <div className="switch-row">
+                <Switch
+                  label="Fit tilted ellipsoid (covariance)"
+                  checked={s.punchFitCovariance}
+                  onChange={(v) => patch({ punchFitCovariance: v })}
+                />
+                <HelpTip>
+                  Fit a tilted 3×3 ellipsoid to each Bragg peak during punching
+                  and fold the φ-tail into it. The preview uses the exact UB-derived
+                  Q-space floor; the per-peak covariance tilt is fitted from data
+                  during the run and is best checked in the punched slices.
+                </HelpTip>
+              </div>
+            </div>
+            <div className="stage-visual punch-preview-pane">
+              <div className="punch-preview-controls">
+                <Slider
+                  label="Preview zoom"
+                  readout={`${s.punchSliceZoom.toFixed(1)}×`}
+                  min={0.5}
+                  max={4}
+                  step={0.1}
+                  value={s.punchSliceZoom}
+                  onChange={(v) => patch({ punchSliceZoom: Number(v.toFixed(1)) })}
+                />
+                <Slider
+                  label="Contrast"
+                  readout={`${s.punchSliceContrast.toFixed(1)}×`}
+                  min={0.2}
+                  max={6}
+                  step={0.1}
+                  value={s.punchSliceContrast}
+                  onChange={(v) => patch({ punchSliceContrast: Number(v.toFixed(1)) })}
+                />
+              </div>
+              <PunchPreviewGrid
+                geom={punchGeom}
+                slices={punchSlices}
+                loading={punchLoading}
+                lattice={punchMetaQ.data?.lattice}
+                sourceLabel={punchPreviewStage?.name}
+                zoom={s.punchSliceZoom}
+                contrast={s.punchSliceContrast}
+                meta={punchMetaQ.data}
+                cuts={punchCuts}
+                onCut={(axis, value) => {
+                  if (axis === "H") patch({ punchCutH: value });
+                  else if (axis === "K") patch({ punchCutK: value });
+                  else patch({ punchCutL: value });
+                }}
               />
-            </Field>
-            <Field label="φ-tail (K–L)">
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0.12"
-                value={s.punchPhiTail}
-                title="Extra K–L tangential half-width along the powder-ring φ direction"
-                onChange={(e) => patch({ punchPhiTail: e.target.value })}
-              />
-            </Field>
-          </div>
-          <div className="switch-row">
-            <Switch
-              label="Fit resolution ellipsoid (tilted, covariance)"
-              checked={s.punchFitCovariance}
-              onChange={(v) => patch({ punchFitCovariance: v })}
-            />
-            <HelpTip>
-              Fit a tilted 3×3 ellipsoid to each Bragg peak (following its real
-              orientation) and fold the φ-tail into it, instead of three
-              axis-aligned half-radii plus a separate tail.
-            </HelpTip>
-          </div>
-          <div className="stage-visual">
-            <PunchShapeViz
-              method={s.punchMethod}
-              geom={punchGeom}
-              plane={s.punchPlane}
-              onPlane={(p) => patch({ punchPlane: p })}
-              slice={punchSliceQ.data}
-              lattice={punchMetaQ.data?.lattice}
-              sourceLabel={punchPreviewStage?.name}
-              loading={Boolean(punchInputId) && punchSliceQ.isFetching}
-            />
-            <div className="ring-viz-cap">
-              r = (<b>{punchGeom.r0}</b>, <b>{punchGeom.r1}</b>, <b>{punchGeom.r2}</b>){" "}
-              {punchGeom.unit} along {punchGeom.ax.join("/")} · margin{" "}
-              <b>{punchGeom.margin}</b> · φ-tail <b>{punchGeom.phiTail}</b> · mode{" "}
-              <b>{punchGeom.mode}</b>
+              <div className="ring-viz-cap">
+                r = (<b>{punchGeom.r0}</b>, <b>{punchGeom.r1}</b>, <b>{punchGeom.r2}</b>){" "}
+                {punchGeom.unit} along {punchGeom.ax.join("/")} · margin{" "}
+                <b>{punchGeom.margin}</b> · φ-tail <b>{punchGeom.phiTail}</b> · mode{" "}
+                <b>{punchGeom.mode}</b>
+              </div>
             </div>
           </div>
         </StageCard>

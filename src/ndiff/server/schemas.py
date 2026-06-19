@@ -46,6 +46,7 @@ class VolumeMetaOut(BaseModel):
     k_range: list[float]
     l_range: list[float]
     lattice: LatticeOut
+    ub_matrix: list[list[float]] | None = None
     planes: list[str]
 
 
@@ -86,6 +87,15 @@ class StageParamsIn(BaseModel):
     punch_q_radius_a: float | None = None
     punch_q_radius_b: float | None = None
     punch_q_radius_c: float | None = None
+    incident_beam_q_radius_a: float | None = None
+    incident_beam_q_radius_b: float | None = None
+    incident_beam_q_radius_c: float | None = None
+    incident_beam_q_margin: float | None = None
+    # Legacy HKL direct-beam overrides kept for API compatibility.
+    incident_beam_radius_h: float | None = None
+    incident_beam_radius_k: float | None = None
+    incident_beam_radius_l: float | None = None
+    incident_beam_margin: float | None = None
     # Phase 3: fit a tilted 3×3 resolution ellipsoid (covariance) per Bragg peak
     punch_fit_covariance: bool | None = None
     backfill_method: str | None = None

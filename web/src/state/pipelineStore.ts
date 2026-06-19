@@ -43,18 +43,22 @@ interface PipelineConfig {
   punchMinI: string;
   punchMethod: string;
   punchMode: string;
-  punchFrame: string; // "hkl" (radii below) | "q" (reciprocal Å⁻¹)
   // Q-space resolution floor along a*, b*, c* (Å⁻¹); blank = backend default
   punchQA: string;
   punchQB: string;
   punchQC: string;
   punchFitCovariance: boolean; // fit a tilted 3×3 resolution ellipsoid per peak
-  punchRH: string;
-  punchRK: string;
-  punchRL: string;
   punchMargin: string;
   punchPhiTail: string;
-  punchPlane: PunchPlane;
+  incidentBeamQA: string;
+  incidentBeamQB: string;
+  incidentBeamQC: string;
+  incidentBeamMargin: string;
+  punchSliceZoom: number;
+  punchSliceContrast: number;
+  punchCutH: number;
+  punchCutK: number;
+  punchCutL: number;
   backfillMethod: string;
   flattenEstimator: string;
   pdfApod: string;
@@ -95,17 +99,21 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
   punchMinI: "",
   punchMethod: "ellipsoid",
   punchMode: "",
-  punchFrame: "q", // Q-space is the default punch frame (Phase 4)
   punchQA: "",
   punchQB: "",
   punchQC: "",
   punchFitCovariance: false,
-  punchRH: "",
-  punchRK: "",
-  punchRL: "",
   punchMargin: "",
   punchPhiTail: "",
-  punchPlane: "hl",
+  incidentBeamQA: "",
+  incidentBeamQB: "",
+  incidentBeamQC: "",
+  incidentBeamMargin: "",
+  punchSliceZoom: 1,
+  punchSliceContrast: 1.35,
+  punchCutH: 0,
+  punchCutK: 0,
+  punchCutL: 0,
   backfillMethod: "",
   flattenEstimator: "",
   pdfApod: "",
@@ -136,19 +144,17 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
     }
     if (s.punchMinI) params.punch_min_intensity = Number(s.punchMinI);
     if (s.punchMode) params.punch_mode = s.punchMode;
-    if (s.punchRH) params.punch_radius_h = Number(s.punchRH);
-    if (s.punchRK) params.punch_radius_k = Number(s.punchRK);
-    if (s.punchRL) params.punch_radius_l = Number(s.punchRL);
     if (s.punchMargin) params.punch_margin = Number(s.punchMargin);
     if (s.punchPhiTail) params.punch_phi_tail_hkl = Number(s.punchPhiTail);
-    // Always send the frame so the dropdown selection is honoured regardless of
-    // the backend default (which is now "q").
-    params.punch_frame = s.punchFrame;
-    if (s.punchFrame === "q") {
-      if (s.punchQA) params.punch_q_radius_a = Number(s.punchQA);
-      if (s.punchQB) params.punch_q_radius_b = Number(s.punchQB);
-      if (s.punchQC) params.punch_q_radius_c = Number(s.punchQC);
-    }
+    // Q-space is the web UI's punch frame.
+    params.punch_frame = "q";
+    if (s.punchQA) params.punch_q_radius_a = Number(s.punchQA);
+    if (s.punchQB) params.punch_q_radius_b = Number(s.punchQB);
+    if (s.punchQC) params.punch_q_radius_c = Number(s.punchQC);
+    if (s.incidentBeamQA) params.incident_beam_q_radius_a = Number(s.incidentBeamQA);
+    if (s.incidentBeamQB) params.incident_beam_q_radius_b = Number(s.incidentBeamQB);
+    if (s.incidentBeamQC) params.incident_beam_q_radius_c = Number(s.incidentBeamQC);
+    if (s.incidentBeamMargin) params.incident_beam_q_margin = Number(s.incidentBeamMargin);
     if (s.punchFitCovariance) params.punch_fit_covariance = true;
     if (s.backfillMethod) params.backfill_method = s.backfillMethod;
     if (s.flattenEstimator) params.flatten_estimator = s.flattenEstimator;

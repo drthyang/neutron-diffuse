@@ -187,6 +187,12 @@ class BraggRemover:
         Extra margin for the incident-beam punch.
     incident_beam_phi_tail_hkl:
         Extra K-L tangential half-width for the incident-beam remnant.
+    incident_beam_q_radii:
+        Q-space incident/direct-beam half-radii along a*, b*, c* in Å⁻¹.
+        When set, this is converted through the UB matrix into the same general
+        HKL shape-matrix punch used by the Q-space Bragg footprint.
+    incident_beam_q_margin:
+        Q-space margin in Å⁻¹ added to each ``incident_beam_q_radii`` component.
     incident_beam_ellipsoid_radii_hkl:
         If set, punch the incident beam as an origin-centred **anisotropic
         ellipsoid** ``(rh, rk, rl)`` in fractional HKL units.  Takes precedence
@@ -248,6 +254,8 @@ class BraggRemover:
     incident_beam_radii: tuple[float, float, float] | None = None
     incident_beam_margin: float = 0.08
     incident_beam_phi_tail_hkl: float = 0.0
+    incident_beam_q_radii: tuple[float, float, float] | None = None
+    incident_beam_q_margin: float = 0.0
     incident_beam_ellipsoid_radii_hkl: tuple[float, float, float] | None = None
     incident_beam_sphere_radius_hkl: float | None = None
     force_origin: bool | None = None
@@ -282,7 +290,34 @@ class BraggRemover:
         r = float(self.punch_radius_hkl)
         return r, r, r
 
-    def _q_shape_matrix(self, vol: HKLVolume) -> NDArray[np.float64] | None:
+    @staticmethod
+    def _shape_matrix_from_q_radii(
+        vol: HKLVolume,
+        radii_q: tuple[float, float, float],
+    ) -> NDArray[np.float64]:
+        """HKL shape matrix for Q half-radii along a*, b*, c*.
+
+        The punch is ``δhklᵀ A δhkl ≤ 1`` (see :func:`_ellipsoid_inside`).  With
+        ``punch_q_radii`` (ra, rb, rc) (Å^-1, along the reciprocal axes
+        a*, b*, c*), ``A = Pᵀ diag(1/r²) P`` with ``P = ê·UB``
+        (``ê`` = unit reciprocal-axis directions).
+        """
+        ra, rb, rc = (float(r) for r in radii_q)
+        if min(ra, rb, rc) <= 0:
+            raise ValueError("Q-space radii must be positive")
+        ub = vol.ub_matrix
+        unit = ub / np.linalg.norm(ub, axis=0)  # columns = unit recip-axis dirs
+        p = unit.T @ ub
+        d = np.diag([1.0 / ra**2, 1.0 / rb**2, 1.0 / rc**2])
+        return p.T @ d @ p
+
+    def _q_shape_matrix(
+        self,
+        vol: HKLVolume,
+        *,
+        scale: float = 1.0,
+        margin_q: float = 0.0,
+    ) -> NDArray[np.float64] | None:
         """HKL shape matrix ``A`` for the Q-space punch, or ``None`` in hkl mode.
 
         The punch is ``δhklᵀ A δhkl ≤ 1`` (see :func:`_ellipsoid_inside`).  With
@@ -293,20 +328,22 @@ class BraggRemover:
         - ``punch_q_radii`` (ra, rb, rc) (Å^-1, along the reciprocal axes
           a*, b*, c*) → ``A = Pᵀ diag(1/r²) P`` with ``P = ê·UB`` (``ê`` = unit
           reciprocal-axis directions), the anisotropic generalisation.
+
+        ``scale`` applies intensity scaling; ``margin_q`` is an additive Q-space
+        guard band (Å^-1) applied after scaling, matching the web Bragg controls.
         """
         if str(self.punch_frame).lower() != "q":
             return None
         ub = vol.ub_matrix
+        scale = max(0.0, float(scale))
+        margin_q = max(0.0, float(margin_q))
         if self.punch_q_radii is not None:
-            ra, rb, rc = (float(r) for r in self.punch_q_radii)
-            if min(ra, rb, rc) <= 0:
-                raise ValueError("punch_q_radii must be positive")
-            unit = ub / np.linalg.norm(ub, axis=0)  # columns = unit recip-axis dirs
-            p = unit.T @ ub
-            d = np.diag([1.0 / ra**2, 1.0 / rb**2, 1.0 / rc**2])
-            return p.T @ d @ p
+            radii = tuple(
+                float(r) * scale + margin_q for r in self.punch_q_radii
+            )
+            return self._shape_matrix_from_q_radii(vol, radii)  # type: ignore[arg-type]
         if self.punch_q_radius is not None:
-            rho = float(self.punch_q_radius)
+            rho = float(self.punch_q_radius) * scale + margin_q
             if rho <= 0:
                 raise ValueError("punch_q_radius must be positive")
             return (ub.T @ ub) / rho**2
@@ -415,6 +452,56 @@ class BraggRemover:
         lam, vecs = np.linalg.eigh(shape_matrix)
         r = 1.0 / np.sqrt(np.clip(lam, 1e-300, None)) + margin
         return np.asarray(vecs @ np.diag(1.0 / (r * r)) @ vecs.T, dtype=np.float64)
+
+    @staticmethod
+    def _axis_hkl_margins_from_q_margin(
+        vol: HKLVolume,
+        margin_q: float,
+    ) -> tuple[float, float, float]:
+        """Axis-aligned HKL margins equivalent to a Q-space guard band."""
+        margin_q = max(0.0, float(margin_q))
+        if margin_q <= 0:
+            return 0.0, 0.0, 0.0
+        q_per_hkl = np.linalg.norm(vol.ub_matrix, axis=0)
+        return tuple(
+            float(margin_q / q) if q > 0 and np.isfinite(q) else 0.0
+            for q in q_per_hkl
+        )  # type: ignore[return-value]
+
+    @staticmethod
+    def _inflate_q_isotropic(
+        vol: HKLVolume,
+        shape_matrix: NDArray[np.float64],
+        margin_q: float,
+    ) -> NDArray[np.float64]:
+        """Grow shape principal half-extents by a physical Q-space margin."""
+        margin_q = max(0.0, float(margin_q))
+        if margin_q <= 0:
+            return shape_matrix
+        lam, vecs = np.linalg.eigh(shape_matrix)
+        radii = []
+        for i, lam_i in enumerate(lam):
+            v = vecs[:, i]
+            q_per_hkl = float(np.linalg.norm(vol.ub_matrix @ v))
+            r_hkl = 1.0 / np.sqrt(max(float(lam_i), 1e-300))
+            if q_per_hkl > 0 and np.isfinite(q_per_hkl):
+                r_hkl += margin_q / q_per_hkl
+            radii.append(r_hkl)
+        return np.asarray(
+            vecs @ np.diag([1.0 / (r * r) for r in radii]) @ vecs.T,
+            dtype=np.float64,
+        )
+
+    def _inflate_for_frame(
+        self,
+        vol: HKLVolume,
+        shape_matrix: NDArray[np.float64],
+        margin: float,
+    ) -> NDArray[np.float64]:
+        """Inflate a general punch shape using the active frame's margin units."""
+        if str(self.punch_frame).lower() == "q":
+            return self._inflate_q_isotropic(vol, shape_matrix, margin)
+        return self._inflate_isotropic(shape_matrix, margin)
 
     @staticmethod
     def _steps(vol: HKLVolume) -> tuple[float, float, float]:
@@ -869,7 +956,8 @@ class BraggRemover:
             # (1) Covariance fit (Phase 3, either frame): tilted ellipsoid with the
             #     φ-tail and margin folded into the matrix.
             if peak_rec.shape_hkl is not None:
-                a = self._inflate_isotropic(
+                a = self._inflate_for_frame(
+                    vol,
                     self._fold_phi_tail(
                         vol, peak_rec.shape_hkl / (s * s), peak_rec.center_hkl,
                         max(0.0, float(self.phi_tail_hkl)) * s),
@@ -881,13 +969,13 @@ class BraggRemover:
                 continue
 
             # (2) Q-mode with no per-peak fit (search peaks / shape-fit off): the
-            #     fixed Q base ellipsoid + folded φ-tail + margin.
+            #     fixed Q base ellipsoid + Q-space margin + folded φ-tail.
             if q_shape is not None and peak_rec.radii_hkl is None:
-                a = self._inflate_isotropic(
-                    self._fold_phi_tail(
-                        vol, q_shape / (s * s), peak_rec.center_hkl,
-                        max(0.0, float(self.phi_tail_hkl)) * s),
-                    self.margin)
+                a = self._q_shape_matrix(vol, scale=s, margin_q=self.margin)
+                assert a is not None
+                a = self._fold_phi_tail(
+                    vol, a, peak_rec.center_hkl,
+                    max(0.0, float(self.phi_tail_hkl)) * s)
                 self._punch_one(
                     vol, keep, center, self._ellipsoid_bounding_radii(a), 0.0,
                     center_hkl=peak_rec.center_hkl,
@@ -897,10 +985,15 @@ class BraggRemover:
             # (3) Radii path: HKL adaptive, or Q-mode diagonal fit floored by the Q
             #     base — axis-aligned ellipsoid with the union φ-tail.
             rh_base, rk_base, rl_base = peak_rec.radii_hkl or r_base
+            mh, mk, ml = (
+                self._axis_hkl_margins_from_q_margin(vol, self.margin)
+                if q_shape is not None
+                else (float(self.margin), float(self.margin), float(self.margin))
+            )
             radii = (
-                rh_base * s + self.margin,
-                rk_base * s + self.margin,
-                rl_base * s + self.margin,
+                rh_base * s + mh,
+                rk_base * s + mk,
+                rl_base * s + ml,
             )
             self._punch_one(
                 vol, keep, center, radii,
@@ -913,6 +1006,15 @@ class BraggRemover:
     def _punch_incident_beam(self, vol: HKLVolume, keep: NDArray[np.bool_]) -> NDArray[np.bool_]:
         if not self._punches_incident_beam():
             return keep
+        if self.incident_beam_q_radii is not None:
+            radii_q = tuple(
+                max(0.0, float(r) + max(0.0, float(self.incident_beam_q_margin)))
+                for r in self.incident_beam_q_radii
+            )
+            if min(radii_q) <= 0:
+                return keep
+            shape = self._shape_matrix_from_q_radii(vol, radii_q)  # type: ignore[arg-type]
+            return self._punch_origin_shape_matrix(vol, keep, shape)
         if self.incident_beam_ellipsoid_radii_hkl is not None:
             rh, rk, rl = (max(0.0, float(r))
                           for r in self.incident_beam_ellipsoid_radii_hkl)
@@ -938,6 +1040,27 @@ class BraggRemover:
         return self._punch_one(
             vol, keep, center, radii,
             max(0.0, float(self.incident_beam_phi_tail_hkl)),
+        )
+
+    def _punch_origin_shape_matrix(
+        self,
+        vol: HKLVolume,
+        keep: NDArray[np.bool_],
+        shape_matrix: NDArray[np.float64],
+    ) -> NDArray[np.bool_]:
+        """Punch an origin-centred ellipsoid described by ``δhklᵀAδhkl ≤ 1``."""
+        ih = int(np.argmin(np.abs(vol.h_axis)))
+        ik = int(np.argmin(np.abs(vol.k_axis)))
+        il = int(np.argmin(np.abs(vol.l_axis)))
+        radii = self._ellipsoid_bounding_radii(shape_matrix)
+        return self._punch_one(
+            vol,
+            keep,
+            (ih, ik, il),
+            radii,
+            0.0,
+            center_hkl=(0.0, 0.0, 0.0),
+            shape_matrix=shape_matrix,
         )
 
     def _punch_origin_ellipsoid(
@@ -1086,6 +1209,8 @@ def bragg_mask(
     incident_beam_radii: tuple[float, float, float] | None = None,
     incident_beam_margin: float = 0.08,
     incident_beam_phi_tail_hkl: float = 0.0,
+    incident_beam_q_radii: tuple[float, float, float] | None = None,
+    incident_beam_q_margin: float = 0.0,
     incident_beam_ellipsoid_radii_hkl: tuple[float, float, float] | None = None,
     incident_beam_sphere_radius_hkl: float | None = None,
     force_origin: bool | None = None,
@@ -1113,6 +1238,8 @@ def bragg_mask(
         incident_beam_radii=incident_beam_radii,
         incident_beam_margin=incident_beam_margin,
         incident_beam_phi_tail_hkl=incident_beam_phi_tail_hkl,
+        incident_beam_q_radii=incident_beam_q_radii,
+        incident_beam_q_margin=incident_beam_q_margin,
         incident_beam_ellipsoid_radii_hkl=incident_beam_ellipsoid_radii_hkl,
         incident_beam_sphere_radius_hkl=incident_beam_sphere_radius_hkl,
         force_origin=force_origin,

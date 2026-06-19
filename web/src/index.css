@@ -1062,8 +1062,12 @@ input[type="range"]::-moz-range-track {
 }
 
 /* Bragg-punch footprint illustration (pie analogue for the punch stage) */
+:root {
+  --punch-slice-size: 320px;
+}
 .punch-viz {
   margin-top: 6px;
+  width: 100%;
 }
 .punch-tabs {
   display: flex;
@@ -1105,7 +1109,8 @@ input[type="range"]::-moz-range-track {
 }
 .punch-preview-frame {
   position: relative;
-  width: min(260px, 100%);
+  width: 100%;
+  aspect-ratio: 1 / 1;
   line-height: 0;
   border: 1px solid var(--border);
   background: var(--surface-2);
@@ -1124,14 +1129,15 @@ input[type="range"]::-moz-range-track {
 }
 .punch-preview-meta,
 .punch-preview-empty {
-  max-width: 260px;
+  max-width: var(--punch-slice-size);
   color: var(--text-3);
   font-size: 11px;
   line-height: 1.35;
   text-align: center;
 }
 .punch-preview-empty {
-  width: min(220px, 100%);
+  width: 100%;
+  aspect-ratio: 1 / 1;
   min-height: 34px;
   display: grid;
   place-items: center;
@@ -1140,17 +1146,89 @@ input[type="range"]::-moz-range-track {
   border: 1px solid var(--border);
   background: var(--surface-2);
 }
+.punch-workspace {
+  display: grid;
+  grid-template-columns: minmax(290px, 1fr) minmax(
+      calc(var(--punch-slice-size) * 3 + 20px),
+      calc(var(--punch-slice-size) * 3 + 20px)
+    );
+  gap: 14px 18px;
+  align-items: start;
+}
+.punch-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.punch-controls .config-grid,
+.punch-controls .config-grid-3 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.punch-controls .config-grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.punch-preview-controls {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.punch-preview-pane {
+  align-self: start;
+  width: 100%;
+  justify-self: center;
+}
+.punch-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, var(--punch-slice-size));
+  gap: 10px;
+  width: 100%;
+}
+.punch-preview-panel {
+  min-width: 0;
+  width: var(--punch-slice-size);
+}
+.punch-preview-panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 650;
+}
+.punch-preview-panel-head span:last-child {
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+.punch-preview-panel .field {
+  margin-bottom: 8px;
+}
+.punch-preview-panel .field-row {
+  gap: 6px;
+}
+.punch-preview-panel .field-label,
+.punch-preview-panel .readout {
+  font-size: 9.5px;
+}
+.punch-preview-panel .punch-legend {
+  gap: 7px;
+  margin-top: 5px;
+  font-size: 9.5px;
+}
 .punch-grid {
   stroke: var(--border);
   stroke-width: 0.7;
-}
-.punch-node {
-  fill: var(--text-2);
 }
 .punch-fp {
   fill: var(--accent-soft);
   stroke: var(--accent);
   stroke-width: 1;
+}
+.punch-fp-tilted {
+  stroke-width: 1.25;
 }
 .punch-margin {
   fill: none;
@@ -1173,9 +1251,6 @@ input[type="range"]::-moz-range-track {
   stroke: var(--green);
   stroke-width: 1;
   stroke-dasharray: 3 2;
-}
-.punch-sat-node {
-  fill: var(--green);
 }
 .punch-axis {
   fill: var(--text-3);
@@ -1475,6 +1550,9 @@ input[type="range"]::-moz-range-track {
 .stage-card .card-body > .field {
   grid-column: 1;
 }
+.stage-card .card-body > .punch-workspace {
+  grid-column: 1 / -1;
+}
 .stage-card .card-body > .stage-visual,
 .stage-card .card-body > .pdf-q-preview {
   grid-column: 2;
@@ -1493,6 +1571,19 @@ input[type="range"]::-moz-range-track {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.punch-stage-card .card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.punch-stage-card .card-body > .config-grid,
+.punch-stage-card .card-body > .config-grid-3,
+.punch-stage-card .card-body > .config-sub-row {
+  width: 100%;
+}
+.punch-stage-card .card-body > .config-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .pdf-q-preview {
   display: flex;
@@ -1527,10 +1618,18 @@ input[type="range"]::-moz-range-track {
   .stage-card .card-body > .config-sub-row,
   .stage-card .card-body > .switch-row,
   .stage-card .card-body > .field,
+  .stage-card .card-body > .punch-workspace,
   .stage-card .card-body > .stage-visual,
   .stage-card .card-body > .pdf-q-preview {
     grid-column: 1;
     grid-row: auto;
+  }
+  .punch-workspace,
+  .punch-preview-controls {
+    grid-template-columns: 1fr;
+  }
+  .punch-preview-controls {
+    display: flex;
   }
   .pdf-q-preview,
   .pdf-q-preview .slice-canvas,

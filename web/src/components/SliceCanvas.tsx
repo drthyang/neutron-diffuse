@@ -8,6 +8,8 @@
 //   • windowA + size — crop to a square coordinate window [-windowA, +windowA]
 //     on both axes and draw it into a square `size` px box (used by the ΔPDF
 //     viewer so all three orthoslices share one square real-space window)
+//   • windowX/windowY — crop each axis independently, still drawn into a square
+//     box after row-resampling preserves equal physical units per pixel
 //
 // Colour mapping: sequential data maps [vmin, vmax] → LUT; `diverging` data maps
 // symmetrically about 0 over ±vmax; `log` uses log10(v+1)/log10(vmax+1).
@@ -26,6 +28,8 @@ interface Props {
   width?: number; // fixed display width in CSS px
   fit?: boolean; // letterbox to fill the parent box (preserves aspect)
   windowA?: number; // half-extent in Å — crop to a square physical window
+  windowX?: number; // half-extent along x in the slice's coordinate units
+  windowY?: number; // half-extent along y in the slice's coordinate units
   size?: number; // square display size in px (used with windowA)
   bands?: [number, number]; // [min, max] band for circle overlays
   cutDistance?: number; // distance from origin for intersection
@@ -45,6 +49,8 @@ export function SliceCanvas({
   width = 340,
   fit = false,
   windowA,
+  windowX,
+  windowY,
   size,
   bands,
   cutDistance,
@@ -60,11 +66,15 @@ export function SliceCanvas({
   let ix1 = nx - 1;
   let iy0 = 0;
   let iy1 = ny - 1;
-  if (windowA != null) {
-    while (ix0 < ix1 && xs[ix0] < -windowA) ix0++;
-    while (ix1 > ix0 && xs[ix1] > windowA) ix1--;
-    while (iy0 < iy1 && ys[iy0] < -windowA) iy0++;
-    while (iy1 > iy0 && ys[iy1] > windowA) iy1--;
+  const xWindow = windowX ?? windowA;
+  const yWindow = windowY ?? windowA;
+  if (xWindow != null) {
+    while (ix0 < ix1 && xs[ix0] < -xWindow) ix0++;
+    while (ix1 > ix0 && xs[ix1] > xWindow) ix1--;
+  }
+  if (yWindow != null) {
+    while (iy0 < iy1 && ys[iy0] < -yWindow) iy0++;
+    while (iy1 > iy0 && ys[iy1] > yWindow) iy1--;
   }
   const cw = ix1 - ix0 + 1;
   const ch_raw = iy1 - iy0 + 1;
@@ -123,12 +133,13 @@ export function SliceCanvas({
       }
     }
     ctx.putImageData(img, 0, 0);
-  }, [slice, lut, vmax, vmin, log, diverging, nx, ny, windowA, cw, ch, ch_raw, ix0, ix1, iy0, iy1, xs, ys]);
+  }, [slice, lut, vmax, vmin, log, diverging, nx, ny, xWindow, yWindow, cw, ch, ch_raw, ix0, ix1, iy0, iy1, xs, ys]);
 
-  // A windowA crop is always shown as a physical square: either at a fixed `size`
-  // (single ΔPDF viewer) or filling its square parent cell (multi-temp grid).
+  // A windowed crop is always shown as a physical square: either at a fixed
+  // `size` (single ΔPDF viewer) or filling its square parent cell (multi-temp
+  // grid / Q-equal previews).
   let wrapperStyle: React.CSSProperties;
-  if (windowA != null) {
+  if (xWindow != null || yWindow != null) {
     wrapperStyle =
       size != null
         ? { width: size, height: size, position: "relative" }

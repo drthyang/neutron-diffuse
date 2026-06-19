@@ -89,6 +89,7 @@ def volume_meta(path: Path) -> dict:
         "k_range": [float(vol.k_axis[0]), float(vol.k_axis[-1])],
         "l_range": [float(vol.l_axis[0]), float(vol.l_axis[-1])],
         "lattice": {"a": a, "b": b, "c": c},
+        "ub_matrix": np.asarray(vol.ub_matrix, dtype=float).tolist(),
         "planes": list(PLANES),
     }
 

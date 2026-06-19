@@ -39,6 +39,7 @@ export interface VolumeMeta {
   k_range: [number, number];
   l_range: [number, number];
   lattice: Lattice;
+  ub_matrix?: number[][];
   planes: string[];
 }
 
@@ -124,6 +125,15 @@ export interface StageParamsIn {
   punch_q_radius_a?: number;
   punch_q_radius_b?: number;
   punch_q_radius_c?: number;
+  incident_beam_q_radius_a?: number;
+  incident_beam_q_radius_b?: number;
+  incident_beam_q_radius_c?: number;
+  incident_beam_q_margin?: number;
+  // Legacy HKL direct-beam overrides.
+  incident_beam_radius_h?: number;
+  incident_beam_radius_k?: number;
+  incident_beam_radius_l?: number;
+  incident_beam_margin?: number;
   punch_fit_covariance?: boolean;
   backfill_method?: string;
   flatten_estimator?: string;

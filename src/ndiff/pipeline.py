@@ -159,6 +159,10 @@ class PunchParams:
     incident_beam_radii: tuple[float, float, float] = (0.24, 0.24, 0.90)
     incident_beam_margin: float = 0.12
     incident_beam_phi_tail_hkl: float = 0.0
+    incident_beam_q_radii: tuple[float, float, float] | None = (
+        0.16, 0.30, 0.25,
+    )
+    incident_beam_q_margin: float = 0.0
     incident_beam_ellipsoid_radii_hkl: tuple[float, float, float] | None = (
         0.15, 0.50, 1.00,
     )
@@ -401,6 +405,8 @@ def punch_bragg(vol: HKLVolume, params: PunchParams | None = None, *,
         punch_incident_beam=True, incident_beam_radii=p.incident_beam_radii,
         incident_beam_margin=p.incident_beam_margin,
         incident_beam_phi_tail_hkl=p.incident_beam_phi_tail_hkl,
+        incident_beam_q_radii=p.incident_beam_q_radii,
+        incident_beam_q_margin=p.incident_beam_q_margin,
         incident_beam_ellipsoid_radii_hkl=p.incident_beam_ellipsoid_radii_hkl,
         incident_beam_sphere_radius_hkl=p.incident_beam_sphere_radius_hkl,
         phi_tail_hkl=p.phi_tail_hkl,

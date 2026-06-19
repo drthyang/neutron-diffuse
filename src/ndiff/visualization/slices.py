@@ -53,6 +53,12 @@ _PLANE_DPDF: dict[str, tuple[str, int, str, str, str, str, bool]] = {
 }
 
 
+def _format_cut_value(value: float, precision: int, zero_tol: float = 1e-6) -> str:
+    """Format a slice coordinate, hiding floating-point noise around zero."""
+    value = 0.0 if abs(value) < zero_tol else value
+    return f"{value:.{precision}g}"
+
+
 class SliceData(NamedTuple):
     """2D intensity slice extracted from an HKLVolume."""
 
@@ -123,7 +129,7 @@ def extract_slice(
         x_axis=x_axis,
         y_label=y_label,
         x_label=x_label,
-        cut_label=f"{fixed_name} = {actual:.4g} r.l.u.",
+        cut_label=f"{fixed_name} = {_format_cut_value(actual, 4)} r.l.u.",
     )
 
 
@@ -174,7 +180,7 @@ def extract_slice_dpdf(
         x_axis=x_axis,
         y_label=y_label,
         x_label=x_label,
-        cut_label=f"{fixed_name} = {actual:.2g} Å",
+        cut_label=f"{fixed_name} = {_format_cut_value(actual, 2)} Å",
     )
 
 

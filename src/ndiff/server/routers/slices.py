@@ -34,6 +34,7 @@ def meta(volume_id: str, cfg: ServerConfig = Depends(get_config)) -> VolumeMetaO
         id=volume_id, stage=stage.name, kind=stage.kind,
         shape=m["shape"], h_range=m["h_range"], k_range=m["k_range"],
         l_range=m["l_range"], lattice=LatticeOut(**m["lattice"]),
+        ub_matrix=m.get("ub_matrix"),
         planes=m["planes"],
     )
 
