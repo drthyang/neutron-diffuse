@@ -12,7 +12,11 @@ import { cancelJob, runPipeline } from "../api/client";
 import type { JobEvent, StageParamsIn } from "../api/types";
 import { useDatasetStore } from "./datasetStore";
 
-export const STAGES = ["rings", "punch", "backfill", "flatten", "pdf"] as const;
+// Mirrors ndiff.pipeline.STAGES (incl. the 6th back-FFT consistency check) so the
+// Execution stepper and log show every stage the backend streams progress for.
+export const STAGES = [
+  "rings", "punch", "backfill", "flatten", "pdf", "pdf_check",
+] as const;
 
 export const STAGE_LABELS: Record<string, string> = {
   rings: "Ring removal",
@@ -20,6 +24,7 @@ export const STAGE_LABELS: Record<string, string> = {
   backfill: "Backfill",
   flatten: "Flatten",
   pdf: "3D-ΔPDF",
+  pdf_check: "Consistency check",
 };
 
 // step number (1-based) of each stage, to tie config groups to the stepper
