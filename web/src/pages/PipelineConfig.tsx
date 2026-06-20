@@ -31,6 +31,12 @@ const DATASET_STAGE_BADGES = [
 
 const DEFAULT_PDF_CROP = { h: 4, k: 8, l: 15 };
 
+// Half-extent (in r.l.u. along the coarsest reciprocal axis) of the orthoslice
+// preview window at zoom = 1.  Shared by the Bragg-punch and 3D-ΔPDF preview
+// grids so both render the same isotropic Q window per plane — at equal zoom the
+// a*–b* / a*–c* / b*–c* tiles line up peak-for-peak between the two cards.
+const PREVIEW_BASE_HALF_RLU = 4;
+
 // One pipeline stage rendered as its own card.  `step` shows the matching
 // stepper number so the tiles read in pipeline order regardless of how the
 // masonry packs them.
@@ -41,7 +47,7 @@ function StageCard({
   children,
 }: {
   title: string;
-  step?: number;
+  step?: number | string;
   className?: string;
   children: ReactNode;
 }) {
@@ -545,6 +551,43 @@ function qEllipseForPlane(
   );
 }
 
+// |Q| = R boundary on a plane, in the same physical-Å⁻¹ overlay coordinates as
+// the Bragg footprint.  The locus is the reciprocal-metric quadratic form
+// Xᵀ·M·X = R² (M built from the UB columns), so it is a correctly *tilted*
+// ellipse for oblique lattices and a true circle for orthogonal ones.  For an
+// off-origin cut the in-plane radius shrinks by the perpendicular distance
+// (exact for orthogonal axes — meta carries only a, b, c, not lattice angles).
+function qShellEllipseForPlane(
+  plane: PunchPlane,
+  radiusQ: number,
+  lattice: LatticeLike,
+  ubMatrix?: number[][],
+  cutQ = 0,
+): { rx: number; ry: number; angle: number } | null {
+  if (!(radiusQ > 0)) return null;
+  const reff2 = radiusQ * radiusQ - cutQ * cutQ;
+  if (reff2 <= 0) return null;
+  const reff = Math.sqrt(reff2);
+  const [axisX, axisY] = planeHklAxes(plane);
+  const latX = axisLattice(axisX, lattice) ?? 1;
+  const latY = axisLattice(axisY, lattice) ?? 1;
+  const qScaleX = (2 * Math.PI) / latX;
+  const qScaleY = (2 * Math.PI) / latY;
+  if (!ubMatrix) return { rx: reff, ry: reff, angle: 0 };
+  const ix = axisIndex(axisX);
+  const iy = axisIndex(axisY);
+  const ax = [ubMatrix[0][ix], ubMatrix[1][ix], ubMatrix[2][ix]];
+  const ay = [ubMatrix[0][iy], ubMatrix[1][iy], ubMatrix[2][iy]];
+  const dot = (p: number[], q: number[]) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+  const e = ellipseFromQuadratic(
+    dot(ax, ax) / (qScaleX * qScaleX),
+    dot(ax, ay) / (qScaleX * qScaleY),
+    dot(ay, ay) / (qScaleY * qScaleY),
+    { rx: 1, ry: 1, angle: 0 },
+  );
+  return { rx: e.rx * reff, ry: e.ry * reff, angle: e.angle };
+}
+
 function axisRange(
   meta: {
     h_range: [number, number];
@@ -570,6 +613,8 @@ function PunchDataOverlay({
   sourceLabel,
   zoom,
   vmax,
+  bands,
+  cutValue,
 }: {
   slice: import("../api/types").Slice;
   geom: PunchGeom;
@@ -579,6 +624,8 @@ function PunchDataOverlay({
   sourceLabel?: string;
   zoom: number;
   vmax: number;
+  bands?: [number, number];
+  cutValue?: number;
 }) {
   const plane = spec.id;
   const [axisX, axisY] = planeHklAxes(plane);
@@ -598,9 +645,18 @@ function PunchDataOverlay({
   const qScaleH = 2 * Math.PI / (axisLattice("H", lattice) ?? 1);
   const qScaleK = 2 * Math.PI / (axisLattice("K", lattice) ?? 1);
   const qScaleL = 2 * Math.PI / (axisLattice("L", lattice) ?? 1);
-  const baseHalfRlu = 4;
+  const baseHalfRlu = PREVIEW_BASE_HALF_RLU;
   const zoomSafe = Math.max(0.5, Math.min(4, zoom));
-  const qHalf = (baseHalfRlu * Math.max(qScaleH, qScaleK, qScaleL)) / zoomSafe;
+  const qHalfReq = (baseHalfRlu * Math.max(qScaleH, qScaleK, qScaleL)) / zoomSafe;
+  // Cap the (isotropic, square) window at the in-plane data extent.  Without the
+  // cap, zooming out past the data makes SliceCanvas clamp the crop to the data
+  // edge and stretch it into the square tile, while this overlay keeps the full
+  // qHalf coordinates — which drifts the Bragg nodes/circles off the real peaks.
+  const xs = slice.header.x_axis;
+  const ys = slice.header.y_axis;
+  const halfXQ = Math.max(Math.abs(xs[0]), Math.abs(xs[xs.length - 1])) * qScaleX;
+  const halfYQ = Math.max(Math.abs(ys[0]), Math.abs(ys[ys.length - 1])) * qScaleY;
+  const qHalf = Math.min(qHalfReq, halfXQ, halfYQ);
   const previewHalfX = qHalf / qScaleX;
   const previewHalfY = qHalf / qScaleY;
   const directBeamGeom = {
@@ -613,6 +669,16 @@ function PunchDataOverlay({
   const showTail = !geom.isQ && plane === "kl" && geom.phiTail > 0;
   const showMargin = !geom.isQ && geom.margin > 0;
   const showSat = geom.mode !== "integer";
+  // |Q| transform band as origin-centred inner/outer boundaries on this plane,
+  // shrunk for the slice's off-origin cut.
+  const qScaleCut = 2 * Math.PI / (axisLattice(spec.cutAxis, lattice) ?? 1);
+  const cutQ = (cutValue ?? 0) * qScaleCut;
+  const qBandInner = bands && bands[0] > 0
+    ? qShellEllipseForPlane(plane, bands[0], lattice, ubMatrix, cutQ)
+    : null;
+  const qBandOuter = bands && bands[1] > 0
+    ? qShellEllipseForPlane(plane, bands[1], lattice, ubMatrix, cutQ)
+    : null;
   const nodes: { x: number; y: number }[] = [];
   for (let x = Math.ceil(-previewHalfX); x <= Math.floor(previewHalfX); x++) {
     for (let y = Math.ceil(-previewHalfY); y <= Math.floor(previewHalfY); y++) {
@@ -643,6 +709,28 @@ function PunchDataOverlay({
           aria-label={`Bragg punch profile over ${spec.title}`}
         >
           <g transform="scale(1, -1)">
+            {qBandOuter && (
+              <ellipse
+                cx={0}
+                cy={0}
+                rx={qBandOuter.rx}
+                ry={qBandOuter.ry}
+                transform={`rotate(${qBandOuter.angle.toFixed(2)} 0 0)`}
+                className="punch-qband"
+                vectorEffect="non-scaling-stroke"
+              />
+            )}
+            {qBandInner && (
+              <ellipse
+                cx={0}
+                cy={0}
+                rx={qBandInner.rx}
+                ry={qBandInner.ry}
+                transform={`rotate(${qBandInner.angle.toFixed(2)} 0 0)`}
+                className="punch-qband"
+                vectorEffect="non-scaling-stroke"
+              />
+            )}
             {showSat && (
               <g>
                 <ellipse
@@ -729,6 +817,7 @@ function PunchPreviewGrid({
   sourceLabel,
   zoom,
   contrast,
+  bands,
   meta,
   cuts,
   onCut,
@@ -740,6 +829,7 @@ function PunchPreviewGrid({
   sourceLabel?: string;
   zoom: number;
   contrast: number;
+  bands?: [number, number];
   meta?: {
     h_range: [number, number];
     k_range: [number, number];
@@ -790,6 +880,8 @@ function PunchPreviewGrid({
                 sourceLabel={sourceLabel}
                 zoom={zoom}
                 vmax={sharedVmax}
+                bands={bands}
+                cutValue={cutValue}
               />
             ) : (
               <div className="punch-preview-empty">
@@ -808,110 +900,12 @@ function PunchPreviewGrid({
                   <span className="sw sat" />satellite
                 </span>
               )}
+              {bands && (bands[0] > 0 || bands[1] > 0) && (
+                <span>
+                  <span className="sw qband" />|Q| band
+                </span>
+              )}
             </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// 3D-ΔPDF preview grid
-//
-// The three orthogonal raw-volume planes through the origin (a*–b*, a*–c*,
-// b*–c*), each with the spherical |Q| transform band drawn as a shell — the
-// real-space layout twin of the Bragg-punch preview grid.  The shared `|Q|`
-// band slider lives above this grid (in the preview pane), not per panel,
-// because the band is one radial window applied to the whole volume.
-// ---------------------------------------------------------------------------
-function PdfPreviewGrid({
-  slices,
-  loading,
-  lattice,
-  sourceReady,
-  sourceLabel,
-  bands,
-  contrast,
-}: {
-  slices: Partial<Record<PunchPlane, import("../api/types").Slice>>;
-  loading: Partial<Record<PunchPlane, boolean>>;
-  lattice?: LatticeLike;
-  sourceReady: boolean;
-  sourceLabel?: string;
-  bands: [number, number];
-  contrast: number;
-}) {
-  const contrastSafe = Math.max(0.2, Math.min(6, contrast));
-  const sharedVmax = Math.max(
-    1,
-    ...Object.values(slices).map((slice) => slice?.header.robust_max ?? 0),
-  ) * contrastSafe;
-  return (
-    <div className="punch-preview-grid">
-      {PUNCH_PLANES.map((spec) => {
-        const slice = slices[spec.id];
-        const [axisX, axisY] = planeHklAxes(spec.id);
-        const latX = (lattice && axisLattice(axisX, lattice)) || 1;
-        const latY = (lattice && axisLattice(axisY, lattice)) || 1;
-        const latCut = (lattice && axisLattice(spec.cutAxis, lattice)) || 1;
-        const qScaleX = (2 * Math.PI) / latX;
-        const qScaleY = (2 * Math.PI) / latY;
-        // Crop each tile to an origin-centred square |Q| window so it fills the
-        // frame with the shell circular (equal Å⁻¹ per axis) — the Bragg-punch
-        // preview does the same.  The window is the largest square that fits the
-        // plane's data, capped so the |Q| band's outer radius sits just inside.
-        let windowX: number | undefined;
-        let windowY: number | undefined;
-        if (slice) {
-          const xs = slice.header.x_axis;
-          const ys = slice.header.y_axis;
-          const qFit = Math.min(
-            Math.max(Math.abs(xs[0]), Math.abs(xs[xs.length - 1])) * qScaleX,
-            Math.max(Math.abs(ys[0]), Math.abs(ys[ys.length - 1])) * qScaleY,
-          );
-          const qOuter = bands[1] > 0 ? bands[1] : qFit;
-          const qHalf = Math.max(0.1, Math.min(qOuter * 1.12, qFit));
-          windowX = qHalf / qScaleX;
-          windowY = qHalf / qScaleY;
-        }
-        return (
-          <div className="punch-preview-panel" key={spec.id}>
-            <div className="punch-preview-panel-head">
-              <span>{spec.title}</span>
-              <span>cut {spec.cutLabel} = 0</span>
-            </div>
-            {slice && lattice ? (
-              <div className="punch-preview">
-                <div className="pdf-slice-frame">
-                  <SliceCanvas
-                    slice={slice}
-                    lut={COLORMAPS.inferno}
-                    vmax={sharedVmax}
-                    log={false}
-                    windowX={windowX}
-                    windowY={windowY}
-                    bands={bands}
-                    cutDistance={0}
-                    reciprocalAxes
-                    latX={latX}
-                    latY={latY}
-                    latCut={latCut}
-                  />
-                </div>
-                <div className="punch-preview-meta">
-                  {sourceLabel ?? "source"} · {slice.header.cut_label}
-                </div>
-              </div>
-            ) : (
-              <div className="punch-preview-empty">
-                {loading[spec.id]
-                  ? "Loading slice…"
-                  : sourceReady
-                    ? "Slice unavailable"
-                    : "Raw volume needed"}
-              </div>
-            )}
           </div>
         );
       })}
@@ -1000,15 +994,13 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
     directBeamMargin: clampFloat(s.incidentBeamMargin, 0.0, 0, 1.0),
     fitCovariance: s.punchFitCovariance,
   };
-  const pdfPreviewStage = useMemo(() => {
-    if (!selectedDataset) return undefined;
-    return selectedDataset.stages.find((stage) => stage.name === "raw" && stage.exists);
-  }, [selectedDataset]);
+  // Single reciprocal-space preview for the whole punch → ΔPDF card, sourced
+  // from the raw volume (falls back to ringremoved if raw is absent).
   const punchPreviewStage = useMemo(() => {
     if (!selectedDataset) return undefined;
     return (
-      selectedDataset.stages.find((stage) => stage.name === "ringremoved" && stage.exists) ??
-      selectedDataset.stages.find((stage) => stage.name === "raw" && stage.exists)
+      selectedDataset.stages.find((stage) => stage.name === "raw" && stage.exists) ??
+      selectedDataset.stages.find((stage) => stage.name === "ringremoved" && stage.exists)
     );
   }, [selectedDataset]);
   const punchInputId = punchPreviewStage?.volume_id;
@@ -1038,28 +1030,7 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
   const punchLoading = Object.fromEntries(
     PUNCH_PLANES.map((spec, i) => [spec.id, Boolean(punchInputId) && punchSliceQueries[i]?.isFetching]),
   ) as Partial<Record<PunchPlane, boolean>>;
-  const pdfInputId = pdfPreviewStage?.volume_id;
-  const pdfMetaQ = useQuery({
-    queryKey: ["meta", pdfInputId, "config-pdf"],
-    queryFn: () => fetchMeta(pdfInputId as string),
-    enabled: Boolean(pdfInputId),
-  });
-  // Three orthogonal raw-volume planes (a*–b*, a*–c*, b*–c*) through the
-  // origin, mirroring the Bragg-punch preview grid.
-  const pdfSliceQueries = useQueries({
-    queries: PUNCH_PLANES.map((spec) => ({
-      queryKey: ["slice", pdfInputId, spec.id, 0, false, "config-pdf"],
-      queryFn: () => fetchSlice(pdfInputId as string, spec.id, 0, false),
-      enabled: Boolean(pdfInputId),
-    })),
-  });
-  const pdfSlices = Object.fromEntries(
-    PUNCH_PLANES.map((spec, i) => [spec.id, pdfSliceQueries[i]?.data]),
-  ) as Partial<Record<PunchPlane, import("../api/types").Slice>>;
-  const pdfLoading = Object.fromEntries(
-    PUNCH_PLANES.map((spec, i) => [spec.id, Boolean(pdfInputId) && pdfSliceQueries[i]?.isFetching]),
-  ) as Partial<Record<PunchPlane, boolean>>;
-  const pdfQSpanMax = Math.ceil(qSpanFromMeta(pdfMetaQ.data) * 20) / 20;
+  const pdfQSpanMax = Math.ceil(qSpanFromMeta(punchMetaQ.data) * 20) / 20;
   const pdfQMin = s.pdfQMin ? Number(s.pdfQMin) : 0;
   const pdfQMax = s.pdfQMax ? Number(s.pdfQMax) : pdfQSpanMax;
   const pdfQBandIsFull = !s.pdfQMin && !s.pdfQMax;
@@ -1398,7 +1369,11 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
           </div>
         </StageCard>
 
-        <StageCard title={STAGE_LABELS.punch} step={STAGE_NO.punch} className="stage-card-wide punch-stage-card">
+        <StageCard
+          title="Punch → 3D-ΔPDF"
+          step={`${STAGE_NO.punch}–${STAGE_NO.pdf}`}
+          className="stage-card-wide punch-stage-card"
+        >
           <div className="punch-workspace">
             <div className="punch-controls">
               <div className="config-grid-3 punch-basis">
@@ -1577,6 +1552,78 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                   </Field>
                 </div>
               </div>
+
+              <div className="punch-group">
+                <div className="punch-group-head">
+                  <span className="punch-group-title">Backfill</span>
+                  <HelpTip>
+                    How punched Bragg / direct-beam holes are filled before the
+                    transform. q_shell (default) interpolates each voxel from its
+                    |Q| shell.
+                  </HelpTip>
+                </div>
+                <Field label="Method">
+                  <select
+                    value={s.backfillMethod}
+                    onChange={(e) => patch({ backfillMethod: e.target.value })}
+                  >
+                    <option value="">q_shell (default)</option>
+                    <option value="local">local</option>
+                    <option value="tv">tv</option>
+                    <option value="symmetry+tv">symmetry+tv</option>
+                  </select>
+                </Field>
+              </div>
+
+              <div className="punch-group">
+                <div className="punch-group-head">
+                  <span className="punch-group-title">Flatten</span>
+                  <HelpTip>
+                    Optional background flattening of the backfilled volume before
+                    the transform, using the selected baseline estimator.
+                  </HelpTip>
+                </div>
+                <Switch
+                  label="Enable stage"
+                  checked={s.flatten}
+                  onChange={(v) => patch({ flatten: v })}
+                />
+                <Field label="Estimator">
+                  <select
+                    value={s.flattenEstimator}
+                    disabled={!s.flatten}
+                    onChange={(e) => patch({ flattenEstimator: e.target.value })}
+                  >
+                    <option value="">floor (default)</option>
+                    <option value="median">median</option>
+                    <option value="mode">mode</option>
+                    <option value="snip">snip</option>
+                  </select>
+                </Field>
+              </div>
+
+              <div className="punch-group">
+                <div className="punch-group-head">
+                  <span className="punch-group-title">Transform (3D-ΔPDF)</span>
+                  <HelpTip>
+                    3D-FFT of the cleaned, backfilled diffuse volume. The
+                    apodization window tapers Q-space before the transform to
+                    suppress real-space termination ripples; the |Q| band (shown
+                    on the slices) sets the radial window the transform keeps.
+                  </HelpTip>
+                </div>
+                <Field label="Apodization">
+                  <select
+                    value={s.pdfApod}
+                    title="Q-space window applied before the FFT to suppress termination ripples"
+                    onChange={(e) => patch({ pdfApod: e.target.value })}
+                  >
+                    <option value="">gaussian (default)</option>
+                    <option value="hann">hann</option>
+                    <option value="none">none</option>
+                  </select>
+                </Field>
+              </div>
             </div>
             <div className="stage-visual punch-preview-pane">
               <div className="punch-preview-controls">
@@ -1599,111 +1646,6 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                   onChange={(v) => patch({ punchSliceContrast: Number(v.toFixed(1)) })}
                 />
               </div>
-              <PunchPreviewGrid
-                geom={punchGeom}
-                slices={punchSlices}
-                loading={punchLoading}
-                lattice={punchMetaQ.data?.lattice}
-                sourceLabel={punchPreviewStage?.name}
-                zoom={s.punchSliceZoom}
-                contrast={s.punchSliceContrast}
-                meta={punchMetaQ.data}
-                cuts={punchCuts}
-                onCut={(axis, value) => {
-                  if (axis === "H") patch({ punchCutH: value });
-                  else if (axis === "K") patch({ punchCutK: value });
-                  else patch({ punchCutL: value });
-                }}
-              />
-              <div className="ring-viz-cap">
-                r = (<b>{punchGeom.r0}</b>, <b>{punchGeom.r1}</b>, <b>{punchGeom.r2}</b>){" "}
-                {punchGeom.unit} along {punchGeom.ax.join("/")} · margin{" "}
-                <b>{punchGeom.margin}</b> · φ-tail <b>{punchGeom.phiTail}</b> · mode{" "}
-                <b>{punchGeom.mode}</b>
-              </div>
-            </div>
-          </div>
-        </StageCard>
-
-        <StageCard
-          title={STAGE_LABELS.backfill}
-          step={STAGE_NO.backfill}
-          className="stage-card-compact"
-        >
-          <Field label="Method">
-            <select
-              value={s.backfillMethod}
-              onChange={(e) => patch({ backfillMethod: e.target.value })}
-            >
-              <option value="">q_shell (default)</option>
-              <option value="local">local</option>
-              <option value="tv">tv</option>
-              <option value="symmetry+tv">symmetry+tv</option>
-            </select>
-          </Field>
-        </StageCard>
-
-        <StageCard
-          title={STAGE_LABELS.flatten}
-          step={STAGE_NO.flatten}
-          className="stage-card-compact"
-        >
-          <Switch
-            label="Enable stage"
-            checked={s.flatten}
-            onChange={(v) => patch({ flatten: v })}
-          />
-          <Field label="Estimator">
-            <select
-              value={s.flattenEstimator}
-              disabled={!s.flatten}
-              onChange={(e) => patch({ flattenEstimator: e.target.value })}
-            >
-              <option value="">floor (default)</option>
-              <option value="median">median</option>
-              <option value="mode">mode</option>
-              <option value="snip">snip</option>
-            </select>
-          </Field>
-        </StageCard>
-
-        <StageCard
-          title={STAGE_LABELS.pdf}
-          step={STAGE_NO.pdf}
-          className="stage-card-wide pdf-stage-card"
-        >
-          <div className="punch-workspace">
-            <div className="punch-controls">
-              <div className="punch-group">
-                <div className="punch-group-head">
-                  <span className="punch-group-title">Transform</span>
-                  <HelpTip>
-                    3D-FFT of the cleaned, backfilled diffuse volume. The
-                    apodization window tapers Q-space before the transform to
-                    suppress real-space termination ripples.
-                  </HelpTip>
-                </div>
-                <div className="config-grid">
-                  <Field label="Apodization">
-                    <select
-                      value={s.pdfApod}
-                      title="Q-space window applied before the FFT to suppress termination ripples"
-                      onChange={(e) => patch({ pdfApod: e.target.value })}
-                    >
-                      <option value="">gaussian (default)</option>
-                      <option value="hann">hann</option>
-                      <option value="none">none</option>
-                    </select>
-                  </Field>
-                </div>
-              </div>
-              <p className="pdf-q-note">
-                Previews show the raw reciprocal-space volume; the ΔPDF runs on
-                the cleaned, backfilled data. The outlined shell marks the |Q|
-                band the transform keeps.
-              </p>
-            </div>
-            <div className="stage-visual punch-preview-pane">
               <div className="punch-preview-controls pdf-preview-controls">
                 <RangeSlider
                   grow
@@ -1722,17 +1664,27 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                   onChange={updatePdfQBand}
                 />
               </div>
-              <PdfPreviewGrid
-                slices={pdfSlices}
-                loading={pdfLoading}
-                lattice={pdfMetaQ.data?.lattice}
-                sourceReady={Boolean(pdfInputId)}
-                sourceLabel={pdfPreviewStage?.name}
-                bands={[pdfQMin, pdfQMax]}
-                contrast={1.5}
+              <PunchPreviewGrid
+                geom={punchGeom}
+                slices={punchSlices}
+                loading={punchLoading}
+                lattice={punchMetaQ.data?.lattice}
+                sourceLabel={punchPreviewStage?.name}
+                zoom={s.punchSliceZoom}
+                contrast={s.punchSliceContrast}
+                bands={[pdfQMin, s.pdfQMax ? pdfQMax : 0]}
+                meta={punchMetaQ.data}
+                cuts={punchCuts}
+                onCut={(axis, value) => {
+                  if (axis === "H") patch({ punchCutH: value });
+                  else if (axis === "K") patch({ punchCutK: value });
+                  else patch({ punchCutL: value });
+                }}
               />
               <div className="ring-viz-cap">
-                source <b>{pdfPreviewStage?.name ?? "none"}</b> · transform band{" "}
+                source <b>{punchPreviewStage?.name ?? "none"}</b> · r = (
+                <b>{punchGeom.r0}</b>, <b>{punchGeom.r1}</b>, <b>{punchGeom.r2}</b>){" "}
+                {punchGeom.unit} · |Q| band{" "}
                 <b>
                   {pdfQBandIsFull
                     ? "full"

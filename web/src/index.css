@@ -854,9 +854,10 @@ input[type="range"]::-moz-range-track {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
+  min-width: 16px;
   height: 16px;
-  border-radius: 50%;
+  padding: 0 4px;
+  border-radius: 999px;
   background: var(--surface-3);
   border: 1px solid var(--border-strong);
   color: var(--text-2);
@@ -1292,6 +1293,15 @@ input[type="range"]::-moz-range-track {
   stroke-width: 1;
   stroke-dasharray: 3 2;
 }
+/* |Q| transform-band boundary: a large reference ellipse over the slice */
+.punch-qband {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1.2;
+  stroke-dasharray: 4 3;
+  opacity: 0.9;
+  paint-order: stroke;
+}
 .punch-axis {
   fill: var(--text-3);
   font-family: var(--font-mono);
@@ -1329,6 +1339,10 @@ input[type="range"]::-moz-range-track {
 .punch-legend .sw.sat {
   background: var(--green-soft);
   border: 1px solid var(--green);
+}
+.punch-legend .sw.qband {
+  background: transparent;
+  border: 1px dashed var(--text);
 }
 .punch-legend .punch-legend-unit {
   margin-left: auto;
@@ -1624,37 +1638,9 @@ input[type="range"]::-moz-range-track {
 .punch-stage-card .card-body > .config-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-/* ΔPDF stage: full-width workspace + 3-orthoslice preview, mirroring the
-   Bragg-punch card.  The body is a flex column so the punch-workspace (controls
-   | preview pane) spans the full card width. */
-.pdf-stage-card .card-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-/* the single |Q| band slider spans the preview-controls row above the slices */
+/* the |Q| band slider spans its preview-controls row above the slices */
 .pdf-preview-controls {
   display: flex;
-}
-/* square letterbox frame: each orthoslice keeps its true aspect (so the |Q|
-   shell stays circular) centred in an equal-sized tile */
-.pdf-slice-frame {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 1 / 1;
-  display: grid;
-  place-items: center;
-  line-height: 0;
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  overflow: hidden;
-}
-.pdf-q-note {
-  margin: 0;
-  max-width: 290px;
-  color: var(--text-3);
-  font-size: 11px;
-  line-height: 1.4;
 }
 @media (max-width: 920px) {
   .stage-card .card-body {
@@ -1676,9 +1662,6 @@ input[type="range"]::-moz-range-track {
   }
   .punch-preview-controls {
     display: flex;
-  }
-  .pdf-q-note {
-    max-width: 100%;
   }
 }
 

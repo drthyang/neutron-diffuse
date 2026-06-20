@@ -53,8 +53,13 @@ _PLANE_DPDF: dict[str, tuple[str, int, str, str, str, str, bool]] = {
 }
 
 
-def _format_cut_value(value: float, precision: int, zero_tol: float = 1e-6) -> str:
-    """Format a slice coordinate, hiding floating-point noise around zero."""
+def _format_cut_value(value: float, precision: int, zero_tol: float = 1e-4) -> str:
+    """Format a slice coordinate, snapping near-zero cuts to 0.
+
+    Grid planes that should sit at the origin carry float round-off (e.g.
+    9.5e-07); any |value| below *zero_tol* is well under the real cut spacing,
+    so it is shown as a clean ``0`` rather than scientific-notation noise.
+    """
     value = 0.0 if abs(value) < zero_tol else value
     return f"{value:.{precision}g}"
 
