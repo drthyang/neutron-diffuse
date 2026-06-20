@@ -817,6 +817,109 @@ function PunchPreviewGrid({
 }
 
 // ---------------------------------------------------------------------------
+// 3D-ΔPDF preview grid
+//
+// The three orthogonal raw-volume planes through the origin (a*–b*, a*–c*,
+// b*–c*), each with the spherical |Q| transform band drawn as a shell — the
+// real-space layout twin of the Bragg-punch preview grid.  The shared `|Q|`
+// band slider lives above this grid (in the preview pane), not per panel,
+// because the band is one radial window applied to the whole volume.
+// ---------------------------------------------------------------------------
+function PdfPreviewGrid({
+  slices,
+  loading,
+  lattice,
+  sourceReady,
+  sourceLabel,
+  bands,
+  contrast,
+}: {
+  slices: Partial<Record<PunchPlane, import("../api/types").Slice>>;
+  loading: Partial<Record<PunchPlane, boolean>>;
+  lattice?: LatticeLike;
+  sourceReady: boolean;
+  sourceLabel?: string;
+  bands: [number, number];
+  contrast: number;
+}) {
+  const contrastSafe = Math.max(0.2, Math.min(6, contrast));
+  const sharedVmax = Math.max(
+    1,
+    ...Object.values(slices).map((slice) => slice?.header.robust_max ?? 0),
+  ) * contrastSafe;
+  return (
+    <div className="punch-preview-grid">
+      {PUNCH_PLANES.map((spec) => {
+        const slice = slices[spec.id];
+        const [axisX, axisY] = planeHklAxes(spec.id);
+        const latX = (lattice && axisLattice(axisX, lattice)) || 1;
+        const latY = (lattice && axisLattice(axisY, lattice)) || 1;
+        const latCut = (lattice && axisLattice(spec.cutAxis, lattice)) || 1;
+        const qScaleX = (2 * Math.PI) / latX;
+        const qScaleY = (2 * Math.PI) / latY;
+        // Crop each tile to an origin-centred square |Q| window so it fills the
+        // frame with the shell circular (equal Å⁻¹ per axis) — the Bragg-punch
+        // preview does the same.  The window is the largest square that fits the
+        // plane's data, capped so the |Q| band's outer radius sits just inside.
+        let windowX: number | undefined;
+        let windowY: number | undefined;
+        if (slice) {
+          const xs = slice.header.x_axis;
+          const ys = slice.header.y_axis;
+          const qFit = Math.min(
+            Math.max(Math.abs(xs[0]), Math.abs(xs[xs.length - 1])) * qScaleX,
+            Math.max(Math.abs(ys[0]), Math.abs(ys[ys.length - 1])) * qScaleY,
+          );
+          const qOuter = bands[1] > 0 ? bands[1] : qFit;
+          const qHalf = Math.max(0.1, Math.min(qOuter * 1.12, qFit));
+          windowX = qHalf / qScaleX;
+          windowY = qHalf / qScaleY;
+        }
+        return (
+          <div className="punch-preview-panel" key={spec.id}>
+            <div className="punch-preview-panel-head">
+              <span>{spec.title}</span>
+              <span>cut {spec.cutLabel} = 0</span>
+            </div>
+            {slice && lattice ? (
+              <div className="punch-preview">
+                <div className="pdf-slice-frame">
+                  <SliceCanvas
+                    slice={slice}
+                    lut={COLORMAPS.inferno}
+                    vmax={sharedVmax}
+                    log={false}
+                    windowX={windowX}
+                    windowY={windowY}
+                    bands={bands}
+                    cutDistance={0}
+                    reciprocalAxes
+                    latX={latX}
+                    latY={latY}
+                    latCut={latCut}
+                  />
+                </div>
+                <div className="punch-preview-meta">
+                  {sourceLabel ?? "source"} · {slice.header.cut_label}
+                </div>
+              </div>
+            ) : (
+              <div className="punch-preview-empty">
+                {loading[spec.id]
+                  ? "Loading slice…"
+                  : sourceReady
+                    ? "Slice unavailable"
+                    : "Raw volume needed"}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 
 export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
   const datasetsQ = useDatasets();
@@ -941,19 +1044,25 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
     queryFn: () => fetchMeta(pdfInputId as string),
     enabled: Boolean(pdfInputId),
   });
-  const pdfSliceQ = useQuery({
-    queryKey: ["slice", pdfInputId, "0kl", 0, false, "config-pdf"],
-    queryFn: () => fetchSlice(pdfInputId as string, "0kl", 0, false),
-    enabled: Boolean(pdfInputId),
+  // Three orthogonal raw-volume planes (a*–b*, a*–c*, b*–c*) through the
+  // origin, mirroring the Bragg-punch preview grid.
+  const pdfSliceQueries = useQueries({
+    queries: PUNCH_PLANES.map((spec) => ({
+      queryKey: ["slice", pdfInputId, spec.id, 0, false, "config-pdf"],
+      queryFn: () => fetchSlice(pdfInputId as string, spec.id, 0, false),
+      enabled: Boolean(pdfInputId),
+    })),
   });
+  const pdfSlices = Object.fromEntries(
+    PUNCH_PLANES.map((spec, i) => [spec.id, pdfSliceQueries[i]?.data]),
+  ) as Partial<Record<PunchPlane, import("../api/types").Slice>>;
+  const pdfLoading = Object.fromEntries(
+    PUNCH_PLANES.map((spec, i) => [spec.id, Boolean(pdfInputId) && pdfSliceQueries[i]?.isFetching]),
+  ) as Partial<Record<PunchPlane, boolean>>;
   const pdfQSpanMax = Math.ceil(qSpanFromMeta(pdfMetaQ.data) * 20) / 20;
   const pdfQMin = s.pdfQMin ? Number(s.pdfQMin) : 0;
   const pdfQMax = s.pdfQMax ? Number(s.pdfQMax) : pdfQSpanMax;
   const pdfQBandIsFull = !s.pdfQMin && !s.pdfQMax;
-  const pdfPreviewLatA = pdfMetaQ.data?.lattice.a ?? 1;
-  const pdfPreviewLatB = pdfMetaQ.data?.lattice.b ?? 1;
-  const pdfPreviewLatC = pdfMetaQ.data?.lattice.c ?? 1;
-  const pdfPreviewVmax = (pdfSliceQ.data?.header.robust_max || 1) * 1.5;
 
   const updatePdfQBand = (lo: number, hi: number) => {
     if (!pdfQSpanMax) return;
@@ -1558,63 +1667,78 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
           </Field>
         </StageCard>
 
-        <StageCard title={STAGE_LABELS.pdf} step={STAGE_NO.pdf} className="stage-card-wide">
-          <Field label="Apodization">
-            <select
-              value={s.pdfApod}
-              onChange={(e) => patch({ pdfApod: e.target.value })}
-            >
-              <option value="">gaussian (default)</option>
-              <option value="hann">hann</option>
-              <option value="none">none</option>
-            </select>
-          </Field>
-          <RangeSlider
-            grow
-            label="|Q| band"
-            readout={
-              pdfQBandIsFull
-                ? `full 0.00 … ${(pdfQSpanMax || 0).toFixed(2)} Å⁻¹`
-                : `${pdfQMin.toFixed(2)} … ${pdfQMax.toFixed(2)} Å⁻¹`
-            }
-            min={0}
-            max={pdfQSpanMax || 1}
-            step={0.05}
-            valueMin={pdfQMin}
-            valueMax={pdfQMax || 1}
-            disabled={!pdfQSpanMax}
-            onChange={updatePdfQBand}
-          />
-          <div className="pdf-q-preview">
-            {pdfSliceQ.data ? (
-              <SliceCanvas
-                slice={pdfSliceQ.data}
-                lut={COLORMAPS.inferno}
-                vmax={pdfPreviewVmax}
-                log={false}
-                width={260}
-                bands={[pdfQMin, pdfQMax]}
-                cutDistance={0}
-                reciprocalAxes
-                latX={pdfPreviewLatB}
-                latY={pdfPreviewLatC}
-                latCut={pdfPreviewLatA}
-              />
-            ) : (
-              <div className="pdf-q-preview-empty">
-                {pdfInputId ? "Loading raw H=0 preview…" : "Raw volume needed"}
+        <StageCard
+          title={STAGE_LABELS.pdf}
+          step={STAGE_NO.pdf}
+          className="stage-card-wide pdf-stage-card"
+        >
+          <div className="punch-workspace">
+            <div className="punch-controls">
+              <div className="punch-group">
+                <div className="punch-group-head">
+                  <span className="punch-group-title">Transform</span>
+                  <HelpTip>
+                    3D-FFT of the cleaned, backfilled diffuse volume. The
+                    apodization window tapers Q-space before the transform to
+                    suppress real-space termination ripples.
+                  </HelpTip>
+                </div>
+                <div className="config-grid">
+                  <Field label="Apodization">
+                    <select
+                      value={s.pdfApod}
+                      title="Q-space window applied before the FFT to suppress termination ripples"
+                      onChange={(e) => patch({ pdfApod: e.target.value })}
+                    >
+                      <option value="">gaussian (default)</option>
+                      <option value="hann">hann</option>
+                      <option value="none">none</option>
+                    </select>
+                  </Field>
+                </div>
               </div>
-            )}
-            <div className="pdf-q-note">
-              Raw H=0 preview only; ΔPDF runs on cleaned/backfilled data.
+              <p className="pdf-q-note">
+                Previews show the raw reciprocal-space volume; the ΔPDF runs on
+                the cleaned, backfilled data. The outlined shell marks the |Q|
+                band the transform keeps.
+              </p>
             </div>
-            <div className="ring-viz-cap">
-              source <b>{pdfPreviewStage?.name ?? "none"}</b> · transform band{" "}
-              <b>
-                {pdfQBandIsFull
-                  ? "full"
-                  : `${pdfQMin.toFixed(2)}–${pdfQMax.toFixed(2)} Å⁻¹`}
-              </b>
+            <div className="stage-visual punch-preview-pane">
+              <div className="punch-preview-controls pdf-preview-controls">
+                <RangeSlider
+                  grow
+                  label="|Q| band"
+                  readout={
+                    pdfQBandIsFull
+                      ? `full 0.00 … ${(pdfQSpanMax || 0).toFixed(2)} Å⁻¹`
+                      : `${pdfQMin.toFixed(2)} … ${pdfQMax.toFixed(2)} Å⁻¹`
+                  }
+                  min={0}
+                  max={pdfQSpanMax || 1}
+                  step={0.05}
+                  valueMin={pdfQMin}
+                  valueMax={pdfQMax || 1}
+                  disabled={!pdfQSpanMax}
+                  onChange={updatePdfQBand}
+                />
+              </div>
+              <PdfPreviewGrid
+                slices={pdfSlices}
+                loading={pdfLoading}
+                lattice={pdfMetaQ.data?.lattice}
+                sourceReady={Boolean(pdfInputId)}
+                sourceLabel={pdfPreviewStage?.name}
+                bands={[pdfQMin, pdfQMax]}
+                contrast={1.5}
+              />
+              <div className="ring-viz-cap">
+                source <b>{pdfPreviewStage?.name ?? "none"}</b> · transform band{" "}
+                <b>
+                  {pdfQBandIsFull
+                    ? "full"
+                    : `${pdfQMin.toFixed(2)}–${pdfQMax.toFixed(2)} Å⁻¹`}
+                </b>
+              </div>
             </div>
           </div>
         </StageCard>

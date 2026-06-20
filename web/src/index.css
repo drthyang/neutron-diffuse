@@ -1593,8 +1593,7 @@ input[type="range"]::-moz-range-track {
 .stage-card .card-body > .punch-workspace {
   grid-column: 1 / -1;
 }
-.stage-card .card-body > .stage-visual,
-.stage-card .card-body > .pdf-q-preview {
+.stage-card .card-body > .stage-visual {
   grid-column: 2;
   grid-row: 1 / span 10;
   align-self: center;
@@ -1625,29 +1624,37 @@ input[type="range"]::-moz-range-track {
 .punch-stage-card .card-body > .config-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-.pdf-q-preview {
+/* ΔPDF stage: full-width workspace + 3-orthoslice preview, mirroring the
+   Bragg-punch card.  The body is a flex column so the punch-workspace (controls
+   | preview pane) spans the full card width. */
+.pdf-stage-card .card-body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  align-items: flex-start;
+  gap: 12px;
 }
-.pdf-q-note {
-  max-width: 260px;
-  color: var(--text-3);
-  font-size: 11px;
-  line-height: 1.35;
+/* the single |Q| band slider spans the preview-controls row above the slices */
+.pdf-preview-controls {
+  display: flex;
 }
-.pdf-q-preview-empty {
-  width: 220px;
+/* square letterbox frame: each orthoslice keeps its true aspect (so the |Q|
+   shell stays circular) centred in an equal-sized tile */
+.pdf-slice-frame {
+  position: relative;
+  width: 100%;
   aspect-ratio: 1 / 1;
   display: grid;
   place-items: center;
+  line-height: 0;
   border: 1px solid var(--border);
   background: var(--surface-2);
+  overflow: hidden;
+}
+.pdf-q-note {
+  margin: 0;
+  max-width: 290px;
   color: var(--text-3);
-  font-size: 12px;
-  text-align: center;
-  padding: 14px;
+  font-size: 11px;
+  line-height: 1.4;
 }
 @media (max-width: 920px) {
   .stage-card .card-body {
@@ -1659,8 +1666,7 @@ input[type="range"]::-moz-range-track {
   .stage-card .card-body > .switch-row,
   .stage-card .card-body > .field,
   .stage-card .card-body > .punch-workspace,
-  .stage-card .card-body > .stage-visual,
-  .stage-card .card-body > .pdf-q-preview {
+  .stage-card .card-body > .stage-visual {
     grid-column: 1;
     grid-row: auto;
   }
@@ -1671,9 +1677,6 @@ input[type="range"]::-moz-range-track {
   .punch-preview-controls {
     display: flex;
   }
-  .pdf-q-preview,
-  .pdf-q-preview .slice-canvas,
-  .pdf-q-preview-empty,
   .pdf-q-note {
     max-width: 100%;
   }
