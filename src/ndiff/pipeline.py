@@ -632,11 +632,18 @@ def pdf_consistency_check(
 
 
 def _band_limit_q(
-    vol: HKLVolume, q_band: tuple[float, float]
+    vol: HKLVolume, q_band: tuple[float, float],
+    q_mag: np.ndarray | None = None,
 ) -> tuple[HKLVolume, np.ndarray]:
-    """Mask voxels outside the spherical |Q| shell [qmin, qmax] (Å⁻¹)."""
+    """Mask voxels outside the spherical |Q| shell [qmin, qmax] (Å⁻¹).
+
+    ``q_mag`` (Å⁻¹, voxel |Q|) may be supplied to reuse an already-computed
+    magnitude grid — recomputing it rebuilds a full meshgrid + UB matmul.
+    """
     qmin, qmax = q_band
-    in_band = (vol.q_magnitude() >= qmin) & (vol.q_magnitude() <= qmax)
+    if q_mag is None:
+        q_mag = vol.q_magnitude()
+    in_band = (q_mag >= qmin) & (q_mag <= qmax)
     return dataclasses.replace(vol, mask=vol.mask & in_band), in_band
 
 
@@ -658,26 +665,32 @@ def consistency_reconstruction(
     for :func:`ndiff.visualization.extract_slice` — plus the metrics dict.
     """
     vol_c = _crop_hkl(vol, p.crop_hkl)
+    # Voxel |Q| (Å⁻¹) is purely geometric (axes + UB) and independent of the
+    # mask, so compute it once and reuse for the band limit and q_data_max.
+    q_mag_c = vol_c.q_magnitude()
     in_band = np.ones(vol_c.data.shape, dtype=bool)
     if q_band is not None:
-        vol_c, in_band = _band_limit_q(vol_c, q_band)
+        vol_c, in_band = _band_limit_q(vol_c, q_band, q_mag=q_mag_c)
     dpdf = compute_delta_pdf(
         vol_c, apodization=p.apodization,  # type: ignore[arg-type]
         gaussian_sigma=p.gaussian_sigma, zero_pad=p.zero_pad,
         subtract_mean=p.subtract_mean, real_space_angstrom=True,
         crop_hkl=None, subtract_smooth_bg=p.subtract_smooth_bg)
-    
-    # max R for the UI scale
+
+    # max R for the UI scale — farthest real-space corner (Å)
     r_data_max = float(np.sqrt(
         max(dpdf.x_axis[0]**2, dpdf.x_axis[-1]**2) +
         max(dpdf.y_axis[0]**2, dpdf.y_axis[-1]**2) +
         max(dpdf.z_axis[0]**2, dpdf.z_axis[-1]**2)
     ))
-    
+
     if r_band is not None:
         rmin, rmax = r_band
-        X, Y, Z = np.meshgrid(dpdf.x_axis, dpdf.y_axis, dpdf.z_axis, indexing="ij")
-        R = np.sqrt(X**2 + Y**2 + Z**2)
+        # Broadcast the separable real-space axes rather than materialising the
+        # full X/Y/Z meshgrids — same R, one array instead of four.
+        R = np.sqrt(dpdf.x_axis[:, None, None] ** 2
+                    + dpdf.y_axis[None, :, None] ** 2
+                    + dpdf.z_axis[None, None, :] ** 2)
         r_mask = (R >= rmin) & (R <= rmax)
         dpdf.data = np.where(r_mask, dpdf.data, 0.0)
 
@@ -686,7 +699,7 @@ def consistency_reconstruction(
     region = recon.mask & np.isfinite(data) & in_band
     metrics, _rows = _consistency_metrics(
         recon.data, data, region, recon.h_axis, h_values)
-    metrics["q_data_max"] = float(vol_c.q_magnitude().max())
+    metrics["q_data_max"] = float(q_mag_c.max())
     metrics["q_band"] = list(q_band) if q_band else None
     metrics["r_data_max"] = r_data_max
     metrics["r_band"] = list(r_band) if r_band else None
