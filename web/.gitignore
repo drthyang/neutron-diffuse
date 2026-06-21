@@ -7,3 +7,6 @@ dist
 # NOT committed — they contain experimental data that must not be made public.
 # Generate them at deploy time if/when a public dataset is approved.
 public/data/
+
+# Locally-built ndiff wheel for the Pyodide PoC (build artifact; can bundle data).
+public/wheels/

@@ -56,6 +56,20 @@ That cannot ship to a browser. Options, in order of preference:
 3. **On-demand chunks.** Tile the volume and fetch only the slab a cut needs.
    More engineering; revisit only if (1) is too heavy.
 
+## Update — Pyodide path validated (in-browser CPython)
+
+A cleaner route than baking data assets at all: run the **real `ndiff` pipeline
+in the browser** via Pyodide (CPython + numpy/scipy/h5py as WASM). `ndiff` is pure
+Python and its deps are all official Pyodide packages, so the existing reduction
+code runs unchanged — and users bring **their own** data, so nothing is hosted.
+
+Proof-of-concept (`web/public/poc-pyodide.html`) is working: it boots Pyodide,
+micropip-installs the `ndiff` wheel (`deps=False`), and runs the real
+`compute_delta_pdf` (scipy 3D FFT) on a synthetic volume, rendering the ΔPDF —
+all client-side, no server. This supersedes the pre-baked static-data milestones
+below for the *interactive* app; WebGPU becomes a pure performance optimization
+(profile first; accelerate the 3D FFT if it dominates).
+
 ## Why WebGPU (vs WASM / WebGL)
 
 - **Slicing**: upload each volume once as a `r16float` 3D texture; a cut is a

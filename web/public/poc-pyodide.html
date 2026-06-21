@@ -1,0 +1,167 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>ndiff · in-browser pipeline PoC (Pyodide)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<!--
+  Proof-of-concept: run the real pure-Python `ndiff` pipeline entirely in the
+  browser via Pyodide (CPython + numpy/scipy/h5py compiled to WebAssembly).
+  Nothing is uploaded — the user's file and all computation stay on their machine.
+
+  This page validates the full chain:
+    Pyodide boot → load numpy/scipy/h5py/matplotlib → micropip-install the ndiff
+    wheel → `import ndiff` → run compute_delta_pdf on a synthetic volume → render.
+  A file picker exercises the same path on a user-supplied .nxs/.h5.
+-->
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #0b0d10; color: #e8ebf0;
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 28px 24px 60px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: #6c7686; font-size: 13px; margin: 0 0 20px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 14px 0; }
+  button, label.file { background: #4f8ff7; color: #fff; border: none; border-radius: 7px;
+    padding: 8px 16px; font: inherit; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .45; cursor: default; }
+  label.file { background: #232a33; border: 1px solid #333d4a; }
+  #log { background: #07090c; border: 1px solid #252c36; border-radius: 8px;
+    padding: 12px 14px; height: 260px; overflow-y: auto; white-space: pre-wrap;
+    font: 12px/1.6 ui-monospace, Menlo, monospace; color: #a8b1bf; }
+  .ok { color: #34c98e; } .err { color: #ef6a6a; } .warn { color: #e8b454; }
+  canvas { image-rendering: pixelated; border: 1px solid #252c36; border-radius: 8px;
+    background: #15191f; margin-top: 12px; width: 320px; height: 320px; }
+  .meta { font: 12px ui-monospace, Menlo, monospace; color: #6c7686; }
+</style>
+
+<div class="wrap">
+  <h1>ndiff · in-browser pipeline proof-of-concept</h1>
+  <p class="sub">CPython + numpy/scipy/h5py via Pyodide — the real reduction code, running locally in your browser. No server, no upload.</p>
+
+  <div class="row">
+    <button id="boot">1 · Boot Pyodide + load ndiff</button>
+    <button id="selftest" disabled>2 · Self-test (synthetic ΔPDF)</button>
+    <label class="file" style="opacity:.45; pointer-events:none" id="filelabel">
+      3 · Run on your .nxs/.h5<input id="file" type="file" accept=".h5,.nxs,.hdf5" hidden />
+    </label>
+  </div>
+
+  <div id="log">Ready. Click “Boot Pyodide” to start (first load pulls ~15–25 MB of WASM).</div>
+  <canvas id="cv" width="320" height="320"></canvas>
+  <div class="meta" id="meta"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
+<script>
+const logEl = document.getElementById("log");
+const metaEl = document.getElementById("meta");
+const t0 = performance.now();
+function log(msg, cls) {
+  const dt = ((performance.now() - t0) / 1000).toFixed(1).padStart(5);
+  logEl.innerHTML += `\n<span class="${cls || ""}">[${dt}s] ${msg}</span>`;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+let pyodide = null;
+
+// Wheel lives next to this page (web/public/wheels/). BASE handles the Pages subpath.
+const BASE = location.pathname.replace(/poc-pyodide\.html$/, "");
+const WHEEL = location.origin + BASE + "wheels/neutron_diffuse-0.2.0-py3-none-any.whl";
+
+document.getElementById("boot").onclick = async (e) => {
+  e.target.disabled = true;
+  try {
+    log("Loading Pyodide runtime…");
+    pyodide = await loadPyodide({ indexURL: "https://cdn.jsdelivr.net/pyodide/v0.26.2/full/" });
+    log("Loading numpy, scipy, h5py, matplotlib…");
+    await pyodide.loadPackage(["numpy", "scipy", "h5py", "matplotlib", "micropip"]);
+    log(`Installing ndiff wheel: ${WHEEL.split("/").pop()}`);
+    // deps=False: numpy/scipy/h5py/matplotlib are already provided by loadPackage;
+    // skip micropip's version check (Pyodide ships matplotlib 3.5.2 < our >=3.7 pin).
+    await pyodide.runPythonAsync(`
+import micropip
+await micropip.install(${JSON.stringify(WHEEL)}, deps=False)
+`);
+    const ver = pyodide.runPython("import ndiff; ndiff.__version__");
+    log(`ndiff ${ver} imported ✓  — full scientific stack running in-browser`, "ok");
+    document.getElementById("selftest").disabled = false;
+    const fl = document.getElementById("filelabel");
+    fl.style.opacity = "1"; fl.style.pointerEvents = "auto";
+  } catch (err) {
+    log("Boot failed: " + err, "err");
+    e.target.disabled = false;
+  }
+};
+
+document.getElementById("selftest").onclick = async (e) => {
+  e.target.disabled = true;
+  try {
+    log("Building a synthetic 48³ HKL volume and running compute_delta_pdf…");
+    const res = pyodide.runPython(`
+import numpy as np, ndiff
+from ndiff.analysis.delta_pdf import compute_delta_pdf
+
+# Structured synthetic intensity: a few "Bragg" spikes on a smooth background.
+n = 48
+h = np.linspace(-6, 6, n)
+H, K, L = np.meshgrid(h, h, h, indexing="ij")
+data = 1.0 + np.exp(-(H**2 + K**2 + L**2) / 8.0)
+for hk in (2, 4):
+    data += 3.0 * np.exp(-((H-hk)**2 + K**2 + L**2) * 6) + 3.0 * np.exp(-((H+hk)**2 + K**2 + L**2) * 6)
+vol = ndiff.core.HKLVolume.from_arrays(data, (-6, 6), (-6, 6), (-6, 6))
+dpdf = compute_delta_pdf(vol, gaussian_sigma=0.4)
+sl = dpdf.data[:, :, dpdf.data.shape[2] // 2].astype("float32")
+ny, nx = sl.shape
+ny, nx, sl.tobytes()
+`);
+    renderSlice(res.toJs(), "self-test ΔPDF · central z-cut");
+    log("Self-test ✓ — numpy + scipy FFT + ndiff produced a ΔPDF in the browser.", "ok");
+  } catch (err) {
+    log("Self-test failed: " + err, "err");
+  }
+  e.target.disabled = false;
+};
+
+document.getElementById("file").onchange = async (ev) => {
+  const f = ev.target.files[0];
+  if (!f || !pyodide) return;
+  try {
+    log(`Reading ${f.name} (${(f.size / 1e6).toFixed(1)} MB) into the browser FS…`);
+    const buf = new Uint8Array(await f.arrayBuffer());
+    pyodide.FS.writeFile("/tmp/upload.h5", buf);
+    log("Loading volume with ndiff.load and computing ΔPDF (this can take a moment)…");
+    const res = pyodide.runPython(`
+import ndiff
+from ndiff.analysis.delta_pdf import compute_delta_pdf
+vol = ndiff.load("/tmp/upload.h5")
+dpdf = compute_delta_pdf(vol)
+sl = dpdf.data[:, :, dpdf.data.shape[2] // 2].astype("float32")
+sl.shape[0], sl.shape[1], sl.tobytes()
+`);
+    renderSlice(res.toJs(), `${f.name} · ΔPDF central z-cut`);
+    log("Done ✓ — your file never left this machine.", "ok");
+  } catch (err) {
+    log("Failed on file: " + err, "err");
+  }
+};
+
+// Render a Float32 slice diverging about 0 (blue↔white↔red) onto the canvas.
+function renderSlice([ny, nx, bytes], caption) {
+  const data = new Float32Array(bytes.buffer);
+  let amax = 0;
+  for (const v of data) if (Number.isFinite(v)) amax = Math.max(amax, Math.abs(v));
+  amax = amax || 1;
+  const cv = document.getElementById("cv");
+  cv.width = nx; cv.height = ny;
+  const ctx = cv.getContext("2d");
+  const img = ctx.createImageData(nx, ny);
+  for (let i = 0; i < data.length; i++) {
+    const t = Math.max(-1, Math.min(1, data[i] / amax)); // [-1,1]
+    const o = i * 4;
+    if (t >= 0) { img.data[o] = 255; img.data[o+1] = 255 * (1 - t); img.data[o+2] = 255 * (1 - t); }
+    else { img.data[o] = 255 * (1 + t); img.data[o+1] = 255 * (1 + t); img.data[o+2] = 255; }
+    img.data[o+3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  metaEl.textContent = `${caption} — ${nx}×${ny}, |max| ${amax.toExponential(2)}`;
+}
+</script>
