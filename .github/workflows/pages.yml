@@ -38,12 +38,11 @@ jobs:
       - run: npm ci
       - name: Build static SPA
         run: npm run build:pages
+      # ONE-TIME SETUP: enable Pages first, or this step fails with "Get Pages
+      # site failed / Not Found". Repo Settings → Pages → Build and deployment →
+      # Source: "GitHub Actions". (The workflow token cannot create the site
+      # itself, so this must be done manually once.)
       - uses: actions/configure-pages@v5
-        # Tries to enable Pages (Actions source) via the API. If your repo policy
-        # blocks that, enable it once manually: repo Settings → Pages → Build and
-        # deployment → Source: "GitHub Actions".
-        with:
-          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web/dist
