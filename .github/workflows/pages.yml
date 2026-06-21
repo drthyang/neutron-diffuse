@@ -1,0 +1,54 @@
+# Build the backend-less (static) SPA and deploy it to GitHub Pages.
+#
+# The static build (`vite build --mode pages`, see web/.env.pages) reads the
+# pre-baked ΔPDF assets in web/public/data/ and slices them client-side, so no
+# FastAPI backend is needed.  Regenerate those assets with
+# `python scripts/export_web_assets.py` and commit them when the ΔPDF outputs
+# change.  See docs/github-pages-webgpu-plan.md.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; don't cancel an in-progress run.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - name: Build static SPA
+        run: npm run build:pages
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

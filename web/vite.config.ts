@@ -13,7 +13,9 @@ export default defineConfig(({ mode }) => ({
   // See docs/github-pages-webgpu-plan.md for the full static-data migration.
   base: mode === "pages" ? "/neutron-diffuse/" : "/",
   build: {
-    outDir: "../src/ndiff/server/static",
+    // Pages build (static, backend-less) goes to web/dist so it does not clobber
+    // the api-mode bundle baked into the Python package.
+    outDir: mode === "pages" ? "dist" : "../src/ndiff/server/static",
     emptyOutDir: true,
   },
   server: {
