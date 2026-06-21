@@ -87,9 +87,11 @@ That cannot ship to a browser. Options, in order of preference:
 
 ## Concrete first steps (M0)
 
-1. `vite.config.ts`: `base: process.env.GH_PAGES ? "/neutron-diffuse/" : "/"`.
-2. `.github/workflows/pages.yml`: build with `GH_PAGES=1`, upload `web/dist`,
-   deploy via `actions/deploy-pages`.
+1. `vite.config.ts`: `base: mode === "pages" ? "/neutron-diffuse/" : "/"` (done).
+   The Pages build runs `vite build --mode pages`; `mode` is used rather than
+   `process.env` so the config stays type-checkable without `@types/node`.
+2. `.github/workflows/pages.yml`: build with `--mode pages`, upload the build
+   output, deploy via `actions/deploy-pages`.
 3. `web/src/api/client.ts`: branch on `import.meta.env.VITE_DATA_MODE`; in
    `static` mode resolve `import.meta.env.BASE_URL + "data/<id>/<stage>/<plane>/<cut>.bin"`.
 4. `scripts/export_web_assets.py`: dump the pre-baked slice grid + a
