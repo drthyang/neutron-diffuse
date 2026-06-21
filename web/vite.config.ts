@@ -6,6 +6,10 @@ import { defineConfig } from "vite";
 // package so the installed wheel can serve it.
 export default defineConfig({
   plugins: [react()],
+  // Project Pages serve under /<repo>/.  Set GH_PAGES=1 in the Pages build so
+  // assets resolve under the subpath; local dev and self-hosted builds stay at /.
+  // See docs/github-pages-webgpu-plan.md for the full static-data migration.
+  base: process.env.GH_PAGES ? "/neutron-diffuse/" : "/",
   build: {
     outDir: "../src/ndiff/server/static",
     emptyOutDir: true,

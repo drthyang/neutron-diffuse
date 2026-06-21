@@ -12,7 +12,14 @@ import { useDatasets, useDpdfMeta } from "../api/hooks";
 import { COLORMAPS, DIVERGING_NAMES, DIVERGING_NAME } from "../colormaps/luts";
 import { SliceCanvas } from "../components/SliceCanvas";
 import { UnitCellGrid } from "../components/UnitCellGrid";
-import { EmptyState, Field, MetaStrip, Slider, Switch } from "../components/ui";
+import {
+  ColormapBar,
+  EmptyState,
+  Field,
+  MetaStrip,
+  Slider,
+  Switch,
+} from "../components/ui";
 import { useDatasetStore, useInitializeDataset } from "../state/datasetStore";
 import { useDpdfStore } from "../state/dpdfStore";
 
@@ -198,6 +205,7 @@ export function MultiTempViewer() {
               <option key={name} value={name}>{name}</option>
             ))}
           </select>
+          <ColormapBar lut={lut} />
         </Field>
       </div>
 

@@ -233,9 +233,7 @@ export function ConsistencyViewer() {
             ))}
           </select>
         </Field>
-      </div>
 
-      <div className="toolbar">
         <Field label="Fixed axis">
           <Segmented
             options={AXES}

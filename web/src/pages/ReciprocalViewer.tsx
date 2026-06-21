@@ -126,13 +126,24 @@ export function ReciprocalViewer() {
     })),
   });
 
-  let globalVmax = 0;
-  for (const r of scaleResults) {
-    const rm = r.data?.header.robust_max;
-    if (rm && Number.isFinite(rm)) globalVmax = Math.max(globalVmax, rm);
-  }
-  globalVmax = globalVmax || 1;
-  const vmax = contrast * globalVmax;
+  // Two pooled colour scales rather than one.  Raw + ring-removed still carry the
+  // Bragg peaks, whose robust level sits ~10× above the post-punch diffuse stages;
+  // pooling a single max across all five then crushes backfilled/flattened to near
+  // black.  Pool the Bragg-bearing stages together and the diffuse stages together
+  // so each regime is visible while staying comparable within itself.
+  const DIFFUSE_STAGES = new Set(["braggpunched", "backfilled", "flattened"]);
+  let braggVmax = 0;
+  let diffuseVmax = 0;
+  stages.forEach((s, i) => {
+    const rm = scaleResults[i]?.data?.header.robust_max;
+    if (!rm || !Number.isFinite(rm)) return;
+    if (DIFFUSE_STAGES.has(s.name)) diffuseVmax = Math.max(diffuseVmax, rm);
+    else braggVmax = Math.max(braggVmax, rm);
+  });
+  braggVmax = braggVmax || 1;
+  diffuseVmax = diffuseVmax || braggVmax;
+  const vmaxFor = (name: string) =>
+    contrast * (DIFFUSE_STAGES.has(name) ? diffuseVmax : braggVmax);
 
   return (
     <div className="page-body">
@@ -231,7 +242,7 @@ export function ReciprocalViewer() {
             isError={sliceResults[i]?.isError}
             error={sliceResults[i]?.error as Error | null}
             lut={lut}
-            vmax={vmax}
+            vmax={vmaxFor(s.name)}
             log={log}
             reciprocalAxes
             latX={latX}
@@ -248,7 +259,7 @@ export function ReciprocalViewer() {
             { key: "Plane", value: plane },
             {
               key: "Colour scale",
-              value: `global · 0 … ${vmax.toPrecision(3)}${log ? " (log)" : ""}`,
+              value: `Bragg 0…${(contrast * braggVmax).toPrecision(3)} · diffuse 0…${(contrast * diffuseVmax).toPrecision(3)}${log ? " (log)" : ""}`,
             },
             {
               key: "Lattice",
