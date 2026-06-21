@@ -167,6 +167,7 @@ class PunchParams:
         0.15, 0.50, 1.00,
     )
     incident_beam_sphere_radius_hkl: float | None = None
+    incident_beam_fit_covariance: bool = False
     # Q-space punch (ROADMAP Phase 6, default since Phase 4).  The punch footprint
     # is the reciprocal-Å⁻¹ resolution floor (per a*,b*,c*); the per-peak fit +
     # φ-tail still modulate it (adaptive), so this reproduces the legacy HKL punch
@@ -409,6 +410,7 @@ def punch_bragg(vol: HKLVolume, params: PunchParams | None = None, *,
         incident_beam_q_margin=p.incident_beam_q_margin,
         incident_beam_ellipsoid_radii_hkl=p.incident_beam_ellipsoid_radii_hkl,
         incident_beam_sphere_radius_hkl=p.incident_beam_sphere_radius_hkl,
+        incident_beam_fit_covariance=p.incident_beam_fit_covariance,
         phi_tail_hkl=p.phi_tail_hkl,
         search_n_mad=p.search_n_mad, search_min_intensity=p.search_min_intensity,
         search_min_prominence=p.search_min_prominence,

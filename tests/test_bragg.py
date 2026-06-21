@@ -305,6 +305,60 @@ def test_incident_beam_ellipsoid_punches_anisotropic_origin_region():
     assert keep[i0, ik09, i0]
 
 
+def test_incident_beam_fit_covariance_follows_streak():
+    # Direct-beam remnant elongated along L at the origin: the covariance fit
+    # should expand along L (beyond the fixed base) yet stay floored along H/K.
+    shape = (41, 41, 41)
+    rng = np.random.default_rng(11)
+    data = rng.uniform(0.5, 1.5, shape)
+    h = np.linspace(-2, 2, shape[0])
+    ub = 2 * np.pi * np.eye(3) / 4.0
+    vol = HKLVolume.from_arrays(
+        data, (h[0], h[-1]), (h[0], h[-1]), (h[0], h[-1]), ub_matrix=ub
+    )
+    i0 = int(np.argmin(np.abs(vol.h_axis)))
+    for l0 in np.arange(-0.6, 0.601, 0.1):
+        il = int(np.argmin(np.abs(vol.l_axis - l0)))
+        vol.data[i0, i0, il] = 100.0
+
+    kw = dict(
+        mode="search",
+        punch_radii=(0.1, 0.1, 0.1),
+        search_min_intensity=1e6,
+        incident_beam_ellipsoid_radii_hkl=(0.2, 0.2, 0.2),
+    )
+    keep_fixed = BraggRemover(**kw).build_mask(vol)
+    keep_fit = BraggRemover(**kw, incident_beam_fit_covariance=True).build_mask(vol)
+
+    il05 = int(np.argmin(np.abs(vol.l_axis - 0.5)))
+    ih05 = int(np.argmin(np.abs(vol.h_axis - 0.5)))
+    # origin punched both ways
+    assert not keep_fixed[i0, i0, i0]
+    assert not keep_fit[i0, i0, i0]
+    # fixed base (0.2) keeps L=0.5; the covariance fit follows the streak there
+    assert keep_fixed[i0, i0, il05]
+    assert not keep_fit[i0, i0, il05]
+    # floored, not inflated sideways: H=0.5 stays kept under the fit
+    assert keep_fit[ih05, i0, i0]
+
+
+def test_incident_beam_fit_covariance_falls_back_when_origin_masked():
+    # No valid origin voxel → fit returns None → fixed-radii punch still applies.
+    vol, _ = _peaky_vol(shape=(41, 41, 41), hkl_range=(-2, 2))
+    i0 = int(np.argmin(np.abs(vol.h_axis)))
+    vol.mask[i0, i0, i0] = False
+    remover = BraggRemover(
+        mode="search",
+        punch_radii=(0.1, 0.1, 0.1),
+        search_min_intensity=1e6,
+        incident_beam_sphere_radius_hkl=0.8,
+        incident_beam_fit_covariance=True,
+    )
+    keep = remover.build_mask(vol)
+    i07 = int(np.argmin(np.abs(vol.h_axis - 0.7)))
+    assert not keep[i07, i0, i0]  # fixed sphere still punches the origin region
+
+
 def test_incident_beam_ellipsoid_takes_precedence_over_sphere():
     vol, _ = _peaky_vol(shape=(41, 41, 41), hkl_range=(-2, 2))
     # sphere r=0.1 would keep H=0.5; ellipsoid rh=0.6 would punch it

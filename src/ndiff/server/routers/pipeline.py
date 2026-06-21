@@ -96,6 +96,9 @@ def build_params(req: PipelineRunRequest) -> PipelineParams:
     if sp.punch_fit_covariance is not None:
         p.punch = dataclasses.replace(
             p.punch, integer_fit_covariance=sp.punch_fit_covariance)
+    if sp.incident_beam_fit_covariance is not None:
+        p.punch = dataclasses.replace(
+            p.punch, incident_beam_fit_covariance=sp.incident_beam_fit_covariance)
     if sp.backfill_method is not None:
         p.backfill = dataclasses.replace(p.backfill, method=sp.backfill_method)
     if sp.flatten_estimator is not None:

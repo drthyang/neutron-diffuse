@@ -14,7 +14,6 @@ import { SliceCanvas } from "../components/SliceCanvas";
 import { Field, HelpTip, RangeSlider, Slider, Switch } from "../components/ui";
 import { useDatasetStore, useInitializeDataset } from "../state/datasetStore";
 import {
-  STAGE_LABELS,
   STAGE_NO,
   usePipelineStore,
   type PunchPlane,
@@ -214,96 +213,6 @@ function ParametricRingViz({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Radial line-shape Ring(|Q|) — the function the selected radial mode fits.
-//
-// `peaks`   → a discrete sum of pseudo-Voigt rings: smooth analytic peaks that
-//             fall to zero between rings (the model can only represent
-//             pseudo-Voigt-shaped lines).
-// `rolling` → a continuous Ring(|Q|) sampled at every shell: a filled profile
-//             with the swept window drawn over one ring and the roll-step
-//             sampling ticks on the axis (no discrete-peak assumption).
-// Schematic, not to scale — `ringWidth` sets the relative peak/window breadth.
-// ---------------------------------------------------------------------------
-const RPROF_QMIN = 1.5;
-const RPROF_QMAX = 10.5;
-const RPROF_CENTERS = [2.7, 5.2, 7.6];
-const RPROF_AMPS = [1.0, 0.62, 0.42];
-
-function pseudoVoigt(q: number, c: number, fwhm: number, eta: number): number {
-  const w = Math.max(fwhm, 1e-3);
-  const sg = w / 2.3548;
-  const g = Math.exp(-0.5 * ((q - c) / sg) ** 2);
-  const l = 1 / (1 + ((q - c) / (0.5 * w)) ** 2);
-  return eta * l + (1 - eta) * g;
-}
-
-function RadialProfileViz({
-  mode,
-  ringWidth,
-}: {
-  mode: string;
-  ringWidth: number;
-}) {
-  const rolling = mode === "rolling";
-  const PX0 = 14;
-  const PX1 = 166;
-  const PY0 = 56; // baseline
-  const PYT = 12; // top
-  const xq = (q: number) => PX0 + ((q - RPROF_QMIN) / (RPROF_QMAX - RPROF_QMIN)) * (PX1 - PX0);
-  const yv = (v: number) => PY0 - v * (PY0 - PYT);
-  // peaks are crisp; rolling shows the same true profile a touch broader/softer
-  const fwhm = Math.max(0.12, ringWidth) * (rolling ? 1.5 : 1.0);
-
-  const { line, area } = useMemo(() => {
-    const n = 200;
-    const pts: [number, number][] = [];
-    for (let i = 0; i <= n; i++) {
-      const q = RPROF_QMIN + (i / n) * (RPROF_QMAX - RPROF_QMIN);
-      let v = 0;
-      for (let r = 0; r < RPROF_CENTERS.length; r++)
-        v += RPROF_AMPS[r] * pseudoVoigt(q, RPROF_CENTERS[r], fwhm, 0.5);
-      pts.push([xq(q), yv(Math.min(v, 1))]);
-    }
-    const l = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
-    const a = `M${PX0} ${PY0} ` + pts.map(([x, y]) => `L${x.toFixed(1)} ${y.toFixed(1)}`).join(" ") + ` L${PX1} ${PY0} Z`;
-    return { line: l, area: a };
-  }, [fwhm]);
-
-  // rolling: the swept window over the middle ring + roll-step sampling ticks
-  const winC = RPROF_CENTERS[1];
-  const winX0 = xq(winC - ringWidth);
-  const winX1 = xq(winC + ringWidth);
-  const ticks = useMemo(() => {
-    const out: number[] = [];
-    for (let q = RPROF_QMIN; q <= RPROF_QMAX + 1e-6; q += 0.45) out.push(xq(q));
-    return out;
-  }, []);
-
-  return (
-    <svg className="rprof" viewBox="0 0 180 70" role="img"
-         aria-label={`Ring(|Q|) radial profile, ${mode} mode`}>
-      {rolling && <path d={area} className="rprof-fill" />}
-      {rolling && (
-        <rect x={winX0} y={PYT - 2} width={Math.max(2, winX1 - winX0)} height={PY0 - PYT + 2}
-              className="rprof-win" />
-      )}
-      <line x1={PX0} y1={PY0} x2={PX1} y2={PY0} className="rprof-axis" />
-      {rolling &&
-        ticks.map((x, i) => (
-          <line key={i} x1={x} y1={PY0} x2={x} y2={PY0 + 3} className="rprof-tick" />
-        ))}
-      {!rolling &&
-        RPROF_CENTERS.map((c, i) => (
-          <line key={i} x1={xq(c)} y1={PY0} x2={xq(c)} y2={PY0 + 3} className="rprof-tick" />
-        ))}
-      <path d={line} className="rprof-line" fill="none" />
-      <text x={PX1} y={PY0 + 10} textAnchor="end" className="rprof-lbl">|Q|</text>
-      <text x={PX0} y={PYT - 3} className="rprof-lbl">Ring(|Q|)</text>
-    </svg>
-  );
-}
-
 // The inner pie is split into `nPatches` equal sectors (the azimuthal bins);
 // the surrounding ring is tinted by the highest texture harmonic
 // T(φ) = cos(nFourier · φ), so the colour lobes count the Fourier order.
@@ -373,6 +282,60 @@ function RingTextureViz({
         {nPatches}
       </text>
     </svg>
+  );
+}
+
+// Closed-form of the fitted ring model, mirroring the actual computation:
+//   parametric → ndiff.preprocessing.parametric_ring (Iᵣ = Σᵢ PVᵢ(|Q|)·Tᵢ(φ))
+//   patched    → ndiff.preprocessing.radial_background (per-patch radial subtraction)
+function RingEquation({
+  model,
+  nFourier,
+  nPatches,
+}: {
+  model: string;
+  nFourier: number;
+  nPatches: number;
+}) {
+  if (model === "parametric") {
+    return (
+      <div className="ring-eqn">
+        <div className="eq">
+          <i>I</i>
+          <sub>ring</sub>(|<i>Q</i>|,&nbsp;φ) = <span className="op">Σ</span>
+          <sub>i</sub> <span className="op">PV</span>
+          <sub>i</sub>(|<i>Q</i>|)&nbsp;·&nbsp;<i>T</i>
+          <sub>i</sub>(φ)
+        </div>
+        <div className="eq sub">
+          <span className="op">PV</span>
+          <sub>i</sub> = η&thinsp;<i>L</i> + (1&nbsp;−&nbsp;η)&thinsp;<i>G</i>
+        </div>
+        <div className="eq sub">
+          <i>T</i>
+          <sub>i</sub>(φ) = <i>a</i>
+          <sub>0</sub> + <span className="op">Σ</span>
+          <sub>n=1</sub>
+          <sup>{nFourier}</sup> (<i>a</i>
+          <sub>n</sub>&thinsp;<span className="op">cos</span>&thinsp;<i>n</i>φ + <i>b</i>
+          <sub>n</sub>&thinsp;<span className="op">sin</span>&thinsp;<i>n</i>φ) ≥ 0
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="ring-eqn">
+      <div className="eq">
+        <i>I</i>
+        <sub>ring</sub>(|<i>Q</i>|,&nbsp;φ) = <span className="op">max</span>(0,&nbsp;
+        <span className="op">prof</span>
+        <sub>k</sub>(|<i>Q</i>|) − <span className="op">base</span>
+        <sub>k</sub>(|<i>Q</i>|))
+      </div>
+      <div className="eq sub">
+        <i>k</i> = patch(φ),&nbsp;&nbsp;<i>k</i> = 1…{nPatches}
+      </div>
+    </div>
   );
 }
 
@@ -957,6 +920,7 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
       incidentBeamQB: st.incidentBeamQB,
       incidentBeamQC: st.incidentBeamQC,
       incidentBeamMargin: st.incidentBeamMargin,
+      incidentBeamFitCovariance: st.incidentBeamFitCovariance,
       punchSliceZoom: st.punchSliceZoom,
       punchSliceContrast: st.punchSliceContrast,
       punchCutH: st.punchCutH,
@@ -974,7 +938,7 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
   const run = usePipelineStore((st) => st.run);
 
   const vizPatches = clampInt(s.ringNPatches, 36, 4, 96);
-  const vizFourier = clampInt(s.ringNFourier, 6, 0, 40);
+  const vizFourier = clampInt(s.ringNFourier, 8, 0, 40);
   const vizRingWidth = clampFloat(s.ringWidth, 0.24, 0.02, 1.0);
   const punchGeom: PunchGeom = {
     r0: clampFloat(s.punchQA, 0.097, 0.005, 0.6),
@@ -1253,131 +1217,149 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
 
       {/* ------------------------------------------------- per-stage cards */}
       <div className="config-cards">
-        <StageCard title={STAGE_LABELS.rings} step={STAGE_NO.rings} className="stage-card-wide">
-          <div className="config-grid">
-            <Field label="Model">
-              <select
-                value={s.ringModel}
-                title="Patched: non-parametric per-azimuthal-patch radial subtraction. Parametric: separable pseudo-Voigt(|Q|) × per-ring Fourier texture, fit from thin radial shells + binning-free azimuthal LS (statistics don't vary with |Q|)."
-                onChange={(e) => patch({ ringModel: e.target.value })}
-              >
-                <option value="patched">Patched (per-patch)</option>
-                <option value="parametric">Parametric (pseudo-Voigt)</option>
-              </select>
-            </Field>
-            <Field label="Slice axis">
-              <select
-                value={s.ringSliceAxis}
-                title="Axis sliced over when fitting the powder rings plane-by-plane"
-                onChange={(e) => patch({ ringSliceAxis: e.target.value })}
-              >
-                <option value="H">H · fit 0kl planes</option>
-                <option value="K">K · fit h0l planes</option>
-                <option value="L">L · fit hk0 planes</option>
-              </select>
-            </Field>
-          </div>
-          {s.ringModel === "parametric" && (
-            <div className="config-grid">
-              <Field label="Radial mode">
-                <select
-                  value={s.ringRadialMode}
-                  title="Rolling: a thick window swept Qmin→Qmax fits a continuous Ring(|Q|) × per-shell texture (no discrete peaks; thicker = smoother). Peaks: detect discrete rings and fit a pseudo-Voigt each."
-                  onChange={(e) => patch({ ringRadialMode: e.target.value })}
-                >
-                  <option value="rolling">Rolling (continuous)</option>
-                  <option value="peaks">Peaks (pseudo-Voigt)</option>
-                </select>
-              </Field>
-              <Field
-                label={s.ringRadialMode === "rolling" ? "Window (Å⁻¹)" : "Ring width (Å⁻¹)"}
-              >
-                <input
-                  type="number"
-                  min="0.02"
-                  step="0.02"
-                  placeholder="0.24"
-                  value={s.ringWidth}
-                  title={
-                    s.ringRadialMode === "rolling"
-                      ? "Rolling-window half-width in |Q| (Å⁻¹). Thicker = more azimuthal voxels per shell = smoother texture."
-                      : "Max powder-ring full width / SNIP baseline window in |Q| (Å⁻¹). Broader features are kept as diffuse."
-                  }
-                  onChange={(e) => patch({ ringWidth: e.target.value })}
-                />
-              </Field>
-            </div>
-          )}
-          <div className="config-grid">
-            {s.ringModel === "patched" && (
-              <Field label="Patches (n)">
-                <input
-                  type="number"
-                  min="4"
-                  step="1"
-                  placeholder="36"
-                  value={s.ringNPatches}
-                  title="Number of azimuthal patches the powder rings are divided into"
-                  onChange={(e) => patch({ ringNPatches: e.target.value })}
-                />
-              </Field>
-            )}
-            <Field label="Fourier order">
-              <input
-                type="number"
-                min="0"
-                step="1"
-                placeholder="6"
-                value={s.ringNFourier}
-                title="Fourier order of the azimuthal texture T(φ) modelling the powder rings"
-                onChange={(e) => patch({ ringNFourier: e.target.value })}
-              />
-            </Field>
-          </div>
-          <div className="stage-visual">
-            {s.ringModel === "parametric" ? (
-              <>
-                <RadialProfileViz mode={s.ringRadialMode} ringWidth={vizRingWidth} />
-                <ParametricRingViz
-                  nFourier={vizFourier}
-                  radialMode={s.ringRadialMode}
-                  ringWidth={vizRingWidth}
-                />
-              </>
-            ) : (
-              <RingTextureViz nPatches={vizPatches} nFourier={vizFourier} />
-            )}
-            <div className="ring-viz-cap">
-              {s.ringModel === "parametric" ? (
-                s.ringRadialMode === "rolling" ? (
-                  <>
-                    continuous Ring(|Q|) swept Qmin→Qmax · texture order{" "}
-                    <b>{vizFourier}</b>
-                  </>
-                ) : (
-                  <>
-                    pseudo-Voigt(|Q|) × per-ring texture order <b>{vizFourier}</b>
-                  </>
-                )
-              ) : (
-                <>
-                  pie = <b>{vizPatches}</b> azimuthal patches · ring = texture order{" "}
-                  <b>{vizFourier}</b>
-                </>
-              )}
-            </div>
-          </div>
-        </StageCard>
-
         <StageCard
-          title="Punch → 3D-ΔPDF"
-          step={`${STAGE_NO.punch}–${STAGE_NO.pdf}`}
+          title="3D-ΔPDF Workflow"
+          step={`${STAGE_NO.rings}–${STAGE_NO.pdf}`}
           className="stage-card-wide punch-stage-card"
         >
           <div className="punch-workspace">
             <div className="punch-controls">
-              <div className="config-grid-3 punch-basis">
-                <Field label="Method">
+              <div className="punch-group ring-removal-group">
+                <div className="punch-group-head">
+                  <span className="punch-group-title">Ring removal</span>
+                  <HelpTip>
+                    Powder-ring subtraction before punching. Patched removes a
+                    per-azimuthal-patch radial background; parametric fits a
+                    separable Ring(|Q|) × Fourier-texture model.
+                  </HelpTip>
+                </div>
+                <div className="ring-removal-body">
+                  <div className="ring-removal-controls">
+                    <Field label="Model">
+                      <select
+                        value={s.ringModel}
+                        title="Patched: non-parametric per-azimuthal-patch radial subtraction. Parametric: separable pseudo-Voigt(|Q|) × per-ring Fourier texture, fit from thin radial shells + binning-free azimuthal LS (statistics don't vary with |Q|)."
+                        onChange={(e) => patch({ ringModel: e.target.value })}
+                      >
+                        <option value="patched">Patched (per-patch)</option>
+                        <option value="parametric">Parametric (pseudo-Voigt)</option>
+                      </select>
+                    </Field>
+                    <Field label="Slice axis">
+                      <select
+                        value={s.ringSliceAxis}
+                        title="Axis sliced over when fitting the powder rings plane-by-plane"
+                        onChange={(e) => patch({ ringSliceAxis: e.target.value })}
+                      >
+                        <option value="H">H · fit 0kl planes</option>
+                        <option value="K">K · fit h0l planes</option>
+                        <option value="L">L · fit hk0 planes</option>
+                      </select>
+                    </Field>
+                    {s.ringModel === "parametric" && (
+                      <>
+                        <Field label="Radial mode">
+                          <select
+                            value={s.ringRadialMode}
+                            title="Rolling: a thick window swept Qmin→Qmax fits a continuous Ring(|Q|) × per-shell texture (no discrete peaks; thicker = smoother). Peaks: detect discrete rings and fit a pseudo-Voigt each."
+                            onChange={(e) => patch({ ringRadialMode: e.target.value })}
+                          >
+                            <option value="rolling">Rolling (continuous)</option>
+                            <option value="peaks">Peaks (pseudo-Voigt)</option>
+                          </select>
+                        </Field>
+                        <Field
+                          label={s.ringRadialMode === "rolling" ? "Window (Å⁻¹)" : "Ring width (Å⁻¹)"}
+                        >
+                          <input
+                            type="number"
+                            min="0.02"
+                            step="0.02"
+                            placeholder="0.24"
+                            value={s.ringWidth}
+                            title={
+                              s.ringRadialMode === "rolling"
+                                ? "Rolling-window half-width in |Q| (Å⁻¹). Thicker = more azimuthal voxels per shell = smoother texture."
+                                : "Max powder-ring full width / SNIP baseline window in |Q| (Å⁻¹). Broader features are kept as diffuse."
+                            }
+                            onChange={(e) => patch({ ringWidth: e.target.value })}
+                          />
+                        </Field>
+                      </>
+                    )}
+                    {s.ringModel === "patched" && (
+                      <Field label="Patches (n)">
+                        <input
+                          type="number"
+                          min="4"
+                          step="1"
+                          placeholder="36"
+                          value={s.ringNPatches}
+                          title="Number of azimuthal patches the powder rings are divided into"
+                          onChange={(e) => patch({ ringNPatches: e.target.value })}
+                        />
+                      </Field>
+                    )}
+                    <Field label="Fourier order">
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        placeholder="8"
+                        value={s.ringNFourier}
+                        title="Fourier order of the azimuthal texture T(φ) modelling the powder rings"
+                        onChange={(e) => patch({ ringNFourier: e.target.value })}
+                      />
+                    </Field>
+                  </div>
+                  <div className="ring-removal-spacer" aria-hidden="true">
+                    <span className="ring-removal-spacer-hint">
+                      radial PV fit · ring-width estimate
+                    </span>
+                  </div>
+                  <div className="ring-removal-figure">
+                    <div className="ring-removal-viz">
+                      {s.ringModel === "parametric" ? (
+                        <ParametricRingViz
+                          nFourier={vizFourier}
+                          radialMode={s.ringRadialMode}
+                          ringWidth={vizRingWidth}
+                        />
+                      ) : (
+                        <RingTextureViz nPatches={vizPatches} nFourier={vizFourier} />
+                      )}
+                      <div className="ring-viz-cap">
+                        {s.ringModel === "parametric" ? (
+                          <>
+                            azimuthal Fourier texture · order <b>{vizFourier}</b>
+                          </>
+                        ) : (
+                          <>
+                            pie = <b>{vizPatches}</b> azimuthal patches · ring = texture order{" "}
+                            <b>{vizFourier}</b>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <RingEquation
+                      model={s.ringModel}
+                      nFourier={vizFourier}
+                      nPatches={vizPatches}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="punch-group">
+                <div className="punch-group-head">
+                  <span className="punch-group-title">Punch</span>
+                  <HelpTip>
+                    Detection method, the intensity floor above background, and
+                    which peaks to punch — integer nodes, |Q|-shell search, or both.
+                  </HelpTip>
+                </div>
+                <div className="config-grid-3 punch-basis">
+                  <Field label="Method">
                   <select
                     value={s.punchMethod}
                     title="Bragg-punch algorithm (more shapes coming)"
@@ -1407,6 +1389,7 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                     <option value="both">both</option>
                   </select>
                 </Field>
+                </div>
               </div>
 
               <div className="punch-group">
@@ -1550,6 +1533,20 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                       onChange={(e) => patch({ incidentBeamMargin: e.target.value })}
                     />
                   </Field>
+                </div>
+                <div className="switch-row">
+                  <Switch
+                    label="Fit ellipsoid (covariance)"
+                    checked={s.incidentBeamFitCovariance}
+                    onChange={(v) => patch({ incidentBeamFitCovariance: v })}
+                  />
+                  <HelpTip>
+                    Fit a tilted ellipsoid to the direct-beam remnant at the origin
+                    during punching (analogue of the Bragg footprint fit), floored at
+                    the radii above so it only follows/expands the real beam shape.
+                    The preview shows the UB-derived floor; the fitted tilt is best
+                    checked in the punched slices.
+                  </HelpTip>
                 </div>
               </div>
 

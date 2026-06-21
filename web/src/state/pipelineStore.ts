@@ -59,6 +59,7 @@ interface PipelineConfig {
   incidentBeamQB: string;
   incidentBeamQC: string;
   incidentBeamMargin: string;
+  incidentBeamFitCovariance: boolean; // fit a tilted ellipsoid to the direct beam
   punchSliceZoom: number;
   punchSliceContrast: number;
   punchCutH: number;
@@ -95,10 +96,10 @@ function closeStream() {
 export const usePipelineStore = create<PipelineState>((set, get) => ({
   flatten: true,
   force: false,
-  ringModel: "patched",
+  ringModel: "parametric",
   ringRadialMode: "rolling",
   ringNPatches: "",
-  ringNFourier: "",
+  ringNFourier: "8",
   ringSliceAxis: "H",
   ringWidth: "",
   punchMinI: "",
@@ -114,6 +115,7 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
   incidentBeamQB: "",
   incidentBeamQC: "",
   incidentBeamMargin: "",
+  incidentBeamFitCovariance: false,
   punchSliceZoom: 1,
   punchSliceContrast: 1.35,
   punchCutH: 0,
@@ -161,6 +163,7 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
     if (s.incidentBeamQC) params.incident_beam_q_radius_c = Number(s.incidentBeamQC);
     if (s.incidentBeamMargin) params.incident_beam_q_margin = Number(s.incidentBeamMargin);
     if (s.punchFitCovariance) params.punch_fit_covariance = true;
+    if (s.incidentBeamFitCovariance) params.incident_beam_fit_covariance = true;
     if (s.backfillMethod) params.backfill_method = s.backfillMethod;
     if (s.flattenEstimator) params.flatten_estimator = s.flattenEstimator;
     if (s.pdfApod) params.pdf_apodization = s.pdfApod;

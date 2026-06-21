@@ -258,6 +258,12 @@ class BraggRemover:
     incident_beam_q_margin: float = 0.0
     incident_beam_ellipsoid_radii_hkl: tuple[float, float, float] | None = None
     incident_beam_sphere_radius_hkl: float | None = None
+    # Fit a tilted 3×3 covariance ellipsoid to the direct-beam remnant at the
+    # origin (analogue of ``integer_fit_covariance`` for Bragg peaks).  The fit
+    # is floored at the configured direct-beam radii, so it only follows/expands
+    # the real beam shape, never punches smaller; falls back to the fixed punch
+    # when the origin is masked or no excess is found.
+    incident_beam_fit_covariance: bool = False
     force_origin: bool | None = None
     phi_tail_hkl: float = 0.0
     # --- Q-space punch (opt-in; ROADMAP Phase 6 / Phase 2) ---
@@ -1003,9 +1009,104 @@ class BraggRemover:
             )
         return keep
 
+    def _incident_beam_base_radii(
+        self, vol: HKLVolume
+    ) -> tuple[float, float, float] | None:
+        """HKL half-radii the fixed direct-beam punch would use (the fit floor)."""
+        if self.incident_beam_q_radii is not None:
+            radii_q = tuple(
+                max(0.0, float(r) + max(0.0, float(self.incident_beam_q_margin)))
+                for r in self.incident_beam_q_radii
+            )
+            if min(radii_q) <= 0:
+                return None
+            shape = self._shape_matrix_from_q_radii(vol, radii_q)  # type: ignore[arg-type]
+            return self._ellipsoid_bounding_radii(shape)
+        if self.incident_beam_ellipsoid_radii_hkl is not None:
+            return tuple(max(0.0, float(r)) for r in self.incident_beam_ellipsoid_radii_hkl)  # type: ignore[return-value]
+        if self.incident_beam_sphere_radius_hkl is not None:
+            r = max(0.0, float(self.incident_beam_sphere_radius_hkl))
+            return (r, r, r)
+        rh, rk, rl = self._radii()
+        m = self.incident_beam_margin
+        if self.incident_beam_radii is None:
+            return (2.0 * rh + m, 2.0 * rk + m, 2.0 * rl + m)
+        return tuple(float(r) + m for r in self.incident_beam_radii)  # type: ignore[return-value]
+
+    def _fit_incident_beam_shape(
+        self, vol: HKLVolume
+    ) -> NDArray[np.float64] | None:
+        """Fit a tilted covariance ellipsoid to the direct-beam remnant.
+
+        Returns an origin-centred HKL shape matrix ``A`` (``δᵀAδ ≤ 1``) whose
+        eigen-radii are the weighted second moments about the origin, floored at
+        the configured direct-beam radii and capped at ``max_radius_scale``×; or
+        ``None`` when the origin is unusable, so the caller falls back to the
+        fixed punch.
+        """
+        center = self._incident_beam_center(vol)
+        if center is None:
+            return None
+        base = self._incident_beam_base_radii(vol)
+        if base is None or min(base) <= 0:
+            return None
+        steps = tuple(abs(s) for s in self._steps(vol))
+        max_r = tuple(float(r) * float(self.max_radius_scale) for r in base)
+        n_sigma = max(float(self.integer_fit_radius_n_sigma), 0.0)
+
+        ih, ik, il = center
+        nh, nk, nl = vol.shape
+        wph = max(1, int(round(max_r[0] / steps[0])))
+        wpk = max(1, int(round(max_r[1] / steps[1])))
+        wpl = max(1, int(round(max_r[2] / steps[2])))
+        hs, he = max(0, ih - wph), min(nh, ih + wph + 1)
+        ks, ke = max(0, ik - wpk), min(nk, ik + wpk + 1)
+        ls, le = max(0, il - wpl), min(nl, il + wpl + 1)
+        win = vol.data[hs:he, ks:ke, ls:le]
+        valid = vol.mask[hs:he, ks:ke, ls:le] & np.isfinite(win)
+        if int(valid.sum()) < 6:
+            return None
+        wv = np.where(valid, win, np.nan)
+        peak = float(np.nanmax(wv))
+        local_bg = float(np.nanmedian(wv))
+        peak_excess = max(peak - local_bg, 0.0)
+        if peak_excess <= 0:
+            return None
+        excess = np.where(valid, win - local_bg, 0.0)
+        threshold = max(0.0, float(self.integer_fit_threshold_frac)) * peak_excess
+        fit_mask = valid & (excess >= threshold)
+        if int(fit_mask.sum()) < 6:
+            fit_mask = valid & (excess > 0)
+        if int(fit_mask.sum()) < 6:
+            return None
+
+        H, K, L = np.meshgrid(
+            vol.h_axis[hs:he], vol.k_axis[ks:ke], vol.l_axis[ls:le], indexing="ij"
+        )
+        weights = np.where(fit_mask, excess, 0.0)
+        wsum = float(weights.sum())
+        if wsum <= 0:
+            return None
+        # Second moments about the origin (the beam is centred at 0 by design).
+        d = [H, K, L]
+        cov = np.empty((3, 3))
+        for i in range(3):
+            for j in range(i, 3):
+                cov[i, j] = cov[j, i] = float((weights * d[i] * d[j]).sum() / wsum)
+        shape = self._shape_from_covariance(cov, steps, base, max_r, n_sigma)
+        tail = max(0.0, float(self.incident_beam_phi_tail_hkl))
+        if tail > 0:
+            shape = self._fold_phi_tail(vol, shape, (0.0, 0.0, 0.0), tail)
+        return shape
+
     def _punch_incident_beam(self, vol: HKLVolume, keep: NDArray[np.bool_]) -> NDArray[np.bool_]:
         if not self._punches_incident_beam():
             return keep
+        if self.incident_beam_fit_covariance:
+            shape = self._fit_incident_beam_shape(vol)
+            if shape is not None:
+                return self._punch_origin_shape_matrix(vol, keep, shape)
+            # fit unavailable (masked origin / no excess) → fixed-radii fallback
         if self.incident_beam_q_radii is not None:
             radii_q = tuple(
                 max(0.0, float(r) + max(0.0, float(self.incident_beam_q_margin)))

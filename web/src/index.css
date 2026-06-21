@@ -1130,7 +1130,7 @@ input[type="range"]::-moz-range-track {
 }
 .punch-preview-meta,
 .punch-preview-empty {
-  max-width: var(--punch-slice-size);
+  max-width: 100%;
   color: var(--text-3);
   font-size: 11px;
   line-height: 1.35;
@@ -1147,19 +1147,19 @@ input[type="range"]::-moz-range-track {
   border: 1px solid var(--border);
   background: var(--surface-2);
 }
+/* Stacked layout: parameter groups in a band across the top, the preview
+   (sliders + orthoslices) centred below. */
 .punch-workspace {
-  display: grid;
-  grid-template-columns: minmax(290px, 1fr) minmax(
-      calc(var(--punch-slice-size) * 3 + 20px),
-      calc(var(--punch-slice-size) * 3 + 20px)
-    );
-  gap: 14px 18px;
-  align-items: start;
-}
-.punch-controls {
   display: flex;
   flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.punch-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+  align-items: stretch;
   min-width: 0;
 }
 .punch-controls .config-grid,
@@ -1178,6 +1178,83 @@ input[type="range"]::-moz-range-track {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
+}
+/* Ring removal (stage 1) spans the full params band.  Internally it mirrors the
+   3-column params grid: the controls sit in a single 1/3-width column (same
+   width as the Punch group below), and the schematic charts + closed-form
+   equation fill the remaining 2/3. */
+.ring-removal-group {
+  grid-column: 1 / -1;
+}
+.ring-removal-body {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+.ring-removal-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+/* middle 1/3 reserved for the upcoming radial-PV ring-width fit */
+.ring-removal-spacer {
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  min-height: 120px;
+}
+.ring-removal-spacer-hint {
+  color: var(--text-3);
+  opacity: 0.65;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-align: center;
+  padding: 0 10px;
+}
+/* right 1/3: the texture schematic on top, equations centred below */
+.ring-removal-figure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.ring-removal-viz {
+  width: 168px;
+}
+/* closed-form ring model, mirroring the fitted computation */
+.ring-eqn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  overflow-x: auto;
+  font-family: "Cambria Math", "STIX Two Math", "Palatino Linotype", Georgia, serif;
+}
+.ring-eqn .eq {
+  font-size: 15px;
+  color: var(--text);
+  white-space: nowrap;
+  text-align: center;
+}
+.ring-eqn .eq.sub {
+  font-size: 13px;
+  color: var(--text-2);
+}
+.ring-eqn i {
+  font-style: italic;
+}
+.ring-eqn .op {
+  font-style: normal;
+}
+.ring-eqn sub,
+.ring-eqn sup {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 0.66em;
 }
 .punch-group-head {
   display: flex;
@@ -1216,19 +1293,17 @@ input[type="range"]::-moz-range-track {
   gap: 10px;
 }
 .punch-preview-pane {
-  align-self: start;
   width: 100%;
-  justify-self: center;
 }
 .punch-preview-grid {
   display: grid;
-  grid-template-columns: repeat(3, var(--punch-slice-size));
-  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
   width: 100%;
 }
 .punch-preview-panel {
   min-width: 0;
-  width: var(--punch-slice-size);
+  width: 100%;
 }
 .punch-preview-panel-head {
   display: flex;
@@ -1656,12 +1731,17 @@ input[type="range"]::-moz-range-track {
     grid-column: 1;
     grid-row: auto;
   }
-  .punch-workspace,
-  .punch-preview-controls {
-    grid-template-columns: 1fr;
+  .punch-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .punch-preview-controls {
+    grid-template-columns: 1fr;
     display: flex;
+  }
+}
+@media (max-width: 640px) {
+  .punch-controls {
+    grid-template-columns: 1fr;
   }
 }
 
