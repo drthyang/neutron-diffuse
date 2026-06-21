@@ -2,3 +2,8 @@ node_modules
 dist
 *.local
 .DS_Store
+
+# Baked ΔPDF volume assets (scripts/export_web_assets.py). Generated locally and
+# NOT committed — they contain experimental data that must not be made public.
+# Generate them at deploy time if/when a public dataset is approved.
+public/data/

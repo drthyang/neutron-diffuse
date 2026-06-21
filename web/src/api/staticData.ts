@@ -51,15 +51,19 @@ interface Volume {
   data: Float32Array; // length nx*ny*nz, C-order [ix, iy, iz]
 }
 
+const EMPTY_MANIFEST: Manifest = { version: 0, mode: "static", stride: 0, datasets: [] };
+
 let manifestPromise: Promise<Manifest> | null = null;
 const volumeCache = new Map<string, Promise<Volume>>();
 
+// Load the manifest, degrading to an empty manifest when no data is published
+// (e.g. the public Pages build ships no volumes). The viewers then show their
+// normal "no ΔPDF outputs" empty state instead of throwing.
 function loadManifest(): Promise<Manifest> {
   if (!manifestPromise) {
-    manifestPromise = fetch(`${BASE}data/manifest.json`).then((r) => {
-      if (!r.ok) throw new Error(`manifest ${r.status} ${r.statusText}`);
-      return r.json() as Promise<Manifest>;
-    });
+    manifestPromise = fetch(`${BASE}data/manifest.json`)
+      .then((r) => (r.ok ? (r.json() as Promise<Manifest>) : EMPTY_MANIFEST))
+      .catch(() => EMPTY_MANIFEST);
   }
   return manifestPromise;
 }
