@@ -564,10 +564,12 @@ input[type="range"]::-moz-range-track {
   color: var(--text-2);
 }
 
-/* colormap preview strip */
+/* colormap preview strip — capped to the select width so it reads the same
+   whether the colormap field sits inline or wraps onto its own toolbar line */
 .cmap-bar {
   display: block;
   width: 100%;
+  max-width: 260px;
   height: 6px;
   border-radius: 3px;
   border: 1px solid var(--border);

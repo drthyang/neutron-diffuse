@@ -7,7 +7,14 @@ import { useEffect, useMemo } from "react";
 import { useDatasets, useDpdfMeta } from "../api/hooks";
 import { COLORMAPS, DIVERGING_NAMES, DIVERGING_NAME } from "../colormaps/luts";
 import { DpdfPanel } from "../components/DpdfPanel";
-import { EmptyState, Field, MetaStrip, Slider, Switch } from "../components/ui";
+import {
+  ColormapBar,
+  EmptyState,
+  Field,
+  MetaStrip,
+  Slider,
+  Switch,
+} from "../components/ui";
 import { useDatasetStore, useInitializeDataset } from "../state/datasetStore";
 import { useDpdfStore } from "../state/dpdfStore";
 
@@ -114,6 +121,7 @@ export function DeltaPdfViewer() {
               <option key={name} value={name}>{name}</option>
             ))}
           </select>
+          <ColormapBar lut={lut} />
         </Field>
       </div>
 
