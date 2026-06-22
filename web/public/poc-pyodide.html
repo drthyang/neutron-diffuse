@@ -43,6 +43,7 @@
     <label class="file" style="opacity:.45; pointer-events:none" id="filelabel">
       3 · Run on your .nxs/.h5<input id="file" type="file" accept=".h5,.nxs,.hdf5" hidden />
     </label>
+    <button id="bench" disabled>4 · Benchmark (Pyodide overhead)</button>
   </div>
 
   <div id="log">Ready. Click “Boot Pyodide” to start (first load pulls ~15–25 MB of WASM).</div>
@@ -84,6 +85,7 @@ await micropip.install(${JSON.stringify(WHEEL)}, deps=False)
     const ver = pyodide.runPython("import ndiff; ndiff.__version__");
     log(`ndiff ${ver} imported ✓  — full scientific stack running in-browser`, "ok");
     document.getElementById("selftest").disabled = false;
+    document.getElementById("bench").disabled = false;
     const fl = document.getElementById("filelabel");
     fl.style.opacity = "1"; fl.style.pointerEvents = "auto";
   } catch (err) {
@@ -117,6 +119,41 @@ ny, nx, sl.tobytes()
     log("Self-test ✓ — numpy + scipy FFT + ndiff produced a ΔPDF in the browser.", "ok");
   } catch (err) {
     log("Self-test failed: " + err, "err");
+  }
+  e.target.disabled = false;
+};
+
+document.getElementById("bench").onclick = async (e) => {
+  e.target.disabled = true;
+  try {
+    log("Benchmarking Pyodide vs native (FFT, percentile, Python loop)…");
+    const out = pyodide.runPython(`
+import time, math, numpy as np
+import scipy.fft as sfft
+rng = np.random.default_rng(0)
+
+a = rng.standard_normal((256,256,256))
+t=time.perf_counter(); sfft.fftn(a); fft=time.perf_counter()-t
+
+b = rng.standard_normal(48_000_000)
+t=time.perf_counter()
+for _ in range(20): np.percentile(b[:2_400_000], [50,98])
+pct=time.perf_counter()-t
+
+t=time.perf_counter()
+s=0.0
+for i in range(3_000_000): s += math.sin(i*0.001)*0.5
+loop=time.perf_counter()-t
+f"{fft:.3f},{pct:.3f},{loop:.3f}"
+`);
+    const [fft, pct, loop] = out.split(",").map(Number);
+    const nat = { fft: 0.160, pct: 0.369, loop: 0.174 };
+    log(`FFT 256³       : ${fft.toFixed(3)}s  (native 0.160s → ${(fft/nat.fft).toFixed(1)}× slower)`, "warn");
+    log(`percentile ×20 : ${pct.toFixed(3)}s  (native 0.369s → ${(pct/nat.pct).toFixed(1)}× slower)`, "warn");
+    log(`Python loop 3M : ${loop.toFixed(3)}s  (native 0.174s → ${(loop/nat.loop).toFixed(1)}× slower)`, "warn");
+    log("Benchmark ✓", "ok");
+  } catch (err) {
+    log("Benchmark failed: " + err, "err");
   }
   e.target.disabled = false;
 };

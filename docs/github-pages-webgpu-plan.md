@@ -70,6 +70,39 @@ all client-side, no server. This supersedes the pre-baked static-data milestones
 below for the *interactive* app; WebGPU becomes a pure performance optimization
 (profile first; accelerate the 3D FFT if it dominates).
 
+## Profiling results — WebGPU-FFT is NOT the lever (measured)
+
+Per-stage wall-clock on the real 22 K volume (48 M voxels), native
+(`scripts/profile_pipeline.py`), and Pyodide overhead from an in-browser
+benchmark (`web/public/poc-pyodide.html`, button 4):
+
+| Stage | Native | Share | Pyodide ≈ |
+|---|--:|--:|--:|
+| **remove_rings** | **78.3 s** | **71%** | ~2× |
+| punch_bragg | 15.9 s | 14% | ~2× |
+| backfill | 6.6 s | 6% | ~1.7× |
+| flatten | 5.6 s | 5% | ~1.7× |
+| compute_delta_pdf (FFT) | 2.8 s | 2.5% | 1.9× |
+| invert_delta_pdf (FFT) | 1.8 s | 1.6% | 1.9× |
+| **total compute** | **111 s** | | **≈ 3.5–4 min in browser** |
+
+Pyodide micro-overhead measured: 3D FFT 1.9×, percentile-reduction 1.5×, pure
+Python loop 2.3× — all modest, so the full pipeline is ~2× native in the browser.
+
+**Conclusions:**
+1. **The 3D FFT is 4% of compute time** — a WebGPU FFT would save ~4 s native /
+   ~9 s browser. **Not worth building.** Drop the WebGPU-FFT milestone.
+2. **Ring removal is 71%** — the only stage worth optimizing. It's an irregular
+   per-patch fit/percentile workload (poor GPU fit), so the win is **algorithmic
+   (vectorize the numpy / kill Python loops)**, which helps native *and* browser.
+3. Pyodide is only ~2× native, so the in-browser pipeline is usable today
+   (~3.5–4 min); optimizing ring removal could bring it under ~1 min.
+
+Next optimization target: profile inside `remove_rings`
+(`ndiff/preprocessing/parametric_ring.py`, `radial_background.py`) for Python-level
+loops to vectorize. WebGPU stays shelved unless a future stage is both dominant
+and GPU-friendly.
+
 ## Why WebGPU (vs WASM / WebGL)
 
 - **Slicing**: upload each volume once as a `r16float` 3D texture; a cut is a
