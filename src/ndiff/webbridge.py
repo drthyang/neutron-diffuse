@@ -49,6 +49,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "setup",
+    "inspect_input",
     "load_input",
     "make_demo_input",
     "run",
@@ -60,6 +61,17 @@ __all__ = [
     "consistency_meta_json",
     "consistency_slice",
 ]
+
+# In-browser memory budget.  Pyodide runs in a 32-bit-WASM heap, so a full
+# float64 reduction of a large volume can simply not fit (see the P4 memory
+# notes in docs/browser-hosted-app-plan.md).  The Bragg-punch stage dominates
+# peak memory at roughly 8 live volume-sized float64 arrays (measured: ~3 GB at
+# 48 M voxels), so the per-voxel peak is ~8 × 8 bytes.  Volumes whose estimated
+# peak exceeds the budget are refused at load with a clear message rather than
+# allowed to crash mid-pipeline with a numpy MemoryError.  Native ``ndiff-web``
+# has no such limit; this gate lives only here, in the browser bridge.
+_PIPELINE_PEAK_BYTES_PER_VOXEL = 8 * 8
+_BROWSER_PEAK_BUDGET_BYTES = 1_500_000_000  # ~1.5 GB conservative WASM headroom
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +123,64 @@ def _safe_stem(name: str) -> str:
             break
     stem = stem.strip() or "volume"
     return stem
+
+
+def _peek_voxel_count(path: Path) -> tuple[tuple[int, ...], int]:
+    """Signal-grid shape + voxel count from HDF5 *metadata* only (no array read).
+
+    Handles both supported layouts — Mantid ``MDHistoWorkspace/data/signal`` and
+    ndiff ``entry/data``.  Reading ``Dataset.shape`` never loads the data, so this
+    is safe to call on a volume too large to fit in memory.  Returns ``((), 0)``
+    for an unrecognised file (callers then skip the size gate).
+    """
+    import h5py
+
+    with h5py.File(path, "r") as f:
+        if "MDHistoWorkspace" in f:
+            shape = tuple(f["MDHistoWorkspace/data/signal"].shape)
+        elif "entry" in f and "data" in f["entry"]:
+            shape = tuple(f["entry/data"].shape)
+        else:
+            return (), 0
+    n = 1
+    for s in shape:
+        n *= int(s)
+    return shape, n
+
+
+def inspect_input(name: str, tmp_path: str) -> str:
+    """Pre-flight memory estimate for an uploaded volume (metadata only).
+
+    Reads just the signal-grid shape — never the arrays — so it cannot itself run
+    out of memory, then estimates the full-pipeline peak and compares it to the
+    browser budget.  Returns JSON ``{shape, n_voxels, est_peak_mb, ok, message}``;
+    the engine refuses to load when ``ok`` is false, surfacing *message* instead
+    of letting the reduction crash with an opaque numpy ``MemoryError``.
+    """
+    shape, n = _peek_voxel_count(Path(tmp_path))
+    est_peak = n * _PIPELINE_PEAK_BYTES_PER_VOXEL
+    ok = n == 0 or est_peak <= _BROWSER_PEAK_BUDGET_BYTES
+    budget_voxels = _BROWSER_PEAK_BUDGET_BYTES // _PIPELINE_PEAK_BYTES_PER_VOXEL
+
+    message = ""
+    if not ok:
+        dims = "×".join(str(s) for s in shape)
+        message = (
+            f"“{Path(name).name}” is {dims} ({n / 1e6:.1f} M voxels). Reducing it "
+            f"would need roughly {est_peak / 1e9:.1f} GB of browser memory — more "
+            f"than the in-browser engine can hold (it targets volumes up to about "
+            f"{budget_voxels / 1e6:.0f} M voxels). For full-resolution data this "
+            f"large, run the native build, which has no memory limit and opens the "
+            f"same interface:\n"
+            f'    pip install "neutron-diffuse[web]"  &&  ndiff-web'
+        )
+    return _json({
+        "shape": list(shape),
+        "n_voxels": n,
+        "est_peak_mb": est_peak / 1e6,
+        "ok": ok,
+        "message": message,
+    })
 
 
 def load_input(name: str, tmp_path: str) -> str:

@@ -125,12 +125,34 @@ wheel before `vite build` (with a data-leak guard).
   bar while the ~15 MB WASM downloads — replaces the log-line-only approach.
 - **Responsive UI**: the main thread is never blocked; React repaints freely
   while the Worker drives numpy/scipy stages over minutes.
+- **Loader memory**: `ndiff/io/mantid_nxs.py` `_assemble` rewritten to read +
+  transpose one array at a time (freeing each file-order temp), compute σ in
+  place, and `astype(copy=False)` — peak load 1.88 GB → 1.04 GB at 48 M voxels,
+  byte-identical output.
 
-Remaining nice-to-haves (low priority):
-- Memory budget: downsample option for very large volumes (browsers cap WASM at
-  ~2–4 GB). Current demo + typical single-T volumes are well within budget.
-- Mobile caveat documentation.
-- Optional brotli compression on the wheel.
+### Memory reality at full resolution (measured 2026-06-22)
+Pyodide is a **32-bit-WASM heap**; large float64 volumes do not fit. Measured
+native peak-RSS at 301×401×401 (= 48 M voxels, the size a user hit):
+load ~1 GB, ring removal +0.5 GB, **Bragg punch +1.9 GB**, padded ΔPDF FFT ~1 GB
+complex array → **full-pipeline peak ≈ 3 GB**. One real browser refused
+allocations at ~1 GB, i.e. the volume cannot even be *held* loaded in float64.
+
+**Decision (maintainer, 2026-06-22): native for full-res.** The in-browser
+build targets modest volumes / sharing / the demo; full-resolution data goes
+through native `ndiff-web` (same React UI, no memory limit). Rather than crash
+mid-pipeline with a numpy `MemoryError`, the browser now **pre-flights** every
+upload: `ndiff.webbridge.inspect_input` reads only the HDF5 signal *shape* (no
+array load, so it can't OOM), estimates the full-pipeline peak
+(`_PIPELINE_PEAK_BYTES_PER_VOXEL = 8×8`), and the Worker's `load_file` case
+rejects volumes over `_BROWSER_PEAK_BUDGET_BYTES` (~1.5 GB → ~23 M voxels) with
+a clear message pointing to the native build. Native loaders are untouched.
+
+Deferred (only if browser full-res is ever required): **float32 in-browser
+mode** — would ~halve memory but needs a precision flag threaded through *both*
+readers (note `hkl_reader._load_hdf5` hard-casts to float64 on read) and every
+transform, plus validation vs float64; even then the punch spike (~0.95 GB) is
+borderline. Do **not** silently downsample reciprocal space (blurs Bragg peaks,
+changing punch). Other low-pri: mobile caveat docs, optional brotli on the wheel.
 
 Local dev for the in-browser build: `npm run dev:pyodide` (loads `.env.pages`,
 base `/`); or the `ndiff-pyodide` entry in `.claude/launch.json`.
@@ -207,7 +229,8 @@ That is the whole point of the Pyodide architecture.
 
 | Path | Role |
 |---|---|
-| `ndiff/webbridge.py` | **In-browser driver** — run pipeline + serve slices/meta/consistency, reusing the server helpers, FastAPI-free (in the wheel) |
+| `ndiff/webbridge.py` | **In-browser driver** — run pipeline + serve slices/meta/consistency, reusing the server helpers, FastAPI-free (in the wheel). `inspect_input` = metadata-only memory pre-flight (size gate) |
+| `ndiff/io/mantid_nxs.py` | Mantid reader; `_assemble` is memory-lean (load fix) |
 | `tests/test_webbridge.py` | Native end-to-end test of the bridge (synthetic volume) |
 | `ndiff/server/params.py` | `build_params` extracted here (FastAPI-free; shared by the router + bridge) |
 | `ndiff/server/__init__.py` | `create_app` import made lazy so helper submodules import without FastAPI |

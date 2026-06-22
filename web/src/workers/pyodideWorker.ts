@@ -32,7 +32,11 @@ interface PyodideAPI {
   loadPackage(names: string[]): Promise<void>;
   runPythonAsync(code: string): Promise<unknown>;
   pyimport(name: string): PyProxy;
-  FS: { writeFile(path: string, data: Uint8Array): void; mkdirTree(path: string): void };
+  FS: {
+    writeFile(path: string, data: Uint8Array): void;
+    mkdirTree(path: string): void;
+    unlink(path: string): void;
+  };
   globals: { set(k: string, v: unknown): void; delete(k: string): void };
 }
 // loadPyodide is injected into the Worker scope by importScripts(pyodide.js).
@@ -119,6 +123,17 @@ async function dispatch(req: WorkerRequest): Promise<void> {
         py!.FS.mkdirTree("/uploads");
         const tmp = `/uploads/${Date.now()}`;
         py!.FS.writeFile(tmp, bytes);
+        // Pre-flight: a metadata-only size check (reads the HDF5 shape, not the
+        // arrays) so an oversized volume is rejected with a clear message rather
+        // than crashing the reduction with a numpy MemoryError.
+        const report = JSON.parse(
+          (bridge!.inspect_input as (n: string, p: string) => string)(req.name, tmp),
+        ) as { ok: boolean; message: string };
+        if (!report.ok) {
+          py!.FS.unlink(tmp);
+          replyError(new Error(report.message));
+          break;
+        }
         const dsId = (bridge!.load_input as (n: string, p: string) => string)(req.name, tmp);
         reply(dsId);
         break;
