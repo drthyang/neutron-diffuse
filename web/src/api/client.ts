@@ -1,5 +1,6 @@
 // Typed fetch wrappers for the ndiff API, including the binary slice envelope.
 
+import { engine, PYODIDE_MODE } from "./pyodideEngine";
 import {
   STATIC_MODE,
   staticDatasets,
@@ -48,17 +49,27 @@ async function fetchEnvelope(url: string): Promise<Slice> {
 }
 
 export function fetchHealth(): Promise<{ status: string }> {
-  // Static build has no backend; report healthy so the shell renders.
+  // Backend-less builds report healthy so the shell renders (Pyodide boots
+  // lazily on the first compute, not here).
+  if (PYODIDE_MODE) return Promise.resolve({ status: "pyodide" });
   if (STATIC_MODE) return Promise.resolve({ status: "static" });
   return getJSON<{ status: string }>("/api/health");
 }
 
 export function fetchDatasets(): Promise<Dataset[]> {
+  if (PYODIDE_MODE) return engine.datasets();
   if (STATIC_MODE) return staticDatasets();
   return getJSON<Dataset[]>("/api/datasets");
 }
 
-export function fetchDataRoot(): Promise<DataRoot> {
+export async function fetchDataRoot(): Promise<DataRoot> {
+  if (PYODIDE_MODE) {
+    const n = (await engine.datasets()).length;
+    return {
+      data_root: "in-browser (Pyodide)",
+      raw_exists: true, processed_exists: true, n_datasets: n,
+    };
+  }
   return getJSON<DataRoot>("/api/data-root");
 }
 
@@ -91,6 +102,7 @@ export async function browseDataRoot(): Promise<DataRoot> {
 }
 
 export function fetchMeta(volumeId: string): Promise<VolumeMeta> {
+  if (PYODIDE_MODE) return engine.volumeMeta(volumeId);
   return getJSON<VolumeMeta>(`/api/volumes/${encodeURIComponent(volumeId)}/meta`);
 }
 
@@ -100,6 +112,7 @@ export function fetchSlice(
   value: number,
   interp = false,
 ): Promise<Slice> {
+  if (PYODIDE_MODE) return engine.volumeSlice(volumeId, plane, value, interp);
   const params = new URLSearchParams({
     plane,
     value: String(value),
@@ -111,6 +124,7 @@ export function fetchSlice(
 }
 
 export function fetchDpdfMeta(volumeId: string): Promise<DeltaPdfMeta> {
+  if (PYODIDE_MODE) return engine.dpdfMeta(volumeId);
   if (STATIC_MODE) return staticDpdfMeta(volumeId);
   return getJSON<DeltaPdfMeta>(`/api/deltapdf/${encodeURIComponent(volumeId)}/meta`);
 }
@@ -120,6 +134,7 @@ export function fetchDpdfSlice(
   plane: string,
   value: number,
 ): Promise<Slice> {
+  if (PYODIDE_MODE) return engine.dpdfSlice(volumeId, plane, value);
   if (STATIC_MODE) return staticDpdfSlice(volumeId, plane, value);
   const params = new URLSearchParams({ plane, value: String(value) });
   return fetchEnvelope(
@@ -134,6 +149,7 @@ export function fetchConsistencyMeta(
   rMin?: number,
   rMax?: number,
 ): Promise<ConsistencyMeta> {
+  if (PYODIDE_MODE) return engine.consistencyMeta(datasetId, qMin, qMax, rMin, rMax);
   const qs = bandParams(qMin, qMax, rMin, rMax);
   const url = `/api/consistency/${encodeURIComponent(datasetId)}/meta${qs ? `?${qs}` : ""}`;
   return getJSON<ConsistencyMeta>(url);
@@ -149,6 +165,9 @@ export function fetchConsistencySlice(
   rMin?: number,
   rMax?: number,
 ): Promise<Slice> {
+  if (PYODIDE_MODE) {
+    return engine.consistencySlice(datasetId, panel, plane, value, qMin, qMax, rMin, rMax);
+  }
   const params = new URLSearchParams({ panel, plane, value: String(value) });
   if (qMin != null) params.set("q_min", String(qMin));
   if (qMax != null) params.set("q_max", String(qMax));

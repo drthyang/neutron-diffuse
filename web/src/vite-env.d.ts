@@ -1,8 +1,11 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  // "static" selects the backend-less GitHub Pages data layer (see staticData.ts);
-  // unset/anything else uses the live FastAPI backend.
+  // Data-layer selector for the front-end:
+  //   "pyodide" — run the real ndiff pipeline in-browser via Pyodide, on the
+  //               user's own file (the GitHub Pages build; see pyodideEngine.ts).
+  //   "static"  — read pre-baked downsampled volumes (legacy; see staticData.ts).
+  //   unset/other — talk to the live FastAPI backend over /api.
   readonly VITE_DATA_MODE?: string;
 }
 

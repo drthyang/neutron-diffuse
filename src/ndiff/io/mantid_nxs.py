@@ -75,20 +75,18 @@ def load_mantid_nxs(
 
     with h5py.File(path, "r") as f:
         root = _require_md_histo(f)
-        axes = _parse_dim_axes(root["data"])
-        signal_raw = root["data/signal"][:].astype(np.float64)
-        err2_raw = root["data/errors_squared"][:].astype(np.float64)
-        mask_raw = root["data/mask"][:].astype(np.int8)
+        data_grp = root["data"]
+        axes = _parse_dim_axes(data_grp)
         ub = _resolve_ub(root, ub_matrix)
+        data, sigma, mask = _assemble(data_grp, axes)
 
-    data, sigma, mask, h_ax, k_ax, l_ax = _assemble(axes, signal_raw, err2_raw, mask_raw)
     return HKLVolume(
         data=data,
         sigma=sigma,
         mask=mask,
-        h_axis=h_ax,
-        k_axis=k_ax,
-        l_axis=l_ax,
+        h_axis=axes["H"][1],
+        k_axis=axes["K"][1],
+        l_axis=axes["L"][1],
         ub_matrix=ub,
         instrument=path.stem,
     )
@@ -178,29 +176,40 @@ def _read_ub_matrix(lattice_grp: h5py.Group) -> NDArray[np.float64]:
 
 
 def _assemble(
+    data_grp: h5py.Group,
     axes: dict[str, tuple[int, NDArray[np.float64]]],
-    signal_raw: NDArray[np.float64],
-    err2_raw: NDArray[np.float64],
-    mask_raw: NDArray[np.int8],
-) -> tuple[
-    NDArray[np.float64],
-    NDArray[np.float64],
-    NDArray[np.bool_],
-    NDArray[np.float64],
-    NDArray[np.float64],
-    NDArray[np.float64],
-]:
-    """Permute file arrays from (D2,D1,D0) to canonical (H,K,L) axis order."""
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.bool_]]:
+    """Read signal/σ²/mask and permute to canonical (H, K, L) axis order.
+
+    Reads and transposes one array at a time, rebinding each variable so the
+    file-order temporary is released as soon as its canonical copy exists, and
+    computes σ and applies the validity mask **in place**.  Peak memory stays
+    near two volume-sized arrays instead of the six-plus a naive
+    read-all-then-``np.where`` version holds — which matters under the browser's
+    32-bit-WASM heap (see :mod:`ndiff.webbridge`), where a ~48 M-voxel volume
+    otherwise overflows on load.
+    """
     perm = (axes["H"][0], axes["K"][0], axes["L"][0])
-    sig = np.transpose(signal_raw, perm)
-    err2 = np.transpose(err2_raw, perm)
-    fmask = np.transpose(mask_raw, perm)
+
+    # astype(copy=False): no redundant copy when the file dtype already matches.
+    sig = data_grp["signal"][:].astype(np.float64, copy=False)
+    sig = np.ascontiguousarray(np.transpose(sig, perm))
+    err2 = data_grp["errors_squared"][:].astype(np.float64, copy=False)
+    err2 = np.ascontiguousarray(np.transpose(err2, perm))
+    fmask = data_grp["mask"][:].astype(np.int8, copy=False)
+    fmask = np.ascontiguousarray(np.transpose(fmask, perm))
 
     valid: NDArray[np.bool_] = np.isfinite(sig) & (fmask == 0)
-    sigma = np.sqrt(np.maximum(err2, 0.0))
+    del fmask
 
-    # zero out invalid voxels so downstream code never sees NaN
-    sig = np.where(valid, sig, 0.0)
-    sigma = np.where(valid, sigma, 0.0)
+    # σ = sqrt(max(σ², 0)), reusing the err2 buffer to avoid a fresh allocation.
+    np.maximum(err2, 0.0, out=err2)
+    np.sqrt(err2, out=err2)
+    sigma = err2
 
-    return sig, sigma, valid, axes["H"][1], axes["K"][1], axes["L"][1]
+    # zero out invalid voxels so downstream code never sees NaN (in place)
+    invalid = ~valid
+    sig[invalid] = 0.0
+    sigma[invalid] = 0.0
+
+    return sig, sigma, valid

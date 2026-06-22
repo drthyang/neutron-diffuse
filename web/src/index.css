@@ -1602,6 +1602,64 @@ input[type="range"]::-moz-range-track {
 .data-root-status.error {
   color: var(--red);
 }
+
+/* Boot progress panel (shown during the one-time Pyodide WASM download) */
+.boot-panel {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  min-height: 32px;
+}
+.boot-panel--ready {
+  background: var(--green-soft);
+  border-color: color-mix(in srgb, var(--green) 25%, transparent);
+}
+.boot-panel--ready .boot-panel-icon { color: var(--green); }
+.boot-panel--error {
+  background: var(--red-soft);
+  border-color: color-mix(in srgb, var(--red) 25%, transparent);
+}
+.boot-panel--error .boot-panel-icon { color: var(--red); }
+.boot-panel-icon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  margin-top: 1px;
+  color: var(--accent);
+}
+.boot-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  flex: 1;
+}
+.boot-panel-label {
+  font-size: 11.5px;
+  color: var(--text-2);
+  line-height: 1.35;
+}
+.boot-panel-error {
+  font-size: 11px;
+  color: var(--red);
+}
+.boot-panel-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  overflow: hidden;
+}
+.boot-panel-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+
 @media (max-width: 1180px) {
   .data-card-grid {
     grid-template-columns: 1fr;

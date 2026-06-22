@@ -18,6 +18,11 @@ export default defineConfig(({ mode }) => ({
     outDir: mode === "pages" ? "dist" : "../src/ndiff/server/static",
     emptyOutDir: true,
   },
+  // Classic workers (pyodideWorker.ts) need IIFE format so importScripts is
+  // available at runtime; this applies to all workers in the bundle.
+  worker: {
+    format: "iife",
+  },
   server: {
     port: 5173,
     proxy: {
