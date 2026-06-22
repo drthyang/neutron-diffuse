@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:pyodide": "vite --mode pages --base /",
     "build": "tsc --noEmit && vite build",
     "build:pages": "tsc --noEmit && vite build --mode pages",
     "preview": "vite preview",

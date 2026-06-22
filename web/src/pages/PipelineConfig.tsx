@@ -8,6 +8,7 @@ import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useShallow } from "zustand/react/shallow";
 
 import { browseDataRoot, fetchMeta, fetchSlice, setDataRoot } from "../api/client";
+import { engine, PYODIDE_MODE } from "../api/pyodideEngine";
 import { useDataRoot, useDatasets } from "../api/hooks";
 import { COLORMAPS } from "../colormaps/luts";
 import { SliceCanvas } from "../components/SliceCanvas";
@@ -893,6 +894,30 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
   const [rootError, setRootError] = useState<string | null>(null);
   const [rootNote, setRootNote] = useState<string | null>(null);
 
+  // In-browser (Pyodide) mode: the user supplies a volume file that is loaded
+  // into the local runtime instead of pointing the server at a data folder.
+  const volumeInputRef = useRef<HTMLInputElement>(null);
+  const [loadBusy, setLoadBusy] = useState(false);
+  const [loadNote, setLoadNote] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const loadLocalVolume = async (run: () => Promise<string>, label: string) => {
+    setLoadBusy(true);
+    setLoadError(null);
+    setLoadNote(`Loading ${label}… (first load boots the in-browser engine)`);
+    try {
+      const id = await run();
+      await queryClient.invalidateQueries({ queryKey: ["datasets"] });
+      setDataset(id);
+      setLoadNote(`Loaded ${label}`);
+    } catch (e) {
+      setLoadNote(null);
+      setLoadError((e as Error).message);
+    } finally {
+      setLoadBusy(false);
+    }
+  };
+
   useEffect(() => {
     if (dataRootQ.data?.data_root) setRootDraft(dataRootQ.data.data_root);
   }, [dataRootQ.data?.data_root]);
@@ -1146,53 +1171,95 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
         </div>
 
         <div className="data-card-grid">
-          <div className="data-source-panel">
-            <Field label="Data folder" grow>
-              <div className="data-root-row">
-                <input
-                  type="text"
-                  value={rootDraft}
-                  placeholder="/path/to/data"
-                  onChange={(e) => {
-                    setRootDraft(e.target.value);
-                    setRootError(null);
-                    setRootNote(null);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") void applyDataRoot();
-                  }}
-                />
-                <input
-                  ref={folderInputRef}
-                  type="file"
-                  className="visually-hidden"
-                  // @ts-expect-error Chromium directory picker attribute.
-                  webkitdirectory=""
-                  directory=""
-                  multiple
-                  onChange={(e) => onFolderPicked(e.target.files)}
-                />
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() => void onBrowseFolder()}
-                >
-                  Browse
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={!rootDraft.trim() || dataRootQ.isFetching}
-                  onClick={() => void applyDataRoot()}
-                >
-                  Apply
-                </button>
-              </div>
-              <span className={`data-root-status${rootError ? " error" : ""}`}>
-                {rootStatus}
-              </span>
-            </Field>
-          </div>
+          {PYODIDE_MODE ? (
+            <div className="data-source-panel">
+              <Field label="Volume file" grow>
+                <div className="data-root-row">
+                  <input
+                    ref={volumeInputRef}
+                    type="file"
+                    accept=".nxs,.h5,.hdf5"
+                    className="visually-hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void loadLocalVolume(() => engine.loadFile(f), f.name);
+                      if (volumeInputRef.current) volumeInputRef.current.value = "";
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={loadBusy}
+                    onClick={() => volumeInputRef.current?.click()}
+                  >
+                    {loadBusy && <span className="spin" />}
+                    Load volume…
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    disabled={loadBusy}
+                    onClick={() => void loadLocalVolume(() => engine.loadDemo(), "demo volume")}
+                  >
+                    Use demo
+                  </button>
+                </div>
+                <span className={`data-root-status${loadError ? " error" : ""}`}>
+                  {loadError ??
+                    loadNote ??
+                    "Your .nxs / .h5 is processed locally in your browser — nothing is uploaded."}
+                </span>
+              </Field>
+            </div>
+          ) : (
+            <div className="data-source-panel">
+              <Field label="Data folder" grow>
+                <div className="data-root-row">
+                  <input
+                    type="text"
+                    value={rootDraft}
+                    placeholder="/path/to/data"
+                    onChange={(e) => {
+                      setRootDraft(e.target.value);
+                      setRootError(null);
+                      setRootNote(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void applyDataRoot();
+                    }}
+                  />
+                  <input
+                    ref={folderInputRef}
+                    type="file"
+                    className="visually-hidden"
+                    // @ts-expect-error Chromium directory picker attribute.
+                    webkitdirectory=""
+                    directory=""
+                    multiple
+                    onChange={(e) => onFolderPicked(e.target.files)}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => void onBrowseFolder()}
+                  >
+                    Browse
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={!rootDraft.trim() || dataRootQ.isFetching}
+                    onClick={() => void applyDataRoot()}
+                  >
+                    Apply
+                  </button>
+                </div>
+                <span className={`data-root-status${rootError ? " error" : ""}`}>
+                  {rootStatus}
+                </span>
+              </Field>
+            </div>
+          )}
 
           <div className="dataset-panel">
             <Field label="Dataset" grow>

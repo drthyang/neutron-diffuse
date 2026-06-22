@@ -1,8 +1,11 @@
 # Browser-hosted app — plan & progress (pickup doc)
 
 **Audience:** future agents and the maintainer picking this up later.
-**Last updated:** 2026-06-21.
-**Status:** architecture validated (PoC works); the app integration is not built yet.
+**Last updated:** 2026-06-22.
+**Status:** **integration built & working end-to-end.** The full app (load →
+6-stage pipeline → all six viewers) runs client-side via Pyodide. P1–P3 are
+done; P4 (polish: Web Worker so the UI doesn't block, lazy load, large-volume
+memory budget) remains. See §4.
 
 ---
 
@@ -84,32 +87,44 @@ live but **shows an empty shell** (data removed). Reusable pieces:
 
 ---
 
-## 4. Roadmap — what's LEFT (the integration build)
+## 4. Roadmap — status
 
-This is the bulk of the remaining work: turn the PoC into the real app.
+**P1 — Pyodide data layer in the React app. ✅ DONE.**
+`VITE_DATA_MODE=pyodide` (set in `web/.env.pages`) selects the in-browser engine
+(`web/src/api/pyodideEngine.ts`): lazy Pyodide boot (CDN), `loadPackage`, micropip
+the wheel, then typed methods that return the *same* `Slice`/`Dataset`/`Meta`
+shapes the viewers consume. `web/src/api/client.ts` branches on `PYODIDE_MODE` for
+every endpoint. The Python side is a thin in-process driver, **`ndiff.webbridge`**
+(in the wheel), that reuses the FastAPI-free server helpers (`volumes`,
+`deltapdf`, `consistency`, `datasets`, `params`) against a virtual `/work` FS — so
+slicing/discovery/consistency are *not* reimplemented in JS. `ndiff.server.__init__`
+is now lazy so those helpers import without FastAPI under Pyodide.
 
-**P1 — Pyodide data layer in the React app.**
-Replace the `static`-mode data path (`web/src/api/staticData.ts`) with one that
-runs the pipeline in Pyodide and returns the same `Slice`/`Dataset`/`Meta` shapes
-the viewers already consume. Boot Pyodide once (lazy, with a progress UI), install
-the wheel, keep the loaded volumes/results in JS. Decide the mode flag: either a
-new `VITE_DATA_MODE=pyodide` or repurpose `static`.
+**P2 — File-load UX + full `run_pipeline`. ✅ DONE.**
+Configure page (pyodide mode) shows a "Load volume… / Use demo" control →
+`engine.loadFile()` writes into the Pyodide FS → registered as the dataset. Run
+drives `run_pipeline` **stage-by-stage** from JS (`engine.runPipeline`), yielding
+between stages so the Execution stepper + log update per stage. Results live in
+the Pyodide FS and feed every viewer; queries are invalidated on completion.
 
-**P2 — File-load UX + full `run_pipeline`.**
-A "Load volume" control (`<input type=file>`) → write into Pyodide FS →
-`ndiff.run_pipeline(...)` (not just `compute_delta_pdf`). Surface per-stage
-progress (the pipeline takes ~1–3 min in-browser). Hold results in memory and
-feed every viewer.
+**P3 — All six pages in the hosted build. ✅ DONE.**
+The nav restriction was tied to the legacy `static` flag; pyodide mode uses a new
+flag, so all six tabs are live. Verified end-to-end in a headless browser: boot →
+demo volume → 6 stages "done" → 3D-ΔPDF / Consistency / Reciprocal viewers all
+render, no console errors. CI (`.github/workflows/pages.yml`) builds the data-free
+wheel before `vite build` (with a data-leak guard).
 
-**P3 — Re-enable all six pages in the hosted build.**
-Once compute is client-side, undo the `App.tsx` nav restriction so Configure /
-Execution / Reciprocal cleanup / Consistency check work again — now driven by
-Pyodide instead of `/api`.
+**P4 — Polish & robustness. ⬜ REMAINING (the main open item).**
+Biggest gap: the pipeline runs on the **main thread**, so each stage *blocks the
+UI* for its duration (only repaints between stages). Move Pyodide into a **Web
+Worker** (message-passing API; transfer the file bytes + envelopes) so progress
+animates live and the page stays responsive. Then: memory budget (float32;
+downsample option for very large volumes — browsers cap WASM at ~2–4 GB); first-
+load ~15–25 MB WASM download UX (a dedicated boot progress panel, not just log
+lines); mobile caveat; optional brotli on the wheel.
 
-**P4 — Polish & robustness.**
-Lazy Pyodide load + cached across pages; memory budget (use float32; offer a
-downsample option for very large volumes — browsers cap WASM at ~2–4 GB);
-one-time ~15–25 MB WASM download UX; mobile caveat. Optional brotli on the wheel.
+Local dev for the in-browser build: `npm run dev:pyodide` (loads `.env.pages`,
+base `/`); or the `ndiff-pyodide` entry in `.claude/launch.json`.
 
 **P-opt — Further pipeline speedups (optional).**
 Next target inside `remove_rings` is batching the per-patch loop in `fit`
@@ -181,14 +196,19 @@ That is the whole point of the Pyodide architecture.
 
 ## 7. Key file map
 
-| Path | Role | Where |
-|---|---|---|
-| `web/public/poc-pyodide.html` | Pyodide PoC (boot, self-test, file picker, benchmark) | branch |
-| `scripts/profile_pipeline.py` | Per-stage pipeline profiler | branch |
-| `scripts/export_web_assets.py` | Pre-baked f16 volume exporter (dead-end path) | main |
-| `web/src/api/staticData.ts` | Pre-baked static data layer — replace with Pyodide (P1) | main |
-| `web/src/api/client.ts` | `VITE_DATA_MODE` branch point | main |
-| `web/vite.config.ts`, `web/.env.pages` | Pages build (`--mode pages`) | main |
-| `.github/workflows/pages.yml` | Pages deploy | main |
-| `web/src/App.tsx` | Static-mode nav restriction (undo in P3) | main |
-| `ndiff/preprocessing/radial_background.py` | Ring removal (optimized) | branch |
+| Path | Role |
+|---|---|
+| `ndiff/webbridge.py` | **In-browser driver** — run pipeline + serve slices/meta/consistency, reusing the server helpers, FastAPI-free (in the wheel) |
+| `tests/test_webbridge.py` | Native end-to-end test of the bridge (synthetic volume) |
+| `ndiff/server/params.py` | `build_params` extracted here (FastAPI-free; shared by the router + bridge) |
+| `ndiff/server/__init__.py` | `create_app` import made lazy so helper submodules import without FastAPI |
+| `web/src/api/pyodideEngine.ts` | **Pyodide engine** — lazy boot, wheel install, typed bridge wrappers, boot-progress observable |
+| `web/src/api/client.ts` | `PYODIDE_MODE` branch point for every endpoint |
+| `web/src/api/queryClient.ts` | Shared QueryClient (store invalidates viewers after an in-browser run) |
+| `web/src/state/pipelineStore.ts` | `run()` drives the engine stage-by-stage in pyodide mode |
+| `web/src/pages/PipelineConfig.tsx` | "Load volume / Use demo" data source in pyodide mode |
+| `web/.env.pages`, `web/vite.config.ts` | Pages build (`--mode pages`, `VITE_DATA_MODE=pyodide`) |
+| `.github/workflows/pages.yml` | Pages deploy — builds the data-free wheel, then the SPA |
+| `web/public/poc-pyodide.html` | Original Pyodide PoC (boot, self-test, file picker, benchmark) |
+| `scripts/profile_pipeline.py` | Per-stage pipeline profiler |
+| `ndiff/preprocessing/radial_background.py` | Ring removal (optimized) |

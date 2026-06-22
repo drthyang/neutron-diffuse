@@ -1,10 +1,12 @@
-# Build the backend-less (static) SPA and deploy it to GitHub Pages.
+# Build the backend-less SPA and deploy it to GitHub Pages.
 #
-# The static build (`vite build --mode pages`, see web/.env.pages) reads the
-# pre-baked ΔPDF assets in web/public/data/ and slices them client-side, so no
-# FastAPI backend is needed.  Regenerate those assets with
-# `python scripts/export_web_assets.py` and commit them when the ΔPDF outputs
-# change.  See docs/github-pages-webgpu-plan.md.
+# The Pages build runs the *real* ndiff reduction pipeline in the user's browser
+# via Pyodide (see web/.env.pages → VITE_DATA_MODE=pyodide, web/src/api/
+# pyodideEngine.ts).  The pipeline code ships as a data-free `ndiff` wheel that
+# the page micropip-installs at runtime; the wheel is gitignored (a careless
+# build could bundle experimental data), so CI builds it fresh here — data-free —
+# into web/public/wheels/ before `vite build` copies it into the bundle.
+# No data is hosted: users supply their own volume at runtime.
 name: Pages
 
 on:
@@ -30,13 +32,26 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build data-free ndiff wheel
+        working-directory: .
+        run: |
+          python -m pip install --upgrade pip build
+          rm -rf build src/*.egg-info src/ndiff/server/static/data
+          python -m pip wheel . --no-deps --no-cache-dir -w web/public/wheels
+          # Fail the build if any experimental data leaked into the wheel.
+          if unzip -l web/public/wheels/*.whl | grep -iqE '\.(bin|nxs|h5|hdf5|npy)'; then
+            echo "DATA LEAK in wheel — aborting"; exit 1
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
-      - name: Build static SPA
+      - name: Build SPA (Pyodide mode)
         run: npm run build:pages
       # ONE-TIME SETUP: enable Pages first, or this step fails with "Get Pages
       # site failed / Not Found". Repo Settings → Pages → Build and deployment →

@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 
 import { useHealth } from "./api/hooks";
+import { PYODIDE_MODE } from "./api/pyodideEngine";
 import { STATIC_MODE } from "./api/staticData";
 import {
   BrandGlyph,
@@ -124,7 +125,11 @@ export function App() {
         <div className="sidebar-foot">
           <span className="api-status">
             <span className={`api-dot ${apiUp ? "ok" : "down"}`} />
-            {apiUp ? "API connected" : "API offline"}
+            {PYODIDE_MODE
+              ? "in-browser engine"
+              : apiUp
+                ? "API connected"
+                : "API offline"}
           </span>
           <span className="ver">
             <span className="ver-num">v0.2.0</span>

@@ -8,8 +8,25 @@ drives :func:`ndiff.pipeline.run_pipeline` as a background job, and exposes the
 
 Use :func:`ndiff.server.app.create_app` to build the ASGI app, or the
 ``ndiff-web`` console script to launch it.
+
+``create_app`` is imported lazily (via ``__getattr__``) so that importing a
+FastAPI-free helper submodule — e.g. ``from ndiff.server import volumes`` — does
+not pull in FastAPI.  This lets the in-browser bridge (:mod:`ndiff.webbridge`)
+reuse the slicing/discovery helpers under Pyodide, where FastAPI is not
+installed.
 """
 
-from ndiff.server.app import create_app
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ndiff.server.app import create_app
 
 __all__ = ["create_app"]
+
+
+def __getattr__(name: str) -> object:
+    if name == "create_app":
+        from ndiff.server.app import create_app
+
+        return create_app
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -9,6 +9,8 @@
 import { create } from "zustand";
 
 import { cancelJob, runPipeline } from "../api/client";
+import { engine, ensureBooted, PYODIDE_MODE, subscribeBoot } from "../api/pyodideEngine";
+import { queryClient } from "../api/queryClient";
 import type { JobEvent, StageParamsIn } from "../api/types";
 import { useDatasetStore } from "./datasetStore";
 
@@ -140,36 +142,11 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
     closeStream();
     set({ events: [], terminal: null, running: true, jobId: null });
 
-    const params: StageParamsIn = {};
-    if (s.ringModel) params.rings_model = s.ringModel;
-    if (s.ringNPatches) params.rings_n_patches = Number(s.ringNPatches);
-    if (s.ringNFourier) params.rings_n_fourier = Number(s.ringNFourier);
-    if (s.ringSliceAxis) params.rings_slice_axis = s.ringSliceAxis;
-    if (s.ringModel === "parametric") {
-      params.rings_radial_mode = s.ringRadialMode;
-      if (s.ringWidth) params.rings_ring_width = Number(s.ringWidth);
-    }
-    if (s.punchMinI) params.punch_min_intensity = Number(s.punchMinI);
-    if (s.punchMode) params.punch_mode = s.punchMode;
-    if (s.punchMargin) params.punch_margin = Number(s.punchMargin);
-    if (s.punchPhiTail) params.punch_phi_tail_hkl = Number(s.punchPhiTail);
-    // Q-space is the web UI's punch frame.
-    params.punch_frame = "q";
-    if (s.punchQA) params.punch_q_radius_a = Number(s.punchQA);
-    if (s.punchQB) params.punch_q_radius_b = Number(s.punchQB);
-    if (s.punchQC) params.punch_q_radius_c = Number(s.punchQC);
-    if (s.incidentBeamQA) params.incident_beam_q_radius_a = Number(s.incidentBeamQA);
-    if (s.incidentBeamQB) params.incident_beam_q_radius_b = Number(s.incidentBeamQB);
-    if (s.incidentBeamQC) params.incident_beam_q_radius_c = Number(s.incidentBeamQC);
-    if (s.incidentBeamMargin) params.incident_beam_q_margin = Number(s.incidentBeamMargin);
-    if (s.punchFitCovariance) params.punch_fit_covariance = true;
-    if (s.incidentBeamFitCovariance) params.incident_beam_fit_covariance = true;
-    if (s.backfillMethod) params.backfill_method = s.backfillMethod;
-    if (s.flattenEstimator) params.flatten_estimator = s.flattenEstimator;
-    if (s.pdfApod) params.pdf_apodization = s.pdfApod;
-    if (s.pdfQMin || s.pdfQMax) {
-      params.pdf_q_min = s.pdfQMin ? Number(s.pdfQMin) : 0;
-      if (s.pdfQMax) params.pdf_q_max = Number(s.pdfQMax);
+    const params = formToParams(s);
+
+    if (PYODIDE_MODE) {
+      await runInBrowser(params, s.flatten, s.force, set, get);
+      return;
     }
 
     try {
@@ -207,7 +184,84 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
   },
 
   cancel: async () => {
+    // In-browser runs block the main thread per stage, so there is no job to
+    // cancel (the Cancel button is unreachable mid-compute); no-op in that mode.
+    if (PYODIDE_MODE) return;
     const { jobId } = get();
     if (jobId) await cancelJob(jobId).catch(() => undefined);
   },
 }));
+
+// Convert the editable form values into the curated StageParamsIn the pipeline
+// accepts (empty fields stay unset → the backend/bridge default is used).
+function formToParams(s: PipelineConfig): StageParamsIn {
+  const params: StageParamsIn = {};
+  if (s.ringModel) params.rings_model = s.ringModel;
+  if (s.ringNPatches) params.rings_n_patches = Number(s.ringNPatches);
+  if (s.ringNFourier) params.rings_n_fourier = Number(s.ringNFourier);
+  if (s.ringSliceAxis) params.rings_slice_axis = s.ringSliceAxis;
+  if (s.ringModel === "parametric") {
+    params.rings_radial_mode = s.ringRadialMode;
+    if (s.ringWidth) params.rings_ring_width = Number(s.ringWidth);
+  }
+  if (s.punchMinI) params.punch_min_intensity = Number(s.punchMinI);
+  if (s.punchMode) params.punch_mode = s.punchMode;
+  if (s.punchMargin) params.punch_margin = Number(s.punchMargin);
+  if (s.punchPhiTail) params.punch_phi_tail_hkl = Number(s.punchPhiTail);
+  // Q-space is the web UI's punch frame.
+  params.punch_frame = "q";
+  if (s.punchQA) params.punch_q_radius_a = Number(s.punchQA);
+  if (s.punchQB) params.punch_q_radius_b = Number(s.punchQB);
+  if (s.punchQC) params.punch_q_radius_c = Number(s.punchQC);
+  if (s.incidentBeamQA) params.incident_beam_q_radius_a = Number(s.incidentBeamQA);
+  if (s.incidentBeamQB) params.incident_beam_q_radius_b = Number(s.incidentBeamQB);
+  if (s.incidentBeamQC) params.incident_beam_q_radius_c = Number(s.incidentBeamQC);
+  if (s.incidentBeamMargin) params.incident_beam_q_margin = Number(s.incidentBeamMargin);
+  if (s.punchFitCovariance) params.punch_fit_covariance = true;
+  if (s.incidentBeamFitCovariance) params.incident_beam_fit_covariance = true;
+  if (s.backfillMethod) params.backfill_method = s.backfillMethod;
+  if (s.flattenEstimator) params.flatten_estimator = s.flattenEstimator;
+  if (s.pdfApod) params.pdf_apodization = s.pdfApod;
+  if (s.pdfQMin || s.pdfQMax) {
+    params.pdf_q_min = s.pdfQMin ? Number(s.pdfQMin) : 0;
+    if (s.pdfQMax) params.pdf_q_max = Number(s.pdfQMax);
+  }
+  return params;
+}
+
+type Setter = (p: Partial<PipelineState>) => void;
+type Getter = () => PipelineState;
+
+// Drive the pipeline locally via Pyodide: boot (streaming the one-time WASM
+// download into the log), run stage-by-stage, then invalidate viewer queries so
+// the fresh outputs render.
+async function runInBrowser(
+  params: StageParamsIn,
+  flatten: boolean,
+  force: boolean,
+  set: Setter,
+  get: Getter,
+): Promise<void> {
+  const log = (ev: JobEvent) => set({ events: [...get().events, ev] });
+  try {
+    const unsub = subscribeBoot((bs) =>
+      log({ type: "progress", status: bs.phase === "error" ? "error" : "progress",
+            message: bs.message }));
+    log({ type: "progress", status: "progress", message: "Starting in-browser engine…" });
+    await ensureBooted();
+    unsub();
+    await engine.runPipeline({
+      paramsJson: JSON.stringify(params),
+      flattenEnabled: flatten,
+      force,
+      onProgress: (ev) =>
+        log({ type: "progress", stage: ev.stage, status: ev.status,
+              fraction: ev.fraction, message: ev.message }),
+    });
+    await queryClient.invalidateQueries();
+    set({ terminal: "done", running: false });
+  } catch (e) {
+    log({ type: "progress", status: "error", message: (e as Error).message });
+    set({ terminal: "error", running: false });
+  }
+}
