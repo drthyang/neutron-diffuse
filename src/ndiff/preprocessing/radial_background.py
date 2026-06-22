@@ -936,11 +936,42 @@ def _robust_radial_profile(
     """
     n_bins = len(edges) - 1
     out = np.full(n_bins, np.nan)
-    counts = np.zeros(n_bins)
     lo_p, hi_p = percentiles
     bin_idx = np.digitize(q, edges) - 1
+    valid = (bin_idx >= 0) & (bin_idx < n_bins)
+    bi = bin_idx[valid]
+    Iv = I[valid]
+
+    # Group voxels by bin with one sort instead of re-scanning the whole array
+    # once per bin (`I[bin_idx == b]` is O(N) × n_bins).  For the default
+    # ``median`` estimator we lexsort so each bin's values are contiguous *and*
+    # ascending, then read the middle order statistic per bin — eliminating the
+    # ~N_bins × N_patches individual np.median calls (the dominant cost).
+    if method == "median":
+        n = np.bincount(bi, minlength=n_bins)          # bin counts, no sort
+        counts = n.astype(np.float64)
+        order = np.lexsort((Iv, bi))                   # sort within bin by value
+        I_sorted = Iv[order]
+        starts = np.zeros(n_bins, dtype=np.intp)       # segment offsets via cumsum
+        np.cumsum(n[:-1], out=starts[1:])
+        nz = np.nonzero(n > 0)[0]
+        # np.median: middle element (odd) or mean of the two central ones (even).
+        lo_i = starts[nz] + (n[nz] - 1) // 2
+        hi_i = starts[nz] + n[nz] // 2
+        out[nz] = 0.5 * (I_sorted[lo_i] + I_sorted[hi_i])
+        return out, counts
+
+    # Other estimators (trimmed/winsorized/huber): stable sort by bin keeps each
+    # bin's values in original order, so the slice handed to _robust_bin_stat is
+    # identical to the old boolean mask `I[bin_idx == b]`.
+    counts = np.zeros(n_bins)
+    order = np.argsort(bi, kind="stable")
+    bi_sorted = bi[order]
+    I_sorted = Iv[order]
+    starts = np.searchsorted(bi_sorted, np.arange(n_bins), side="left")
+    ends = np.searchsorted(bi_sorted, np.arange(n_bins), side="right")
     for b in range(n_bins):
-        sel = I[bin_idx == b]
+        sel = I_sorted[starts[b]:ends[b]]
         counts[b] = sel.size
         if sel.size >= min_per_bin:
             out[b] = _robust_bin_stat(sel, lo_p, hi_p, method)
