@@ -10,6 +10,40 @@ from pathlib import Path
 
 from ndiff.server.app import STATIC_DIR
 
+# Source extensions whose mtime determines whether the built SPA is stale.
+_SPA_SRC_SUFFIXES = frozenset({".ts", ".tsx", ".css", ".html"})
+
+
+def _warn_if_spa_stale() -> None:
+    """In a source checkout, warn when the built SPA is older than ``web/src``.
+
+    ``server/static`` is a gitignored build artifact (``npm run build``); it
+    silently goes stale when the frontend changes without a rebuild, so the
+    native server can serve an old UI (a real footgun).  This only fires when
+    ``web/src`` exists — i.e. a dev checkout — so it is a no-op for installed
+    wheels, and never raises (best-effort).
+    """
+    try:
+        web_src = STATIC_DIR.parents[3] / "web" / "src"
+        built = STATIC_DIR / "index.html"
+        if not web_src.is_dir() or not built.exists():
+            return
+        built_mtime = built.stat().st_mtime
+        newest_src = max(
+            (p.stat().st_mtime for p in web_src.rglob("*")
+             if p.suffix in _SPA_SRC_SUFFIXES),
+            default=0.0,
+        )
+        if newest_src > built_mtime:
+            print(
+                "[warn] The web UI bundle looks out of date — web/src changed "
+                "after the last build. Rebuild it with:  make ui   "
+                "(or: cd web && npm run build), then hard-refresh the browser.",
+                flush=True,
+            )
+    except OSError:
+        pass
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -31,7 +65,10 @@ def main() -> None:
 
     if not STATIC_DIR.is_dir():
         print("[warn] SPA assets not found; only the API will be served. Build the "
-              "frontend with:  (cd web && npm install && npm run build)", flush=True)
+              "frontend with:  make ui   (or: cd web && npm install && npm run build)",
+              flush=True)
+    else:
+        _warn_if_spa_stale()
 
     url = f"http://{args.host}:{args.port}"
     if not args.no_browser:

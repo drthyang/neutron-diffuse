@@ -96,8 +96,18 @@ Build the production SPA (emitted into `src/ndiff/server/static/`, which the
 FastAPI app then serves and the wheel bundles):
 
 ```bash
-cd web && npm run build
+make ui            # = cd web && npm run build
 ```
+
+> **Heads-up — the native bundle can go stale.** `src/ndiff/server/static/` is a
+> gitignored *build artifact*: it only changes when you run `make ui`. If you edit
+> anything in `web/src` (or pull changes) and *don't* rebuild, `ndiff-web` keeps
+> serving the **old** UI. As a safety net, `ndiff-web` prints a `[warn]` at startup
+> when the bundle is older than `web/src`. After rebuilding, hard-refresh the
+> browser (Cmd/Ctrl-Shift-R) to drop the cached old assets.
+>
+> `make ui-pages` builds the separate GitHub Pages / Pyodide bundle (`web/dist`);
+> the two targets are independent, so rebuild whichever you are running.
 
 Frontend checks (run in CI):
 
