@@ -8,7 +8,13 @@ import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useShallow } from "zustand/react/shallow";
 
 import { browseDataRoot, fetchMeta, fetchSlice, setDataRoot } from "../api/client";
-import { engine, PYODIDE_MODE } from "../api/pyodideEngine";
+import {
+  engine,
+  getBootStatus,
+  PYODIDE_MODE,
+  subscribeBoot,
+  type BootStatus,
+} from "../api/pyodideEngine";
 import { useDataRoot, useDatasets } from "../api/hooks";
 import { COLORMAPS } from "../colormaps/luts";
 import { SliceCanvas } from "../components/SliceCanvas";
@@ -878,6 +884,63 @@ function PunchPreviewGrid({
 }
 
 // ---------------------------------------------------------------------------
+// In-browser boot progress panel (shown during the one-time WASM download)
+// ---------------------------------------------------------------------------
+
+function useBootStatus(): BootStatus {
+  const [status, setStatus] = useState<BootStatus>(getBootStatus);
+  useEffect(() => subscribeBoot(setStatus), []);
+  return status;
+}
+
+const BOOT_PHASE_LABELS: Record<string, string> = {
+  runtime: "Downloading Python runtime (~10 MB)…",
+  packages: "Loading numpy, scipy, h5py…",
+  wheel: "Installing ndiff package…",
+  ready: "Compute engine ready",
+  error: "Boot failed",
+};
+
+function BootProgressPanel({ status }: { status: BootStatus }) {
+  const phases = ["runtime", "packages", "wheel"] as const;
+  const idx = phases.indexOf(status.phase as (typeof phases)[number]);
+  const pct = idx >= 0 ? Math.round(((idx + 1) / phases.length) * 100) : 100;
+  const isError = status.phase === "error";
+  const isReady = status.phase === "ready";
+
+  return (
+    <div className={`boot-panel${isError ? " boot-panel--error" : isReady ? " boot-panel--ready" : ""}`}>
+      <div className="boot-panel-icon">
+        {isError ? (
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M5 5l4 4M9 5l-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        ) : isReady ? (
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M4.5 7l2 2 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        ) : (
+          <span className="spin" />
+        )}
+      </div>
+      <div className="boot-panel-body">
+        <span className="boot-panel-label">
+          {BOOT_PHASE_LABELS[status.phase] ?? status.message}
+        </span>
+        {!isReady && !isError && (
+          <div className="boot-panel-bar" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+            <div className="boot-panel-fill" style={{ width: `${pct}%` }} />
+          </div>
+        )}
+        {isError && <span className="boot-panel-error">{status.error}</span>}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 
 export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
   const datasetsQ = useDatasets();
@@ -896,6 +959,8 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
 
   // In-browser (Pyodide) mode: the user supplies a volume file that is loaded
   // into the local runtime instead of pointing the server at a data folder.
+  const bootStatus = useBootStatus();
+  const bootBusy = PYODIDE_MODE && !bootStatus.ready && bootStatus.phase !== "idle";
   const volumeInputRef = useRef<HTMLInputElement>(null);
   const [loadBusy, setLoadBusy] = useState(false);
   const [loadNote, setLoadNote] = useState<string | null>(null);
@@ -1189,7 +1254,7 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                   <button
                     type="button"
                     className="btn btn-primary"
-                    disabled={loadBusy}
+                    disabled={loadBusy || bootBusy}
                     onClick={() => volumeInputRef.current?.click()}
                   >
                     {loadBusy && <span className="spin" />}
@@ -1198,17 +1263,21 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                   <button
                     type="button"
                     className="btn btn-ghost"
-                    disabled={loadBusy}
+                    disabled={loadBusy || bootBusy}
                     onClick={() => void loadLocalVolume(() => engine.loadDemo(), "demo volume")}
                   >
                     Use demo
                   </button>
                 </div>
-                <span className={`data-root-status${loadError ? " error" : ""}`}>
-                  {loadError ??
-                    loadNote ??
-                    "Your .nxs / .h5 is processed locally in your browser — nothing is uploaded."}
-                </span>
+                {bootBusy ? (
+                  <BootProgressPanel status={bootStatus} />
+                ) : (
+                  <span className={`data-root-status${loadError ? " error" : ""}`}>
+                    {loadError ??
+                      loadNote ??
+                      "Your .nxs / .h5 is processed locally in your browser — nothing is uploaded."}
+                  </span>
+                )}
               </Field>
             </div>
           ) : (

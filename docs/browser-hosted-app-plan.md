@@ -114,14 +114,23 @@ demo volume → 6 stages "done" → 3D-ΔPDF / Consistency / Reciprocal viewers 
 render, no console errors. CI (`.github/workflows/pages.yml`) builds the data-free
 wheel before `vite build` (with a data-leak guard).
 
-**P4 — Polish & robustness. ⬜ REMAINING (the main open item).**
-Biggest gap: the pipeline runs on the **main thread**, so each stage *blocks the
-UI* for its duration (only repaints between stages). Move Pyodide into a **Web
-Worker** (message-passing API; transfer the file bytes + envelopes) so progress
-animates live and the page stays responsive. Then: memory budget (float32;
-downsample option for very large volumes — browsers cap WASM at ~2–4 GB); first-
-load ~15–25 MB WASM download UX (a dedicated boot progress panel, not just log
-lines); mobile caveat; optional brotli on the wheel.
+**P4 — Polish & robustness. ✅ DONE.**
+- **Web Worker**: Pyodide now runs in a dedicated classic Web Worker
+  (`web/src/workers/pyodideWorker.ts`, IIFE bundle via `worker.format: "iife"`).
+  Message-passing RPC (`{ id, type, ...payload }` both ways); binary slice
+  envelopes transferred as Transferable `ArrayBuffer` (zero-copy). Cancel
+  (`cancelPipeline()`) terminates the Worker cleanly and resets boot state.
+- **Boot progress panel**: a dedicated `BootProgressPanel` component in
+  `PipelineConfig.tsx` subscribes to `BootStatus` and shows a phased progress
+  bar while the ~15 MB WASM downloads — replaces the log-line-only approach.
+- **Responsive UI**: the main thread is never blocked; React repaints freely
+  while the Worker drives numpy/scipy stages over minutes.
+
+Remaining nice-to-haves (low priority):
+- Memory budget: downsample option for very large volumes (browsers cap WASM at
+  ~2–4 GB). Current demo + typical single-T volumes are well within budget.
+- Mobile caveat documentation.
+- Optional brotli compression on the wheel.
 
 Local dev for the in-browser build: `npm run dev:pyodide` (loads `.env.pages`,
 base `/`); or the `ndiff-pyodide` entry in `.claude/launch.json`.
@@ -202,7 +211,8 @@ That is the whole point of the Pyodide architecture.
 | `tests/test_webbridge.py` | Native end-to-end test of the bridge (synthetic volume) |
 | `ndiff/server/params.py` | `build_params` extracted here (FastAPI-free; shared by the router + bridge) |
 | `ndiff/server/__init__.py` | `create_app` import made lazy so helper submodules import without FastAPI |
-| `web/src/api/pyodideEngine.ts` | **Pyodide engine** — lazy boot, wheel install, typed bridge wrappers, boot-progress observable |
+| `web/src/workers/pyodideWorker.ts` | **Classic Web Worker** — hosts Pyodide; classic IIFE bundle (`importScripts`); RPC dispatch |
+| `web/src/api/pyodideEngine.ts` | **Engine main-thread side** — Worker lifecycle, RPC promise map, boot/progress observables, public `engine` API |
 | `web/src/api/client.ts` | `PYODIDE_MODE` branch point for every endpoint |
 | `web/src/api/queryClient.ts` | Shared QueryClient (store invalidates viewers after an in-browser run) |
 | `web/src/state/pipelineStore.ts` | `run()` drives the engine stage-by-stage in pyodide mode |

@@ -9,7 +9,7 @@
 import { create } from "zustand";
 
 import { cancelJob, runPipeline } from "../api/client";
-import { engine, ensureBooted, PYODIDE_MODE, subscribeBoot } from "../api/pyodideEngine";
+import { cancelPipeline, engine, PYODIDE_MODE } from "../api/pyodideEngine";
 import { queryClient } from "../api/queryClient";
 import type { JobEvent, StageParamsIn } from "../api/types";
 import { useDatasetStore } from "./datasetStore";
@@ -184,9 +184,11 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
   },
 
   cancel: async () => {
-    // In-browser runs block the main thread per stage, so there is no job to
-    // cancel (the Cancel button is unreachable mid-compute); no-op in that mode.
-    if (PYODIDE_MODE) return;
+    if (PYODIDE_MODE) {
+      cancelPipeline();
+      set({ terminal: "cancelled", running: false });
+      return;
+    }
     const { jobId } = get();
     if (jobId) await cancelJob(jobId).catch(() => undefined);
   },
@@ -232,9 +234,10 @@ function formToParams(s: PipelineConfig): StageParamsIn {
 type Setter = (p: Partial<PipelineState>) => void;
 type Getter = () => PipelineState;
 
-// Drive the pipeline locally via Pyodide: boot (streaming the one-time WASM
-// download into the log), run stage-by-stage, then invalidate viewer queries so
-// the fresh outputs render.
+// Drive the pipeline locally via Pyodide (Worker).  Boot progress appears in
+// the Configure page's dedicated boot panel; stage progress streams into the
+// Execution log.  The Worker is never blocked from the main thread's view, so
+// the UI repaints freely throughout.
 async function runInBrowser(
   params: StageParamsIn,
   flatten: boolean,
@@ -244,19 +247,18 @@ async function runInBrowser(
 ): Promise<void> {
   const log = (ev: JobEvent) => set({ events: [...get().events, ev] });
   try {
-    const unsub = subscribeBoot((bs) =>
-      log({ type: "progress", status: bs.phase === "error" ? "error" : "progress",
-            message: bs.message }));
-    log({ type: "progress", status: "progress", message: "Starting in-browser engine…" });
-    await ensureBooted();
-    unsub();
     await engine.runPipeline({
       paramsJson: JSON.stringify(params),
       flattenEnabled: flatten,
       force,
       onProgress: (ev) =>
-        log({ type: "progress", stage: ev.stage, status: ev.status,
-              fraction: ev.fraction, message: ev.message }),
+        log({
+          type: "progress",
+          stage: ev.stage,
+          status: ev.status,
+          fraction: ev.fraction ?? null,
+          message: ev.message,
+        }),
     });
     await queryClient.invalidateQueries();
     set({ terminal: "done", running: false });
