@@ -43,6 +43,28 @@ Two alternatives were considered and **rejected** (don't redo them):
   stage (ring removal) is an irregular fit — a poor GPU fit. WebGPU is **shelved**
   unless a future profile shows a dominant, GPU-friendly stage.
 
+  *Could WebGPU instead solve the **memory** ceiling (the ~1 GB WASM-heap OOM on
+  large volumes, §4 "Memory reality")?* In principle yes — GPU buffers live in
+  VRAM, **outside** the 32-bit-WASM heap that's the binding limit today — but it is
+  **still not worth it**, for four reasons. (1) It means rewriting the entire
+  regression-gated pipeline (ring removal, punch, backfill, flatten, ΔPDF) as WGSL
+  compute shaders and re-validating each against the float64 reference — discarding
+  the "real `ndiff` Python runs unchanged" property that is the whole point of the
+  Pyodide architecture. (2) The dominant ~70% stage (ring removal) is an irregular
+  robust fit (lexsort / per-bin median / IRLS) — a poor GPU map; the GPU-friendly
+  part (FFT) is ~4%. (3) **WGSL is f32-only** (no f64 on the GPU), so it inherits
+  the same precision-validation concerns as the float32 path, with no opt-out. (4)
+  WebGPU has its *own* limits: a 48 M-voxel f32 volume is 185 MiB as one storage
+  buffer, over the default `maxStorageBufferBindingSize` (128 MiB) /
+  `maxBufferSize` (256 MiB) — requestable higher on desktop GPUs (~2 GB) but
+  forcing volume **tiling** on weaker/integrated GPUs. It trades one set of limits
+  for a less predictable set. Also note the OOM is at **load**, before the FFT
+  stage, so a narrow "WebGPU-FFT-only" hybrid would not help the actual failure.
+  **The cheaper lever for big browser volumes is the float32 Pyodide mode (§4,
+  deferred) — it reuses the validated Python, no shader rewrite.** WebGPU only
+  earns reconsideration if a future profile shows a *dominant, uniformly-parallel*
+  stage, which today's pipeline does not have.
+
 ---
 
 ## 3. Status — what's DONE
