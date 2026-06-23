@@ -354,6 +354,18 @@ button {
   margin: 0;
 }
 
+/* multiple editable readouts on one slider (e.g. Å and Å/lattice) */
+.readout-edits {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.readout-edits .readout-edit input.value-input {
+  width: 58px;
+}
+
 /* select */
 select {
   appearance: none;

@@ -73,6 +73,7 @@ export function Slider({
   label,
   readout,
   valueInput,
+  valueInputs,
   value,
   min,
   max,
@@ -84,6 +85,7 @@ export function Slider({
   label: ReactNode;
   readout?: string;
   valueInput?: ValueInputConfig;
+  valueInputs?: ValueInputConfig[]; // multiple editable boxes (e.g. Å and Å/lattice)
   value: number;
   min: number;
   max: number;
@@ -97,7 +99,13 @@ export function Slider({
     <div className={`field${grow ? " grow" : ""}`}>
       <div className="field-row">
         <span className="field-label">{label}</span>
-        {valueInput ? (
+        {valueInputs ? (
+          <span className="readout-edits">
+            {valueInputs.map((vi, i) => (
+              <ValueInput key={i} {...vi} disabled={disabled} />
+            ))}
+          </span>
+        ) : valueInput ? (
           <ValueInput {...valueInput} disabled={disabled} />
         ) : readout !== undefined ? (
           <span className="readout">{readout}</span>

@@ -14,6 +14,7 @@ import {
   MetaStrip,
   Slider,
   Switch,
+  type ValueInputConfig,
 } from "../components/ui";
 import { useDatasetStore, useInitializeDataset } from "../state/datasetStore";
 import { useDpdfStore } from "../state/dpdfStore";
@@ -25,6 +26,20 @@ function axisValue(
 ): number {
   if (!range || !n || n < 2) return 0;
   return range[0] + Math.min(idx, n - 1) * ((range[1] - range[0]) / (n - 1));
+}
+
+// Snap an Å value back to the nearest grid index along an axis.
+function commitAngstrom(
+  range: [number, number],
+  n: number,
+  setIdx: (i: number) => void,
+): (v: number) => void {
+  return (v) => {
+    if (n < 2) return;
+    const step = (range[1] - range[0]) / (n - 1);
+    const i = Math.round((v - range[0]) / step);
+    setIdx(Math.max(0, Math.min(n - 1, i)));
+  };
 }
 
 export function DeltaPdfViewer() {
@@ -77,6 +92,31 @@ export function DeltaPdfViewer() {
   const xVal = axisValue(meta?.x_range, meta?.shape[0], cutX);
   const yVal = axisValue(meta?.y_range, meta?.shape[1], cutY);
   const zVal = axisValue(meta?.z_range, meta?.shape[2], cutZ);
+
+  // Two editable boxes per axis: the cut in Å, and the cut divided by the lattice
+  // parameter along that direction (a/b/c).  Editing either snaps the cut.
+  const axisInputs = (
+    range: [number, number] | undefined,
+    n: number | undefined,
+    valAng: number,
+    lat: number | null,
+    latLetter: string,
+    setIdx: (i: number) => void,
+  ): ValueInputConfig[] | undefined => {
+    if (!range || !n) return undefined;
+    const commit = commitAngstrom(range, n, setIdx);
+    const inputs: ValueInputConfig[] = [
+      { value: valAng, suffix: "Å", onCommit: commit },
+    ];
+    if (lat != null && lat !== 0) {
+      inputs.push({
+        value: valAng / lat,
+        prefix: `/${latLetter}`,
+        onCommit: (u) => commit(u * lat),
+      });
+    }
+    return inputs;
+  };
 
   return (
     <div className="page-body">
@@ -138,7 +178,8 @@ export function DeltaPdfViewer() {
             <div className="panel-col">
               <Slider
                 label="z_L"
-                readout={meta ? `${zVal.toFixed(1)} Å` : "—"}
+                readout={meta ? undefined : "—"}
+                valueInputs={axisInputs(meta?.z_range, meta?.shape[2], zVal, c, "c", setCutZ)}
                 min={0}
                 max={meta ? meta.shape[2] - 1 : 0}
                 value={cutZ}
@@ -161,7 +202,8 @@ export function DeltaPdfViewer() {
             <div className="panel-col">
               <Slider
                 label="y_K"
-                readout={meta ? `${yVal.toFixed(1)} Å` : "—"}
+                readout={meta ? undefined : "—"}
+                valueInputs={axisInputs(meta?.y_range, meta?.shape[1], yVal, b, "b", setCutY)}
                 min={0}
                 max={meta ? meta.shape[1] - 1 : 0}
                 value={cutY}
@@ -184,7 +226,8 @@ export function DeltaPdfViewer() {
             <div className="panel-col">
               <Slider
                 label="x_H"
-                readout={meta ? `${xVal.toFixed(1)} Å` : "—"}
+                readout={meta ? undefined : "—"}
+                valueInputs={axisInputs(meta?.x_range, meta?.shape[0], xVal, a, "a", setCutX)}
                 min={0}
                 max={meta ? meta.shape[0] - 1 : 0}
                 value={cutX}
