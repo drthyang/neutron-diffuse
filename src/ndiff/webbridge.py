@@ -63,8 +63,8 @@ __all__ = [
 ]
 
 # In-browser memory budget.  Pyodide runs in a 32-bit-WASM heap, so a full
-# float64 reduction of a large volume can simply not fit (see the P4 memory
-# notes in docs/browser-hosted-app-plan.md).  The Bragg-punch stage dominates
+# float64 reduction of a large volume can simply not fit (see the memory-ceiling
+# notes in docs/web.md, "In-browser run").  The Bragg-punch stage dominates
 # peak memory at roughly 8 live volume-sized float64 arrays (measured: ~3 GB at
 # 48 M voxels), so the per-voxel peak is ~8 × 8 bytes.  Volumes whose estimated
 # peak exceeds the budget are refused at load with a clear message rather than

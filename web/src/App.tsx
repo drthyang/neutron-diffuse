@@ -2,7 +2,6 @@ import { useState, type ReactNode } from "react";
 
 import { useHealth } from "./api/hooks";
 import { PYODIDE_MODE } from "./api/pyodideEngine";
-import { STATIC_MODE } from "./api/staticData";
 import {
   BrandGlyph,
   IconCheck,
@@ -78,19 +77,12 @@ function renderPage(tab: Tab, setTab: (t: Tab) => void): ReactNode {
   }
 }
 
-// The static (GitHub Pages) build has no backend, so the pipeline pages
-// (Configure / Execution) and the stages that need server-side slicing or FFTs
-// (Reciprocal cleanup / Consistency check) can't function. Show only the viewers
-// that slice the pre-baked ΔPDF volumes client-side.
-const STATIC_TABS: Tab[] = ["dpdf", "multi"];
-const VISIBLE_NAV = STATIC_MODE ? NAV.filter((n) => STATIC_TABS.includes(n.id)) : NAV;
-
 export function App() {
-  const [tab, setTab] = useState<Tab>(STATIC_MODE ? "dpdf" : "config");
+  const [tab, setTab] = useState<Tab>("config");
   const health = useHealth();
   const apiUp = health.isSuccess;
   const running = usePipelineStore((s) => s.running);
-  const active = VISIBLE_NAV.find((n) => n.id === tab) ?? VISIBLE_NAV[0];
+  const active = NAV.find((n) => n.id === tab) ?? NAV[0];
 
   return (
     <div className="app">
@@ -106,7 +98,7 @@ export function App() {
         </div>
 
         <nav className="nav">
-          {VISIBLE_NAV.map((n) => (
+          {NAV.map((n) => (
             <button
               key={n.id}
               type="button"

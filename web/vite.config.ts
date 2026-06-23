@@ -10,10 +10,10 @@ export default defineConfig(({ mode }) => ({
   // (the Pages workflow does) so assets resolve under the subpath; local dev and
   // self-hosted builds stay at /.  Using `mode` rather than process.env keeps the
   // config type-checkable without @types/node.
-  // See docs/github-pages-webgpu-plan.md for the full static-data migration.
+  // See docs/web.md for the two run modes and the Pages build.
   base: mode === "pages" ? "/neutron-diffuse/" : "/",
   build: {
-    // Pages build (static, backend-less) goes to web/dist so it does not clobber
+    // Pages build (Pyodide, backend-less) goes to web/dist so it does not clobber
     // the api-mode bundle baked into the Python package.
     outDir: mode === "pages" ? "dist" : "../src/ndiff/server/static",
     emptyOutDir: true,

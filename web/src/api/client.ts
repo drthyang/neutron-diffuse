@@ -1,12 +1,6 @@
 // Typed fetch wrappers for the ndiff API, including the binary slice envelope.
 
 import { engine, PYODIDE_MODE } from "./pyodideEngine";
-import {
-  STATIC_MODE,
-  staticDatasets,
-  staticDpdfMeta,
-  staticDpdfSlice,
-} from "./staticData";
 import type {
   ConsistencyMeta,
   DataRoot,
@@ -52,13 +46,11 @@ export function fetchHealth(): Promise<{ status: string }> {
   // Backend-less builds report healthy so the shell renders (Pyodide boots
   // lazily on the first compute, not here).
   if (PYODIDE_MODE) return Promise.resolve({ status: "pyodide" });
-  if (STATIC_MODE) return Promise.resolve({ status: "static" });
   return getJSON<{ status: string }>("/api/health");
 }
 
 export function fetchDatasets(): Promise<Dataset[]> {
   if (PYODIDE_MODE) return engine.datasets();
-  if (STATIC_MODE) return staticDatasets();
   return getJSON<Dataset[]>("/api/datasets");
 }
 
@@ -125,7 +117,6 @@ export function fetchSlice(
 
 export function fetchDpdfMeta(volumeId: string): Promise<DeltaPdfMeta> {
   if (PYODIDE_MODE) return engine.dpdfMeta(volumeId);
-  if (STATIC_MODE) return staticDpdfMeta(volumeId);
   return getJSON<DeltaPdfMeta>(`/api/deltapdf/${encodeURIComponent(volumeId)}/meta`);
 }
 
@@ -135,7 +126,6 @@ export function fetchDpdfSlice(
   value: number,
 ): Promise<Slice> {
   if (PYODIDE_MODE) return engine.dpdfSlice(volumeId, plane, value);
-  if (STATIC_MODE) return staticDpdfSlice(volumeId, plane, value);
   const params = new URLSearchParams({ plane, value: String(value) });
   return fetchEnvelope(
     `/api/deltapdf/${encodeURIComponent(volumeId)}/slice?${params.toString()}`,

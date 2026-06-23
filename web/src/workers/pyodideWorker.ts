@@ -13,7 +13,7 @@
 // Binary results (slice envelopes) are posted with an ArrayBuffer in the
 // transfer list (zero-copy from Worker to main thread).
 //
-// See docs/browser-hosted-app-plan.md §P4 for the rationale.
+// See docs/web.md ("In-browser run" / "Architecture") for the rationale.
 
 // importScripts is only available in classic workers; declare so TS is happy.
 declare function importScripts(...urls: string[]): void;
