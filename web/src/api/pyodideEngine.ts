@@ -18,7 +18,7 @@
 //  Binary slice envelopes ([uint32 hdr_len][JSON hdr][float32 data]) are
 //  transferred as Transferable ArrayBuffer (zero-copy Worker → main thread).
 //
-// See docs/browser-hosted-app-plan.md (P4) for context.
+// See docs/web.md ("In-browser run" / "Architecture") for context.
 
 import type {
   ConsistencyMeta,

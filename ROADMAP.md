@@ -345,7 +345,7 @@ Phase 4.
 
 Before treating the pipeline as a stable release candidate:
 
-- Keep README, ROADMAP, HANDOFF, and algorithm docs aligned with current
+- Keep README, QUICKSTART, ROADMAP, and algorithm docs aligned with current
   defaults.
 - Keep generated data and preview images out of commits unless they are explicit
   reference artifacts.

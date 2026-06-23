@@ -24,7 +24,7 @@ H-direction signal that the flatten preserves.
 Each stage is **skipped if its output already exists** (resume), so re-running
 only does the missing work.  Use FORCE / FORCE_FROM to recompute.
 
-Defaults follow the validated `cc_on` presets in HANDOFF.md; the slice-wise
+Defaults follow the validated `cc_on` presets in ROADMAP.md; the slice-wise
 smooth-bg + crop + gaussian ΔPDF settings are the ones that gave the clean
 maps.  Every individual stage's own env vars still pass through and override
 these defaults.

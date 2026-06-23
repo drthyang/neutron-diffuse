@@ -12,6 +12,10 @@ GUI: each plot function takes an `HKLVolume`, draws into a Matplotlib `Axes`
 IPython session, or a Jupyter notebook. Future interactive front-ends (widget
 panels, a dashboard, Mantid-side hooks) should build on these same primitives.
 
+> This page documents the **matplotlib viewers and the `ndiff.visualization`
+> API**. For copy-paste launch commands across 22/45/100 K, see
+> [commands.md](commands.md); for the browser console, see [web.md](web.md).
+
 ---
 
 ## 1. Cleanup QA Viewer

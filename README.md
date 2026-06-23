@@ -28,20 +28,21 @@ Bragg satellites, use `examples/investigate_bragg_diffuse.py`.
 
 ## Web UI
 
-`neutron-diffuse` ships a browser-based front-end (FastAPI + React) that unifies
-the cleanup and 3D-ΔPDF viewers and can drive the whole pipeline from a raw
-`.nxs` with live progress:
+`neutron-diffuse` ships a single browser console (React) that unifies the
+cleanup and 3D-ΔPDF viewers and drives the whole pipeline from a raw `.nxs` with
+live progress. It has two interchangeable run modes that share the same UI:
 
-```bash
-pip install -e ".[web]"
-ndiff-web        # serves http://127.0.0.1:8000 and opens a browser
-```
+- **Native** — `pip install -e ".[web]"` then `ndiff-web` (serves
+  http://127.0.0.1:8000); full-resolution local work.
+- **In-browser** — the hosted GitHub Pages build runs the real `ndiff` pipeline
+  client-side via Pyodide on your own data, no install (modest volumes).
 
 A sidebar console with five views — a pipeline runner (the default landing
 view), reciprocal-space cleanup, 3D-ΔPDF orthoslices, multi-temperature
 comparison, and the consistency check — replaces the standalone
 `examples/explore_*.py` viewers (which remain as a fallback). See
-[docs/web.md](docs/web.md) for details and the development workflow.
+[QUICKSTART.md](QUICKSTART.md) to get running and [docs/web.md](docs/web.md) for
+the reference, architecture, and development workflow.
 
 ## Install
 
@@ -93,9 +94,9 @@ written by the package itself.
 
 ## Quick Start
 
-For the current TbTi3Bi4 command set, start with
-[docs/quick_start.md](docs/quick_start.md). It has concise commands for the
-22 K, 45 K, and 100 K workflows and viewers.
+To run the app, see [QUICKSTART.md](QUICKSTART.md). For the current TbTi3Bi4
+CLI command set (concise commands for the 22 K, 45 K, and 100 K workflows and
+viewers), see [docs/commands.md](docs/commands.md).
 
 Run the complete pipeline:
 
@@ -299,10 +300,10 @@ Key pages:
 | [docs/algorithms/powder_rings.md](docs/algorithms/powder_rings.md) | Powder-ring model and subtraction strategy. |
 | [docs/algorithms/bragg_cleanup.md](docs/algorithms/bragg_cleanup.md) | Bragg/satellite detection, punching, and backfill. |
 | [docs/algorithms/delta_pdf.md](docs/algorithms/delta_pdf.md) | 3D-DeltaPDF transform, centring, background subtraction, and consistency checks. |
-| [docs/quick_start.md](docs/quick_start.md) | Concise workflow and plotting commands for 22 K, 45 K, and 100 K data. |
-| [docs/web.md](docs/web.md) | Browser UI (FastAPI + React): viewers and pipeline runner. |
+| [QUICKSTART.md](QUICKSTART.md) | Get the app running (native or in-browser) in a few commands. |
+| [docs/commands.md](docs/commands.md) | Concise CLI command recipes for 22 K, 45 K, and 100 K data. |
+| [docs/web.md](docs/web.md) | Browser console: run modes, viewers, architecture, dev workflow. |
 | [docs/interactive.md](docs/interactive.md) | Matplotlib viewer usage and visualization API. |
-| [docs/plotting_commands.md](docs/plotting_commands.md) | Reproducible plotting and multi-temperature command recipes. |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes and version history. |
 
 ## Package Layout
