@@ -126,24 +126,19 @@ export function ReciprocalViewer() {
     })),
   });
 
-  // Two pooled colour scales rather than one.  Raw + ring-removed still carry the
-  // Bragg peaks, whose robust level sits ~10× above the post-punch diffuse stages;
-  // pooling a single max across all five then crushes backfilled/flattened to near
-  // black.  Pool the Bragg-bearing stages together and the diffuse stages together
-  // so each regime is visible while staying comparable within itself.
-  const DIFFUSE_STAGES = new Set(["braggpunched", "backfilled", "flattened"]);
-  let braggVmax = 0;
-  let diffuseVmax = 0;
-  stages.forEach((s, i) => {
+  // One global colour scale shared by all five stages: the pooled robust level of
+  // every stage at the centre cut, so vmin (0) and vmax are identical across panels
+  // and stages are directly comparable on one scale.  Note the raw / ring-removed
+  // stages still carry the Bragg peaks (~10× the post-punch diffuse), so on the
+  // single scale the backfilled / flattened panels read darker — raise the contrast
+  // slider to lift the diffuse stages.
+  let globalVmax = 0;
+  stages.forEach((_s, i) => {
     const rm = scaleResults[i]?.data?.header.robust_max;
-    if (!rm || !Number.isFinite(rm)) return;
-    if (DIFFUSE_STAGES.has(s.name)) diffuseVmax = Math.max(diffuseVmax, rm);
-    else braggVmax = Math.max(braggVmax, rm);
+    if (rm && Number.isFinite(rm)) globalVmax = Math.max(globalVmax, rm);
   });
-  braggVmax = braggVmax || 1;
-  diffuseVmax = diffuseVmax || braggVmax;
-  const vmaxFor = (name: string) =>
-    contrast * (DIFFUSE_STAGES.has(name) ? diffuseVmax : braggVmax);
+  globalVmax = globalVmax || 1;
+  const sliceVmax = contrast * globalVmax;
 
   return (
     <div className="page-body">
@@ -242,7 +237,8 @@ export function ReciprocalViewer() {
             isError={sliceResults[i]?.isError}
             error={sliceResults[i]?.error as Error | null}
             lut={lut}
-            vmax={vmaxFor(s.name)}
+            vmax={sliceVmax}
+            vmin={0}
             log={log}
             reciprocalAxes
             latX={latX}
@@ -259,7 +255,7 @@ export function ReciprocalViewer() {
             { key: "Plane", value: plane },
             {
               key: "Colour scale",
-              value: `Bragg 0…${(contrast * braggVmax).toPrecision(3)} · diffuse 0…${(contrast * diffuseVmax).toPrecision(3)}${log ? " (log)" : ""}`,
+              value: `0…${sliceVmax.toPrecision(3)}${log ? " (log)" : ""}`,
             },
             {
               key: "Lattice",
