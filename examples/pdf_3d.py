@@ -7,7 +7,7 @@ with the Bragg peaks left in — no punch, no backfill — giving a Patterson-li
 3D-PDF dominated by the average-structure interatomic correlations, with the
 diffuse on top.
 
-The transform reuses the same engine, :func:`ndiff.analysis.compute_delta_pdf`.
+The transform reuses the same engine, :func:`nebula3d.analysis.compute_delta_pdf`.
 The only deliberate difference from the ΔPDF settings is that the smooth-background
 subtraction (a ΔPDF axis-cross fix that removes real low-frequency content) is
 **off** by default.
@@ -46,8 +46,8 @@ import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 
-import ndiff
-from ndiff.analysis import compute_delta_pdf
+import nebula3d
+from nebula3d.analysis import compute_delta_pdf
 
 # ------------------------------------------------------------------
 # locate input (the ring-removed, NON-punched volume — Bragg still present)
@@ -68,7 +68,7 @@ else:
         print(f"[warn] multiple ring-removed files; using {proc_path.name}")
 
 print(f"loading {proc_path.name} ... (Bragg KEPT — total-scattering 3D-PDF)", flush=True)
-vol = ndiff.load(proc_path)
+vol = nebula3d.load(proc_path)
 print(f"  volume shape (H,K,L): {vol.data.shape}", flush=True)
 
 # ------------------------------------------------------------------

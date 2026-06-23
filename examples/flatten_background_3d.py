@@ -37,8 +37,8 @@ from pathlib import Path
 
 import numpy as np
 
-import ndiff
-from ndiff.preprocessing import flatten_radial_background
+import nebula3d
+from nebula3d.preprocessing import flatten_radial_background
 
 HERE = Path(__file__).resolve().parent
 proc = Path("data/processed")
@@ -87,7 +87,7 @@ def _shell_medians(values, q, edges, valid):
 
 
 print(f"loading {in_path}", flush=True)
-vol = ndiff.load(in_path)
+vol = nebula3d.load(in_path)
 print(f"volume {vol.shape}; estimator={estimator} floor_pct={floor_pct} "
       f"q_step={q_step} smooth={smooth} min_count={min_count} q_range={q_range}",
       flush=True)
@@ -112,7 +112,7 @@ print(f"shell-median spread (flatness): before={np.nanstd(before):.4g} "
       f"-> after={np.nanstd(after):.4g}", flush=True)
 
 print(f"saving -> {out_path}", flush=True)
-ndiff.save(res.volume, out_path)
+nebula3d.save(res.volume, out_path)
 
 if os.environ.get("NO_PLOT", "0") != "1":
     try:

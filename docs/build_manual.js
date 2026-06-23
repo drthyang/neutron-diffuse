@@ -1,4 +1,4 @@
-// build_manual.js — generates the neutron-diffuse manual as a styled .docx
+// build_manual.js — generates the nebula3d manual as a styled .docx
 // Optimized for import into Google Docs (File ▸ Import / drag-drop), then
 // Download ▸ PDF for distribution.
 //
@@ -352,7 +352,7 @@ function hero() {
       new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 150 },
         children: [run("NEUTRON SCATTERING ANALYSIS TOOLKIT", { color: "9DB7DD", size: 18, bold: true, tracking: 48 })] }),
       new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 40 },
-        children: [run("neutron-diffuse", { color: WHITE, size: 100, bold: true })] }),
+        children: [run("nebula3d", { color: WHITE, size: 100, bold: true })] }),
       new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 80, after: 190 },
         indent: { left: 2700, right: 2700 },
         border: { bottom: { style: BorderStyle.SINGLE, size: 20, color: GOLD, space: 1 } },
@@ -438,7 +438,7 @@ function pageHeader() {
     border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: NAVY, space: 5 } },
     tabStops: [{ type: TabStopType.RIGHT, position: CONTENT_W }],
     children: [
-      run("neutron-diffuse", { bold: true, color: NAVY, size: 16 }),
+      run("nebula3d", { bold: true, color: NAVY, size: 16 }),
       run("  ·  User & Reference Manual", { color: STEEL, size: 16 }),
       new TextRun({ text: "\t" }),
       run("v0.1.0", { color: STEEL, size: 16 }),
@@ -460,7 +460,7 @@ function pageFooter() {
       run(" of ", { color: MUTED, size: 15 }),
       new TextRun({ children: [PageNumber.TOTAL_PAGES], color: MUTED, size: 15, font: SANS }),
       new TextRun({ text: "\t" }),
-      run("neutron-diffuse", { bold: true, color: STEEL, size: 15 }),
+      run("nebula3d", { bold: true, color: STEEL, size: 15 }),
     ],
   })] });
 }
@@ -475,7 +475,7 @@ function sec1() {
   return [
     h1(1, "Introduction"),
     lead("From a raw single-crystal neutron volume to a real-space map of atomic correlations — one structure, four stages, fully reproducible."),
-    p([{ text: "neutron-diffuse", bold: true }, { text: " is a Python 3.10+ toolkit for the complete analysis of three-dimensional (3D) diffuse neutron scattering volumes. It implements a production-ready four-stage pipeline that transforms a Mantid NeXus volume into a real-space 3D difference pair distribution function (3D-ΔPDF)." }]),
+    p([{ text: "nebula3d", bold: true }, { text: " is a Python 3.10+ toolkit for the complete analysis of three-dimensional (3D) diffuse neutron scattering volumes. It implements a production-ready four-stage pipeline that transforms a Mantid NeXus volume into a real-space 3D difference pair distribution function (3D-ΔPDF)." }]),
 
     h2("1.1", "The Pipeline at a Glance"),
     ...stageFlow([
@@ -491,7 +491,7 @@ function sec1() {
     h2("1.2", "Scope of This Manual"),
     p("This manual covers the background physics and mathematics of 3D diffuse scattering analysis, the algorithms and their theoretical basis, a step-by-step workflow, the Python API, every configuration parameter, worked examples for the reference TbTi₃Bi₄ dataset at 22 K / 45 K / 100 K, interactive visualization, known limitations, and a complete reference list."),
 
-    h2("1.3", "What neutron-diffuse Does Not Do"),
+    h2("1.3", "What nebula3d Does Not Do"),
     p("The package does not perform raw detector reduction, normalization to an absolute cross-section, or Reverse Monte Carlo (RMC) structural refinement. It assumes the input is a Mantid background-subtracted MDHistoWorkspace volume."),
     ...callout("note", null,
       [[{ text: "Input is the *_cc_sub_bkg.nxs", font: MONO, size: 19 },
@@ -525,7 +525,7 @@ function sec2() {
     h2("2.3", "Coordinate Systems and Conventions"),
     li([{ text: "Fractional HKL.  ", bold: true }, { text: "Reciprocal-lattice coordinates (h, k, l) in units of a*, b*, c*. Integer values are Bragg positions." }]),
     li([{ text: "Cartesian Q.  ", bold: true }, { text: "Physical momentum transfer in Å⁻¹, related to HKL by the UB matrix. Magnitude |Q| = 2π/d (physics convention)." }]),
-    li([{ text: "UB matrix.  ", bold: true }, { text: "Combines orientation U and reciprocal metric B. Mantid stores the crystallographic UB (no 2π); ndiff multiplies by 2π on read." }]),
+    li([{ text: "UB matrix.  ", bold: true }, { text: "Combines orientation U and reciprocal metric B. Mantid stores the crystallographic UB (no 2π); nebula3d multiplies by 2π on read." }]),
     ...math(["Q = 2π · UB_cryst · [h, k, l]ᵀ      ( Å⁻¹ )"]),
 
     h2("2.4", "Powder Rings: Physical Origin"),
@@ -549,19 +549,19 @@ function sec3() {
       head: ["Module", "Responsibility"],
       widths: [3200, CONTENT_W - 3200], mono: [0],
       rows: [
-        ["ndiff/core.py", "HKLVolume dataclass — the universal data carrier"],
-        ["ndiff/io/", "Mantid NeXus reader, HDF5 load/save, ASCII HKL I/O"],
-        ["ndiff/preprocessing/", "Powder-ring models, radial background, backfill"],
-        ["ndiff/analysis/", "Bragg punch / backfill, 3D-ΔPDF FFT"],
-        ["ndiff/inpainting/", "Symmetry fill, TV (Chambolle–Pock), RBF, biharmonic"],
-        ["ndiff/visualization/", "Slice plots, radial profiles, interactive viewers"],
-        ["ndiff/utils/", "UB matrix, d-spacing, Q↔HKL conversion utilities"],
+        ["nebula3d/core.py", "HKLVolume dataclass — the universal data carrier"],
+        ["nebula3d/io/", "Mantid NeXus reader, HDF5 load/save, ASCII HKL I/O"],
+        ["nebula3d/preprocessing/", "Powder-ring models, radial background, backfill"],
+        ["nebula3d/analysis/", "Bragg punch / backfill, 3D-ΔPDF FFT"],
+        ["nebula3d/inpainting/", "Symmetry fill, TV (Chambolle–Pock), RBF, biharmonic"],
+        ["nebula3d/visualization/", "Slice plots, radial profiles, interactive viewers"],
+        ["nebula3d/utils/", "UB matrix, d-spacing, Q↔HKL conversion utilities"],
         ["examples/", "Pipeline scripts and interactive viewer entry points"],
       ],
     }),
 
     h2("3.2", "The HKLVolume Data Structure"),
-    p("Every stage operates on an HKLVolume dataclass defined in src/ndiff/core.py:"),
+    p("Every stage operates on an HKLVolume dataclass defined in src/nebula3d/core.py:"),
     ...code(
 `@dataclass
 class HKLVolume:
@@ -586,9 +586,9 @@ class HKLVolume:
 
     h2("3.3", "File Formats"),
     h3("Input: Mantid NeXus"),
-    p("Raw input is a Mantid MDHistoWorkspace saved as NeXus (*_cc_sub_bkg.nxs). The reader (ndiff/io/mantid_nxs.py) extracts the signal, variance, mask, bin-edge arrays, and the UB matrix; the crystallographic UB is rescaled by 2π on read."),
+    p("Raw input is a Mantid MDHistoWorkspace saved as NeXus (*_cc_sub_bkg.nxs). The reader (nebula3d/io/mantid_nxs.py) extracts the signal, variance, mask, bin-edge arrays, and the UB matrix; the crystallographic UB is rescaled by 2π on read."),
     h3("Native HDF5"),
-    p("All intermediate and output files are HDF5 (.h5). Load with vol = ndiff.load(path); save with ndiff.save(vol, path). The ΔPDF output also stores the transform configuration and direct-lattice constants as HDF5 attributes for the interactive viewers."),
+    p("All intermediate and output files are HDF5 (.h5). Load with vol = nebula3d.load(path); save with nebula3d.save(vol, path). The ΔPDF output also stores the transform configuration and direct-lattice constants as HDF5 attributes for the interactive viewers."),
   ];
 }
 
@@ -619,7 +619,7 @@ function sec4() {
 
     // 4.2
     h2("4.2", "Stage 2 — Bragg Peak Punching"),
-    p([{ text: "Implemented in ndiff/analysis/bragg.py by ", }, { text: "BraggRemover", font: MONO, size: 20 },
+    p([{ text: "Implemented in nebula3d/analysis/bragg.py by ", }, { text: "BraggRemover", font: MONO, size: 20 },
        { text: ". The recommended production mode is " }, { text: "mode=\"both\"", font: MONO, size: 20 },
        { text: ": a lattice-aware integer-node pass followed by an hkl-agnostic search pass." }]),
     h3("4.2.1  Integer-Node Path"),
@@ -694,16 +694,16 @@ function sec5() {
       ],
     }),
     h2("5.2", "Install from Source"),
-    ...code(`git clone https://github.com/user/neutron-diffuse
-cd neutron-diffuse
+    ...code(`git clone https://github.com/user/nebula3d
+cd nebula3d
 pip install -e ".[dev]"`, "bash"),
     h2("5.3", "Recommended Runtime Environment"),
     ...code(`export PY=/opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python
 export PYTHONPATH=src
-export MPLCONFIGDIR=/private/tmp/ndiff-mpl`, "bash"),
+export MPLCONFIGDIR=/private/tmp/nebula3d-mpl`, "bash"),
     p("MPLCONFIGDIR keeps the Matplotlib cache outside the repository. If your Python 3.10+ environment already has the dependencies active, replace $PY with python3."),
     h2("5.4", "Verifying the Installation"),
-    ...code(`PYTHONPATH=src python -c "import ndiff; print(ndiff.__version__)"
+    ...code(`PYTHONPATH=src python -c "import nebula3d; print(nebula3d.__version__)"
 PYTHONPATH=src python -m pytest -o addopts='' tests/`, "bash"),
     ...callout("note", null,
       [[{ text: "The ", }, { text: "-o addopts=''", font: MONO, size: 19 },
@@ -763,10 +763,10 @@ NO_VIEWER=1 DATA_FILE="data/raw/TbTi3Bi4_100K_..._cc_sub_bkg.nxs" \\
   python examples/run_pipeline.py`, "bash"),
 
     h2("6.4", "Python API"),
-    ...code(`import ndiff
-from ndiff.analysis import BraggRemover, backfill_bragg, compute_delta_pdf
+    ...code(`import nebula3d
+from nebula3d.analysis import BraggRemover, backfill_bragg, compute_delta_pdf
 
-vol = ndiff.load("data/processed/sample_ringremoved.h5")
+vol = nebula3d.load("data/processed/sample_ringremoved.h5")
 
 remover = BraggRemover(
     mode="both", punch_radii=(0.09, 0.12, 0.45),
@@ -785,7 +785,7 @@ dpdf = compute_delta_pdf(
     filled, apodization="gaussian", gaussian_sigma=0.4,
     crop_hkl=(4, 8, 15), subtract_smooth_bg=(0, 1.5, 1.5),
 )
-ndiff.save(dpdf, "output_delta_pdf.h5")`, "python"),
+nebula3d.save(dpdf, "output_delta_pdf.h5")`, "python"),
   ];
 }
 
@@ -849,8 +849,8 @@ function sec8() {
     h1(8, "Visualization & Interactive Exploration"),
     lead("Primitive-first plotting: every function takes an HKLVolume, draws into a Matplotlib Axes, and returns it."),
     h2("8.1", "Visualization API"),
-    p("All functions live in ndiff.visualization and work identically in scripts, IPython, and Jupyter:"),
-    ...code(`from ndiff.visualization import (
+    p("All functions live in nebula3d.visualization and work identically in scripts, IPython, and Jupyter:"),
+    ...code(`from nebula3d.visualization import (
     extract_slice, plot_slice,
     plot_radial_profile, plot_azimuthal_map,
     plot_overview, SliceData,
@@ -911,14 +911,14 @@ function sec9() {
   return [
     h1(9, "Worked Examples"),
     h2("9.1", "Quick Overview of a New Dataset"),
-    ...code(`import ndiff
-from ndiff.visualization import plot_overview
+    ...code(`import nebula3d
+from nebula3d.visualization import plot_overview
 
-vol = ndiff.load("path/to/sample.nxs")
+vol = nebula3d.load("path/to/sample.nxs")
 fig = plot_overview(vol, log_scale=True)
 fig.savefig("overview.png", dpi=120)`, "python"),
     h2("9.2", "Locating and Profiling a Powder Ring"),
-    ...code(`from ndiff.visualization import plot_radial_profile, plot_azimuthal_map
+    ...code(`from nebula3d.visualization import plot_radial_profile, plot_azimuthal_map
 import matplotlib.pyplot as plt
 
 # Identify ring positions
@@ -928,11 +928,11 @@ plot_radial_profile(vol, ax=ax, mark_q=[2.69, 4.39, 5.07])
 # Check the azimuthal texture T(phi)
 plot_azimuthal_map(vol, q_center=2.69, q_width=0.05)`, "python"),
     h2("9.3", "Checking Bragg Punch Quality"),
-    ...code(`import ndiff
-from ndiff.visualization import plot_slice
+    ...code(`import nebula3d
+from nebula3d.visualization import plot_slice
 import matplotlib.pyplot as plt
 
-punched = ndiff.load("data/processed/..._braggpunched.h5")
+punched = nebula3d.load("data/processed/..._braggpunched.h5")
 fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
 # Integer-H: Bragg holes should be punched
@@ -944,16 +944,16 @@ plot_slice(punched, "kl", value=0.3333, interp=True, ax=axes[1],
            log_scale=True, title="H=1/3 (fractional)")
 fig.savefig("bragg_check.png", dpi=110)`, "python"),
     h2("9.4", "Computing and Displaying the 3D-ΔPDF"),
-    ...code(`import ndiff
-from ndiff.analysis import compute_delta_pdf
+    ...code(`import nebula3d
+from nebula3d.analysis import compute_delta_pdf
 import matplotlib.pyplot as plt
 
-filled = ndiff.load("data/processed/..._backfilled.h5")
+filled = nebula3d.load("data/processed/..._backfilled.h5")
 dpdf = compute_delta_pdf(
     filled, apodization="gaussian", gaussian_sigma=0.4,
     crop_hkl=(4, 8, 15), subtract_smooth_bg=(0, 1.5, 1.5),
 )
-ndiff.save(dpdf, "output_delta_pdf.h5")
+nebula3d.save(dpdf, "output_delta_pdf.h5")
 
 hk0 = dpdf.slice_hk0()
 vmax = abs(hk0.data).max()
@@ -981,7 +981,7 @@ PYTHONPATH=src python -m pytest -o addopts='' tests/
 python -m ruff check src/ tests/
 
 # Type check
-python -m mypy src/ndiff --ignore-missing-imports`, "bash"),
+python -m mypy src/nebula3d --ignore-missing-imports`, "bash"),
     h2("10.2", "Key Regression Tests"),
     ...dataTable({
       head: ["Test", "What it verifies"],
@@ -1110,7 +1110,7 @@ function sec13() {
 
 const doc = new Document({
   creator: "Tsung-Han Yang",
-  title: "neutron-diffuse — User & Reference Manual",
+  title: "nebula3d — User & Reference Manual",
   description: "3D diffuse neutron scattering analysis toolkit manual",
   numbering: {
     config: [{
@@ -1158,7 +1158,7 @@ const doc = new Document({
   }],
 });
 
-const outPath = path.join(__dirname, "neutron_diffuse_manual.docx");
+const outPath = path.join(__dirname, "nebula3d_manual.docx");
 Packer.toBuffer(doc).then(buffer => {
   fs.writeFileSync(outPath, buffer);
   console.log(`Written: ${outPath}  (${(buffer.length / 1024).toFixed(0)} KB)`);

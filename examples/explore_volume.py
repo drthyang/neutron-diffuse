@@ -29,8 +29,8 @@ import os
 import sys
 from pathlib import Path
 
-import ndiff
-from ndiff.visualization import interactive_slices
+import nebula3d
+from nebula3d.visualization import interactive_slices
 
 raw_dir = Path("data/raw")
 data_file = os.environ.get("DATA_FILE")
@@ -66,9 +66,9 @@ if not proc_path.exists():
     )
 
 print(f"loading raw      {in_path.name}", flush=True)
-data = ndiff.load(in_path)
+data = nebula3d.load(in_path)
 print(f"loading residual {proc_path.name}", flush=True)
-residual = ndiff.load(proc_path)
+residual = nebula3d.load(proc_path)
 
 # The removed-ring intensity is just data − residual (the subtraction is
 # voxel-wise).  Carry the residual's mask (it records the sparse-azimuth drops).

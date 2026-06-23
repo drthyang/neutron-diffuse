@@ -3,9 +3,9 @@
 import numpy as np
 import pytest
 
-from ndiff.core import HKLVolume
-from ndiff.preprocessing.backfill import backfill_ring_shells
-from ndiff.preprocessing.powder_rings import (
+from nebula3d.core import HKLVolume
+from nebula3d.preprocessing.backfill import backfill_ring_shells
+from nebula3d.preprocessing.powder_rings import (
     RingShell,
     al_ring_q_positions,
     detect_ring_shells,

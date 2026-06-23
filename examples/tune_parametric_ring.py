@@ -46,15 +46,15 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-import ndiff
-from ndiff.analysis import BraggRemover
-from ndiff.preprocessing import (
+import nebula3d
+from nebula3d.analysis import BraggRemover
+from nebula3d.preprocessing import (
     ParametricRingModel,
     PatchedRadialRingModel,
     azimuthal_sampling_mask,
     confirm_ring_shells_across_h,
 )
-from ndiff.preprocessing.radial_background import (
+from nebula3d.preprocessing.radial_background import (
     _azimuthal_angle,
     _offset_q_magnitude,
 )
@@ -140,7 +140,7 @@ def _azimuthal_excess(phi2d, val2d, q2d, c, w, nbin, *, model: bool):
 def main() -> None:
     in_path = _find_input()
     print(f"loading {in_path.name}", flush=True)
-    vol = ndiff.load(in_path)
+    vol = nebula3d.load(in_path)
     print(f"volume {vol.data.shape}  |Q| fit {(Q_MIN, Q_MAX)}", flush=True)
 
     t0 = time.time()

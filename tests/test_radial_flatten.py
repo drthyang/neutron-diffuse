@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from ndiff.core import HKLVolume
-from ndiff.preprocessing import flatten_radial_background
+from nebula3d.core import HKLVolume
+from nebula3d.preprocessing import flatten_radial_background
 
 
 def _base_vol(shape=(41, 41, 41), seed=0, noise=0.05):

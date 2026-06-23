@@ -26,8 +26,8 @@ import os
 
 import numpy as np
 
-import ndiff
-from ndiff.analysis.bragg import BraggRemover
+import nebula3d
+from nebula3d.analysis.bragg import BraggRemover
 
 HKL_RADII = (0.09, 0.12, 0.45)
 
@@ -44,7 +44,7 @@ COMMON = dict(
 )
 
 
-def bstar(vol: ndiff.HKLVolume) -> np.ndarray:
+def bstar(vol: nebula3d.HKLVolume) -> np.ndarray:
     """Reciprocal-axis lengths |a*|,|b*|,|c*| (Å⁻¹)."""
     return np.sqrt(np.diag(vol.ub_matrix.T @ vol.ub_matrix))
 
@@ -54,7 +54,7 @@ def _punched(keep: np.ndarray) -> np.ndarray:
 
 
 def compare_one(path: str) -> None:
-    vol = ndiff.load(path)
+    vol = nebula3d.load(path)
     name = os.path.basename(path)
     bs = bstar(vol)
     hkl_in_A = np.array(HKL_RADII) * bs

@@ -242,7 +242,7 @@ export function ReciprocalViewer() {
           error
           icon={<IconAlert />}
           title="Backend unreachable"
-          hint="Start the API server (ndiff-web or uvicorn on port 8000) and reload."
+          hint="Start the API server (nebula3d-web or uvicorn on port 8000) and reload."
         />
       )}
       {dataset && stages.length === 0 && (

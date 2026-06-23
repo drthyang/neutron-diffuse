@@ -3,7 +3,7 @@
 #
 #   pytest                                    -> tests
 #   ruff  check src/ tests/                   -> lint
-#   mypy  src/ndiff --ignore-missing-imports  -> type check
+#   mypy  src/nebula3d --ignore-missing-imports  -> type check
 #
 # Usage:
 #   bash scripts/check.sh
@@ -38,7 +38,7 @@ run() {  # run <label> <module> <args...>; skip if the tool is not importable
 # pytest-cov (coverage has no fail-under, so this does not change pass/fail).
 run pytest pytest -o addopts= -q
 run ruff   ruff   check src/ tests/
-run mypy   mypy   src/ndiff --ignore-missing-imports
+run mypy   mypy   src/nebula3d --ignore-missing-imports
 
 if [ "$fail" -ne 0 ]; then
     echo "" >&2

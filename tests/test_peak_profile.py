@@ -1,8 +1,8 @@
-"""Tests for Bragg/diffuse peak-shape decomposition (ndiff.analysis.peak_profile)."""
+"""Tests for Bragg/diffuse peak-shape decomposition (nebula3d.analysis.peak_profile)."""
 
 import numpy as np
 
-from ndiff.analysis.peak_profile import (
+from nebula3d.analysis.peak_profile import (
     Resolution,
     calibrate_resolution,
     decompose_peak,
@@ -11,7 +11,7 @@ from ndiff.analysis.peak_profile import (
     lorentzian,
     magnetic_satellite_centers,
 )
-from ndiff.core import HKLVolume
+from nebula3d.core import HKLVolume
 
 RNG = np.random.default_rng(0)
 

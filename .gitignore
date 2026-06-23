@@ -48,4 +48,4 @@ examples/_*.csv
 # web frontend
 node_modules/
 # built SPA bundled into the wheel (regenerate with: cd web && npm run build)
-src/ndiff/server/static/
+src/nebula3d/server/static/

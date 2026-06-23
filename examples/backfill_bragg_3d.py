@@ -30,8 +30,8 @@ from pathlib import Path
 
 import numpy as np
 
-import ndiff
-from ndiff.analysis import backfill_bragg
+import nebula3d
+from nebula3d.analysis import backfill_bragg
 
 proc = Path("data/processed")
 data_file = os.environ.get("DATA_FILE")
@@ -61,7 +61,7 @@ tv_lam = float(os.environ.get("TV_LAM", "0.2"))
 tv_iter = int(os.environ.get("TV_ITER", "80"))
 
 print(f"loading {in_path}", flush=True)
-vol = ndiff.load(in_path)
+vol = nebula3d.load(in_path)
 valid = vol.mask & np.isfinite(vol.data)
 holes = (~vol.mask) & np.isfinite(vol.data)
 print(f"volume {vol.shape}; holes={int(holes.sum()):,} "
@@ -89,5 +89,5 @@ if vals.size:
           f"p99={float(np.nanpercentile(vals, 99)):.4g}", flush=True)
 
 print(f"saving -> {out_path}", flush=True)
-ndiff.save(filled, out_path)
+nebula3d.save(filled, out_path)
 print("Bragg backfill complete.", flush=True)

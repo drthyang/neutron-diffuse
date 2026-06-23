@@ -2,13 +2,13 @@
 
 import numpy as np
 
-from ndiff.core import HKLVolume
-from ndiff.preprocessing import (
+from nebula3d.core import HKLVolume
+from nebula3d.preprocessing import (
     PatchedRadialRingModel,
     azimuthal_sampling_mask,
     confirm_ring_shells_across_h,
 )
-from ndiff.preprocessing.radial_background import (
+from nebula3d.preprocessing.radial_background import (
     _adaptive_ring_width_profile,
     _azimuthal_angle,
     _estimate_baseline,
@@ -17,7 +17,7 @@ from ndiff.preprocessing.radial_background import (
     _project_templates,
     _snip_baseline,
 )
-from ndiff.preprocessing.ring_model import _gaussian
+from nebula3d.preprocessing.ring_model import _gaussian
 
 
 def _ring_vol(shape=(61, 61, 1), ring_q=2.6, ring_sigma=0.05, seed=0):

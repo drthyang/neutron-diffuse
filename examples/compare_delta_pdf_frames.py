@@ -26,8 +26,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
-import ndiff  # noqa: E402
-from ndiff.pipeline import (  # noqa: E402
+import nebula3d  # noqa: E402
+from nebula3d.pipeline import (  # noqa: E402
     BackfillParams,
     DeltaPdfParams,
     FlattenParams,
@@ -42,7 +42,7 @@ Q_RADII = (0.097, 0.072, 0.115)
 WINDOW_A = 25.0  # half-window (Å) shown per orthoslice
 
 
-def run_arm(vol: ndiff.HKLVolume, punch_params: PunchParams):
+def run_arm(vol: nebula3d.HKLVolume, punch_params: PunchParams):
     """punch → backfill → flatten → ΔPDF, returning the DeltaPDF."""
     v = punch_bragg(vol, punch_params)
     v = backfill(v, BackfillParams())
@@ -61,7 +61,7 @@ def main() -> None:
                    if "braggpunched" not in p)
     if not paths:
         raise SystemExit(f"no *_ringremoved.h5 for DATASET={tag}")
-    vol = ndiff.load(paths[0])
+    vol = nebula3d.load(paths[0])
 
     print("running HKL arm …")
     a = run_arm(vol, PunchParams())

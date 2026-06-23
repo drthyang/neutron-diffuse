@@ -48,7 +48,7 @@ import numpy as np
 from scipy.fft import fft2, fftfreq, fftshift, ifftshift
 from scipy.ndimage import gaussian_filter
 
-import ndiff
+import nebula3d
 
 # ------------------------------------------------------------------
 # locate file and parameters
@@ -73,7 +73,7 @@ rmax_k     = float(os.environ.get("RMAX_K", "20.0"))
 rmax_l     = float(os.environ.get("RMAX_L", "20.0"))
 
 print(f"loading {proc_path.name} ...", flush=True)
-vol = ndiff.load(proc_path)
+vol = nebula3d.load(proc_path)
 
 ih = int(np.argmin(np.abs(vol.h_axis - h_plane)))
 h_actual = float(vol.h_axis[ih])
@@ -147,7 +147,7 @@ if zero_pad:
 
 # ifftshift moves the centre Q=0 origin to index [0,0] (fftn's assumed origin);
 # without it the transform gains a (-1)^k phase ramp that flips real-space peak
-# signs by pixel parity.  See src/ndiff/analysis/delta_pdf.py.
+# signs by pixel parity.  See src/nebula3d/analysis/delta_pdf.py.
 ft = fftshift(fft2(ifftshift(data)))
 pdf2d = np.real(ft)
 print(f"  output shape: {pdf2d.shape}", flush=True)

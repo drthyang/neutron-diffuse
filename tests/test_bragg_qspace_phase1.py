@@ -19,7 +19,7 @@ at voxels sitting on the ``quad == 1`` boundary.
 import numpy as np
 import pytest
 
-from ndiff.analysis.bragg import _ellipsoid_inside
+from nebula3d.analysis.bragg import _ellipsoid_inside
 
 # Real 22 K UB (metric g = UBᵀUB diagonal to ~0.5%); see Phase 0.
 UB_22K = np.array([

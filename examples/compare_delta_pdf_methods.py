@@ -46,7 +46,7 @@ import numpy as np
 from scipy.fft import fft2, fftfreq, fftshift, ifftshift
 from scipy.ndimage import gaussian_filter
 
-import ndiff
+import nebula3d
 
 # ------------------------------------------------------------------
 # locate file and parameters
@@ -68,7 +68,7 @@ sigma    = float(os.environ.get("SIGMA", "1.5"))
 rmax     = float(os.environ.get("RMAX", "20"))
 
 print(f"loading {proc_path.name} ...", flush=True)
-vol = ndiff.load(proc_path)
+vol = nebula3d.load(proc_path)
 
 k_axis_full, l_axis_full = vol.k_axis.copy(), vol.l_axis.copy()
 ik = np.where(np.abs(k_axis_full) <= crop_k)[0]

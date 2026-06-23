@@ -1,4 +1,4 @@
-"""Generate a professional PDF manual for neutron-diffuse."""
+"""Generate a professional PDF manual for nebula3d."""
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT, TA_RIGHT
@@ -383,7 +383,7 @@ def _header_footer(canvas, doc):
         canvas.setFont("Helvetica", 8)
         canvas.setFillColor(colors.white)
         canvas.drawString(doc.leftMargin, h - 1.35 * cm,
-                          "neutron-diffuse  |  Manual  v0.1")
+                          "nebula3d  |  Manual  v0.1")
         canvas.setFillColor(DARK_GREY)
         canvas.setFont("Helvetica", 8)
         canvas.drawRightString(w - doc.rightMargin, h - 1.35 * cm,
@@ -412,8 +412,8 @@ _DOC_KW = dict(
     rightMargin=2.5 * cm,
     topMargin=2.2 * cm,
     bottomMargin=2.5 * cm,
-    title="neutron-diffuse Manual",
-    author="neutron-diffuse Development Team",
+    title="nebula3d Manual",
+    author="nebula3d Development Team",
     subject="3D Neutron Diffuse Scattering Analysis",
 )
 
@@ -427,7 +427,7 @@ def build_manual(output_path: str) -> None:
     # COVER PAGE
     # -----------------------------------------------------------------------
     story.append(SP(80))
-    story.append(Paragraph("neutron-diffuse", styles["title"]))
+    story.append(Paragraph("nebula3d", styles["title"]))
     story.append(SP(4))
     story.append(Paragraph("Manual", styles["subtitle"]))
     story.append(SP(8))
@@ -499,7 +499,7 @@ def build_manual(output_path: str) -> None:
     # -----------------------------------------------------------------------
     story.append(H1("1.  Introduction"))
     story.append(P(
-        "<b>neutron-diffuse</b> is a Python 3.10+ toolkit for the complete "
+        "<b>nebula3d</b> is a Python 3.10+ toolkit for the complete "
         "analysis of three-dimensional (3D) diffuse neutron scattering volumes. "
         "It implements a production-ready four-stage pipeline that transforms raw "
         "single-crystal Mantid NeXus output into real-space 3D difference pair "
@@ -552,7 +552,7 @@ def build_manual(output_path: str) -> None:
         "a complete reference list."
     ))
 
-    story.append(H2("1.2  What neutron-diffuse Does Not Do"))
+    story.append(H2("1.2  What nebula3d Does Not Do"))
     story.append(P(
         "The package does not perform raw detector reduction, normalization to an "
         "absolute cross-section, or Reverse Monte Carlo (RMC) structural refinement. "
@@ -648,7 +648,7 @@ def build_manual(output_path: str) -> None:
         "The <b>UB matrix</b> combines the orientation matrix U (aligning the crystal "
         "axes to the laboratory frame) and the reciprocal-metric matrix B "
         "(encoding the lattice parameters). Mantid files store the crystallographic "
-        "UB (no 2π factor); neutron-diffuse reads this and multiplies by 2π "
+        "UB (no 2π factor); nebula3d reads this and multiplies by 2π "
         "to convert to the physics convention."
     ))
     story.append(math_block("Q = 2π · UB_cryst · [h, k, l]ᵀ   ( Å⁻¹ )"))
@@ -694,18 +694,18 @@ def build_manual(output_path: str) -> None:
 
     story.append(H2("3.1  Overview"))
     story.append(P(
-        "The package is installed from source under <tt>src/ndiff/</tt> and follows "
+        "The package is installed from source under <tt>src/nebula3d/</tt> and follows "
         "a strict separation between the core data structure, I/O, the four algorithmic "
         "stages, an inpainting library, and visualization:"
     ))
     arch_rows = [
-        ["<tt>ndiff/core.py</tt>", "HKLVolume dataclass — the universal data carrier"],
-        ["<tt>ndiff/io/</tt>", "Mantid NeXus reader, HDF5 load/save, ASCII HKL I/O"],
-        ["<tt>ndiff/preprocessing/</tt>", "Powder-ring models, radial background, backfill"],
-        ["<tt>ndiff/analysis/</tt>", "Bragg punch/backfill, 3D-ΔPDF FFT"],
-        ["<tt>ndiff/inpainting/</tt>", "Symmetry fill, TV (Chambolle-Pock), RBF, biharmonic"],
-        ["<tt>ndiff/visualization/</tt>", "Slice plots, radial profiles, interactive viewers"],
-        ["<tt>ndiff/utils/</tt>", "UB matrix, d-spacing, Q↔HKL conversion utilities"],
+        ["<tt>nebula3d/core.py</tt>", "HKLVolume dataclass — the universal data carrier"],
+        ["<tt>nebula3d/io/</tt>", "Mantid NeXus reader, HDF5 load/save, ASCII HKL I/O"],
+        ["<tt>nebula3d/preprocessing/</tt>", "Powder-ring models, radial background, backfill"],
+        ["<tt>nebula3d/analysis/</tt>", "Bragg punch/backfill, 3D-ΔPDF FFT"],
+        ["<tt>nebula3d/inpainting/</tt>", "Symmetry fill, TV (Chambolle-Pock), RBF, biharmonic"],
+        ["<tt>nebula3d/visualization/</tt>", "Slice plots, radial profiles, interactive viewers"],
+        ["<tt>nebula3d/utils/</tt>", "UB matrix, d-spacing, Q↔HKL conversion utilities"],
         ["<tt>examples/</tt>", "Pipeline scripts and interactive viewer entry points"],
     ]
     story.append(two_col_table(
@@ -719,7 +719,7 @@ def build_manual(output_path: str) -> None:
     story.append(H2("3.2  The HKLVolume Data Structure"))
     story.append(P(
         "Every stage of the pipeline operates on an <tt>HKLVolume</tt> dataclass "
-        "defined in <tt>src/ndiff/core.py</tt>:"
+        "defined in <tt>src/nebula3d/core.py</tt>:"
     ))
     story.append(code_block(
         "@dataclass\n"
@@ -752,7 +752,7 @@ def build_manual(output_path: str) -> None:
     story.append(H3("Input: Mantid NeXus"))
     story.append(P(
         "Raw input is a Mantid <tt>MDHistoWorkspace</tt> saved as a NeXus file "
-        "(<tt>*_cc_sub_bkg.nxs</tt>). The reader (<tt>ndiff/io/mantid_nxs.py</tt>) "
+        "(<tt>*_cc_sub_bkg.nxs</tt>). The reader (<tt>nebula3d/io/mantid_nxs.py</tt>) "
         "extracts the signal, variance, mask, bin-edge arrays, and the UB matrix from "
         "the standard Mantid HDF5 hierarchy. The Mantid crystallographic UB is "
         "rescaled by 2π on read."
@@ -760,7 +760,7 @@ def build_manual(output_path: str) -> None:
     story.append(H3("Native HDF5"))
     story.append(P(
         "All intermediate and output files are stored as HDF5 (<tt>.h5</tt>). "
-        "Load with <tt>vol = ndiff.load(path)</tt>; save with <tt>ndiff.save(vol, path)</tt>. "
+        "Load with <tt>vol = nebula3d.load(path)</tt>; save with <tt>nebula3d.save(vol, path)</tt>. "
         "The ΔPDF output additionally stores the transform configuration and direct-lattice "
         "constants as HDF5 attributes for use by the interactive viewers."
     ))
@@ -784,7 +784,7 @@ def build_manual(output_path: str) -> None:
     story.append(H3("4.1.2  Non-Parametric Patch-Based Method (Production)"))
     story.append(P(
         "The production algorithm is implemented in "
-        "<tt>ndiff/preprocessing/radial_background.py</tt> as "
+        "<tt>nebula3d/preprocessing/radial_background.py</tt> as "
         "<tt>PatchedRadialRingModel</tt>. It processes the volume one H-slice "
         "(0kl plane) at a time and builds a non-parametric radial ring model in "
         "azimuthal patches:"
@@ -858,7 +858,7 @@ def build_manual(output_path: str) -> None:
     # 4.2 Bragg punch
     story.append(H2("4.2  Stage 2: Bragg Peak Punching"))
     story.append(P(
-        "Bragg punching is implemented in <tt>ndiff/analysis/bragg.py</tt> by the "
+        "Bragg punching is implemented in <tt>nebula3d/analysis/bragg.py</tt> by the "
         "<tt>BraggRemover</tt> class. The recommended production mode is "
         "<tt>mode=\"both\"</tt>, which combines a lattice-aware integer-node pass "
         "followed by an hkl-agnostic search pass."
@@ -959,7 +959,7 @@ def build_manual(output_path: str) -> None:
     story.append(P(
         "After punching, masked voxels must be replaced with physically reasonable "
         "estimates before the Fourier transform. The dedicated wrapper is "
-        "<tt>backfill_bragg()</tt> in <tt>ndiff/analysis/bragg_fill.py</tt>."
+        "<tt>backfill_bragg()</tt> in <tt>nebula3d/analysis/bragg_fill.py</tt>."
     ))
 
     story.append(H3("4.3.1  Q-Shell Fill (Recommended)"))
@@ -991,7 +991,7 @@ def build_manual(output_path: str) -> None:
     story.append(H3("4.3.3  General Inpainting Methods"))
     story.append(P(
         "For complex cases, the general inpainting pipeline in "
-        "<tt>ndiff/inpainting/pipeline.py</tt> provides:"
+        "<tt>nebula3d/inpainting/pipeline.py</tt> provides:"
     ))
     inpaint_rows = [
         ["Symmetry", "Crystal Laue-symmetry equivalents (inverse-variance weighted)",
@@ -1061,7 +1061,7 @@ def build_manual(output_path: str) -> None:
         "Δρ = fftshift( fftn( ifftshift( I_windowed ) ) ).real"
     ))
     story.append(P(
-        "Applied step by step in <tt>ndiff/analysis/delta_pdf.py</tt>:"
+        "Applied step by step in <tt>nebula3d/analysis/delta_pdf.py</tt>:"
     ))
     fft_steps = [
         ("Fill masked voxels",
@@ -1217,8 +1217,8 @@ def build_manual(output_path: str) -> None:
 
     story.append(H2("5.2  Install from Source"))
     story.append(code_block(
-        "git clone https://github.com/user/neutron-diffuse\n"
-        "cd neutron-diffuse\n"
+        "git clone https://github.com/user/nebula3d\n"
+        "cd nebula3d\n"
         "pip install -e \".[dev]\""
     ))
     story.append(P(
@@ -1235,7 +1235,7 @@ def build_manual(output_path: str) -> None:
     story.append(code_block(
         "export PY=/opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python\n"
         "export PYTHONPATH=src\n"
-        "export MPLCONFIGDIR=/private/tmp/ndiff-mpl"
+        "export MPLCONFIGDIR=/private/tmp/nebula3d-mpl"
     ))
     story.append(P(
         "<tt>MPLCONFIGDIR</tt> keeps Matplotlib cache files outside the repository. "
@@ -1245,7 +1245,7 @@ def build_manual(output_path: str) -> None:
 
     story.append(H2("5.4  Verifying the Installation"))
     story.append(code_block(
-        "PYTHONPATH=src python -c \"import ndiff; print(ndiff.__version__)\"\n"
+        "PYTHONPATH=src python -c \"import nebula3d; print(nebula3d.__version__)\"\n"
         "PYTHONPATH=src python -m pytest -o addopts='' tests/"
     ))
 
@@ -1359,11 +1359,11 @@ def build_manual(output_path: str) -> None:
         "All pipeline stages can be called programmatically:"
     ))
     story.append(code_block(
-        "import ndiff\n"
-        "from ndiff.analysis import BraggRemover, backfill_bragg, compute_delta_pdf\n"
+        "import nebula3d\n"
+        "from nebula3d.analysis import BraggRemover, backfill_bragg, compute_delta_pdf\n"
         "\n"
         "# Load ring-removed volume\n"
-        "vol = ndiff.load(\"data/processed/sample_ringremoved.h5\")\n"
+        "vol = nebula3d.load(\"data/processed/sample_ringremoved.h5\")\n"
         "\n"
         "# Bragg punch\n"
         "remover = BraggRemover(\n"
@@ -1482,14 +1482,14 @@ def build_manual(output_path: str) -> None:
 
     story.append(H2("8.1  Visualization API Overview"))
     story.append(P(
-        "All visualization functions live in <tt>ndiff.visualization</tt> and follow "
+        "All visualization functions live in <tt>nebula3d.visualization</tt> and follow "
         "a primitive-first design: each function accepts an <tt>HKLVolume</tt>, "
         "draws into a caller-supplied Matplotlib Axes or Figure, and returns it. "
         "This makes the same calls work in one-shot scripts, IPython sessions, "
         "Jupyter notebooks, and the interactive viewer scripts."
     ))
     story.append(code_block(
-        "from ndiff.visualization import (\n"
+        "from nebula3d.visualization import (\n"
         "    extract_slice, plot_slice,\n"
         "    plot_radial_profile, plot_azimuthal_map,\n"
         "    plot_overview, SliceData,\n"
@@ -1619,17 +1619,17 @@ def build_manual(output_path: str) -> None:
         "Load a raw volume and display the 2×2 diagnostic overview:"
     ))
     story.append(code_block(
-        "import ndiff\n"
-        "from ndiff.visualization import plot_overview\n"
+        "import nebula3d\n"
+        "from nebula3d.visualization import plot_overview\n"
         "\n"
-        "vol = ndiff.load(\"path/to/sample.nxs\")   # or .h5\n"
+        "vol = nebula3d.load(\"path/to/sample.nxs\")   # or .h5\n"
         "fig = plot_overview(vol, log_scale=True)\n"
         "fig.savefig(\"overview.png\", dpi=120)"
     ))
 
     story.append(H2("9.2  Locating and Profiling a Powder Ring"))
     story.append(code_block(
-        "from ndiff.visualization import plot_radial_profile, plot_azimuthal_map\n"
+        "from nebula3d.visualization import plot_radial_profile, plot_azimuthal_map\n"
         "import matplotlib.pyplot as plt\n"
         "\n"
         "# Step 1: identify ring positions from radial profile\n"
@@ -1647,11 +1647,11 @@ def build_manual(output_path: str) -> None:
         "Compare an integer-H plane (Bragg present) to a fractional-H diffuse plane:"
     ))
     story.append(code_block(
-        "import ndiff\n"
-        "from ndiff.visualization import plot_slice\n"
+        "import nebula3d\n"
+        "from nebula3d.visualization import plot_slice\n"
         "import matplotlib.pyplot as plt\n"
         "\n"
-        "punched = ndiff.load(\"data/processed/..._braggpunched.h5\")\n"
+        "punched = nebula3d.load(\"data/processed/..._braggpunched.h5\")\n"
         "\n"
         "fig, axes = plt.subplots(1, 2, figsize=(12, 5))\n"
         "\n"
@@ -1669,11 +1669,11 @@ def build_manual(output_path: str) -> None:
 
     story.append(H2("9.4  Computing and Displaying the 3D-ΔPDF"))
     story.append(code_block(
-        "import ndiff\n"
-        "from ndiff.analysis import compute_delta_pdf\n"
+        "import nebula3d\n"
+        "from nebula3d.analysis import compute_delta_pdf\n"
         "import matplotlib.pyplot as plt\n"
         "\n"
-        "filled = ndiff.load(\"data/processed/..._backfilled.h5\")\n"
+        "filled = nebula3d.load(\"data/processed/..._backfilled.h5\")\n"
         "\n"
         "dpdf = compute_delta_pdf(\n"
         "    filled,\n"
@@ -1682,7 +1682,7 @@ def build_manual(output_path: str) -> None:
         "    crop_hkl=(4, 8, 15),\n"
         "    subtract_smooth_bg=(0, 1.5, 1.5),\n"
         ")\n"
-        "ndiff.save(dpdf, \"output_delta_pdf.h5\")\n"
+        "nebula3d.save(dpdf, \"output_delta_pdf.h5\")\n"
         "\n"
         "# Plot the central hk0 slice\n"
         "hk0 = dpdf.slice_hk0()   # h-k plane at l=0\n"
@@ -1714,7 +1714,7 @@ def build_manual(output_path: str) -> None:
         "python -m ruff check src/ tests/\n"
         "\n"
         "# Type check (mypy)\n"
-        "python -m mypy src/ndiff --ignore-missing-imports"
+        "python -m mypy src/nebula3d --ignore-missing-imports"
     ))
     story.append(P(
         "Note: The <tt>-o addopts=''</tt> flag is required because the project "
@@ -1930,7 +1930,7 @@ def build_manual(output_path: str) -> None:
          "Applications to Imaging,&rdquo; "
          "<i>J. Math. Imaging Vision</i> <b>40</b>, 120–145 (2011). "
          "DOI: 10.1007/s10851-010-0251-1. "
-         "<b>Primal-dual TV inpainting algorithm used in ndiff.</b>"),
+         "<b>Primal-dual TV inpainting algorithm used in nebula3d.</b>"),
         ("[4]",
          "M. Bertalmio, G. Sapiro, V. Caselles, and C. Ballester, "
          "&ldquo;Image inpainting,&rdquo; "
@@ -2000,5 +2000,5 @@ def build_manual(output_path: str) -> None:
 
 if __name__ == "__main__":
     import os
-    out = os.path.join(os.path.dirname(__file__), "neutron_diffuse_manual.pdf")
+    out = os.path.join(os.path.dirname(__file__), "nebula3d_manual.pdf")
     build_manual(out)

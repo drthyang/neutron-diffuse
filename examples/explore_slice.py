@@ -36,16 +36,16 @@ from pathlib import Path
 
 import numpy as np
 
-import ndiff
-from ndiff.analysis import BraggRemover, backfill_bragg
-from ndiff.preprocessing import (
+import nebula3d
+from nebula3d.analysis import BraggRemover, backfill_bragg
+from nebula3d.preprocessing import (
     EmptySubtractor,
     PatchedRadialRingModel,
     azimuthal_sampling_mask,
     fit_ring_profiles,
     line_profile,
 )
-from ndiff.visualization import interactive_slices
+from nebula3d.visualization import interactive_slices
 
 raw = Path("data/raw")
 # Default to the preferred 22K mmm validation file; the alphabetically-first
@@ -54,7 +54,7 @@ raw = Path("data/raw")
 USE_BACKGROUND = os.environ.get("USE_BACKGROUND", "0") not in {"0", "false", "False", ""}
 data_file = os.environ.get("DATA_FILE")
 if data_file:
-    data = ndiff.load(Path(data_file))
+    data = nebula3d.load(Path(data_file))
 else:
     def is_empty_background(path: Path) -> bool:
         return (
@@ -67,7 +67,7 @@ else:
         raise FileNotFoundError(
             "No input .nxs files found in data/raw. Set DATA_FILE=/path/to/input.nxs."
         )
-    data = ndiff.load(next(
+    data = nebula3d.load(next(
         (p for p in cands if "22K_mmm" in p.stem and "cc_sub_bkg" in p.stem),
         next((p for p in cands if "22K_mmm" in p.stem), cands[0]),
     ))
@@ -92,7 +92,7 @@ if USE_BACKGROUND:
         raise FileNotFoundError(
             "USE_BACKGROUND=1 but no empty/background *_bkg.nxs file was found in data/raw."
         )
-    bkg = ndiff.load_mantid_nxs(bkg_cands[0], ub_matrix=data.ub_matrix)
+    bkg = nebula3d.load_mantid_nxs(bkg_cands[0], ub_matrix=data.ub_matrix)
 
 q_range = (float(os.environ.get("Q_MIN", "1.5")),
            float(os.environ.get("Q_MAX", "10.5")))
@@ -328,7 +328,7 @@ remover = BraggRemover(
 ring_file = os.environ.get("RING_FILE")
 if ring_file:
     print(f"loading ring-removed volume from {ring_file} ...", flush=True)
-    residual = ndiff.load(Path(ring_file))
+    residual = nebula3d.load(Path(ring_file))
 else:
     # Compute ring removal for every H plane so the viewer can scrub H.
     MASK_SPARSE = True
@@ -387,7 +387,7 @@ else:
 punch_file = os.environ.get("PUNCH_FILE")
 if punch_file:
     print(f"loading punched volume from {punch_file} ...", flush=True)
-    punched = ndiff.load(Path(punch_file))
+    punched = nebula3d.load(Path(punch_file))
     punched_voxels = residual.mask & ~punched.mask
 else:
     peaks = remover.detect_peaks(residual)
@@ -402,7 +402,7 @@ else:
 backfill_file = os.environ.get("BACKFILL_FILE")
 if backfill_file:
     print(f"loading backfilled volume from {backfill_file} ...", flush=True)
-    backfilled = ndiff.load(Path(backfill_file))
+    backfilled = nebula3d.load(Path(backfill_file))
 else:
     punch_only = dataclasses.replace(residual, mask=~punched_voxels)
     backfill_method = os.environ.get("BACKFILL_METHOD", "local")

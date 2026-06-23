@@ -86,7 +86,7 @@ for broad, diffuse backgrounds. Slower than TV for large masks.
 For Bragg-punched volumes, prefer the dedicated wrapper:
 
 ```python
-from ndiff.analysis import backfill_bragg
+from nebula3d.analysis import backfill_bragg
 
 filled = backfill_bragg(punched, method="q_shell")
 ```

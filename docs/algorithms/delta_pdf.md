@@ -15,7 +15,7 @@ than in the average structure; negative means fewer. References: Weber &
 Simonov, *Z. Kristallogr.* **227**, 238 (2012); Simonov, Weber & Steurer,
 *J. Appl. Cryst.* **47**, 2011 (2014).
 
-API: `ndiff.analysis.compute_delta_pdf`. Drivers: `examples/delta_pdf.py`
+API: `nebula3d.analysis.compute_delta_pdf`. Drivers: `examples/delta_pdf.py`
 (full 3D), `examples/delta_pdf_plane.py` (single reciprocal H-plane 2D),
 `examples/explore_delta_pdf.py` (interactive y_K–z_L viewer with x_H slider).
 
@@ -29,7 +29,7 @@ real, centrosymmetric `I(Q)` must therefore be:
 Δρ = fftshift( fftn( ifftshift( I_windowed ) ) ).real
 ```
 
-Step by step (as implemented in `src/ndiff/analysis/delta_pdf.py`):
+Step by step (as implemented in `src/nebula3d/analysis/delta_pdf.py`):
 
 1. **Fill** masked voxels with 0 (the backfilled volume should already be
    NaN-free).
@@ -183,7 +183,7 @@ peaks drop to ~1–3 %, for any σ; see the `radial_flatten` module and
 
 The production pipeline (`examples/run_pipeline.py`) therefore removes the
 background with an **explicit step 4**, the isotropic radial flatten
-(`ndiff.preprocessing.flatten_radial_background`,
+(`nebula3d.preprocessing.flatten_radial_background`,
 `examples/flatten_background_3d.py`), and leaves the in-FFT `SUBTRACT_BG` **off**
 by default. The flatten subtracts a smooth `bg(|Q|)` per spherical shell without
 touching per-plane DC, so it **preserves the on-axis H signal** while still

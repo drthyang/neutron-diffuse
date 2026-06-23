@@ -293,8 +293,8 @@ function RingTextureViz({
 }
 
 // Closed-form of the fitted ring model, mirroring the actual computation:
-//   parametric → ndiff.preprocessing.parametric_ring (Iᵣ = Σᵢ PVᵢ(|Q|)·Tᵢ(φ))
-//   patched    → ndiff.preprocessing.radial_background (per-patch radial subtraction)
+//   parametric → nebula3d.preprocessing.parametric_ring (Iᵣ = Σᵢ PVᵢ(|Q|)·Tᵢ(φ))
+//   patched    → nebula3d.preprocessing.radial_background (per-patch radial subtraction)
 function RingEquation({
   model,
   nFourier,
@@ -896,7 +896,7 @@ function useBootStatus(): BootStatus {
 const BOOT_PHASE_LABELS: Record<string, string> = {
   runtime: "Downloading Python runtime (~10 MB)…",
   packages: "Loading numpy, scipy, h5py…",
-  wheel: "Installing ndiff package…",
+  wheel: "Installing nebula3d package…",
   ready: "Compute engine ready",
   error: "Boot failed",
 };

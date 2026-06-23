@@ -3,7 +3,7 @@
 Takes the cleaned diffuse volume that feeds the ΔPDF stage (the *flattened*
 volume by default), computes the 3D-ΔPDF with the pipeline's defaults, then
 **inverse-transforms it back to reciprocal space** with
-:func:`ndiff.analysis.invert_delta_pdf` and compares the reconstruction against
+:func:`nebula3d.analysis.invert_delta_pdf` and compares the reconstruction against
 the input.
 
 Why this is a consistency check, not a tautology
@@ -45,9 +45,9 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import ndiff
-from ndiff.analysis import compute_delta_pdf
-from ndiff.pipeline import DeltaPdfParams, pdf_consistency_check
+import nebula3d
+from nebula3d.analysis import compute_delta_pdf
+from nebula3d.pipeline import DeltaPdfParams, pdf_consistency_check
 
 
 def _find_input() -> Path:
@@ -99,7 +99,7 @@ def _params_from_env() -> DeltaPdfParams:
 def main() -> None:
     in_path = _find_input()
     print(f"loading {in_path.name}", flush=True)
-    vol = ndiff.load(in_path)
+    vol = nebula3d.load(in_path)
 
     p = _params_from_env()
     print(f"ΔPDF params: apodize={p.apodization} sigma={p.gaussian_sigma} "

@@ -1,55 +1,55 @@
 # Web UI
 
-`neutron-diffuse` ships **one** browser console — a React + TypeScript SPA (Vite)
+`nebula3d` ships **one** browser console — a React + TypeScript SPA (Vite)
 that unifies the cleanup, 3D-ΔPDF, multi-temperature, and consistency views and
 drives the whole reduction pipeline. It has two interchangeable run modes that
-share the same UI and the same `ndiff` reduction code:
+share the same UI and the same `nebula3d` reduction code:
 
 | Mode | `VITE_DATA_MODE` | Backend | Use it for |
 | --- | --- | --- | --- |
-| **Native** | unset (default) | FastAPI (`ndiff-web`) over `/api` | Full-resolution local work, no size limit |
-| **In-browser** | `pyodide` | none — `ndiff` runs in the browser via Pyodide | No-install / sharing / demo; modest volumes |
+| **Native** | unset (default) | FastAPI (`nebula3d-web`) over `/api` | Full-resolution local work, no size limit |
+| **In-browser** | `pyodide` | none — `nebula3d` runs in the browser via Pyodide | No-install / sharing / demo; modest volumes |
 
 The standalone matplotlib viewers in `examples/explore_*.py` remain as a
 CLI fallback (see [commands.md](commands.md)).
 
-## Native run (`ndiff-web`)
+## Native run (`nebula3d-web`)
 
 ```bash
 pip install -e ".[web]"
-ndiff-web                       # serves http://127.0.0.1:8000 and opens a browser
+nebula3d-web                       # serves http://127.0.0.1:8000 and opens a browser
 ```
 
 By default it reads `./data` (the `raw/` + `processed/` layout). Override:
 
 ```bash
-ndiff-web --data-root /path/to/data --port 8000
-ndiff-web --no-browser          # headless (e.g. remote)
+nebula3d-web --data-root /path/to/data --port 8000
+nebula3d-web --no-browser          # headless (e.g. remote)
 ```
 
-The installed wheel bundles the built SPA, so `ndiff-web` is the only command
+The installed wheel bundles the built SPA, so `nebula3d-web` is the only command
 needed. From a source checkout that has not been built yet, build the frontend
 first (`make ui`, see [Development](#development)) — otherwise only the API is
 served.
 
 ## In-browser run (GitHub Pages / Pyodide)
 
-The hosted build runs the **real** `ndiff` pipeline in the user's browser via
+The hosted build runs the **real** `nebula3d` pipeline in the user's browser via
 [Pyodide](https://pyodide.org) (CPython + numpy/scipy/h5py compiled to
 WebAssembly). Users load **their own** data file; nothing is uploaded, nothing is
 hosted — the privacy-preserving path to a public, fully-functional app.
 
-- Hosted at **https://drthyang.github.io/neutron-diffuse/** (deployed by
+- Hosted at **https://drthyang.github.io/nebula3d/** (deployed by
   `.github/workflows/pages.yml` on push to `main`).
-- The pipeline ships as a data-free `ndiff` wheel that the page micropip-installs
+- The pipeline ships as a data-free `nebula3d` wheel that the page micropip-installs
   at runtime. Pyodide runs in a dedicated Web Worker
   (`web/src/workers/pyodideWorker.ts`) so the UI never blocks; a boot-progress
   panel covers the ~15 MB WASM download (cached after first load).
 - **Memory ceiling.** Pyodide is a 32-bit-WASM heap, so large float64 volumes do
   not fit (full-pipeline peak ≈ 3 GB at 48 M voxels). Every upload is pre-flighted
-  by `ndiff.webbridge.inspect_input` (reads only the HDF5 shape, so it can't OOM)
+  by `nebula3d.webbridge.inspect_input` (reads only the HDF5 shape, so it can't OOM)
   and **rejected above ~23 M voxels** with a message pointing to the native build.
-  Full-resolution data goes through native `ndiff-web`.
+  Full-resolution data goes through native `nebula3d-web`.
 
 Local dev for this build: `cd web && npm run dev:pyodide` (loads `.env.pages`,
 base `/`).
@@ -70,22 +70,22 @@ replace the standalone `examples/explore_*.py` viewers:
 ## Architecture
 
 ```
-Native:    Browser (React/TS SPA)  ──HTTP/SSE──►  FastAPI (uvicorn)  ──►  ndiff library
-In-browser: Browser (React/TS SPA) ──RPC──►  Web Worker → Pyodide  ──►  ndiff (same code)
+Native:    Browser (React/TS SPA)  ──HTTP/SSE──►  FastAPI (uvicorn)  ──►  nebula3d library
+In-browser: Browser (React/TS SPA) ──RPC──►  Web Worker → Pyodide  ──►  nebula3d (same code)
 ```
 
-- **Slices** are extracted with the same `ndiff.visualization.extract_slice` the
+- **Slices** are extracted with the same `nebula3d.visualization.extract_slice` the
   matplotlib viewers use, returned as a compact binary envelope
   (`[uint32 header_len][JSON header][float32 data]`), and colour-mapped in the
   browser — so contrast/log/colormap change instantly with no refetch.
-- **Native** runs `ndiff.pipeline.run_pipeline` in a separate process
+- **Native** runs `nebula3d.pipeline.run_pipeline` in a separate process
   (`multiprocessing` spawn), streaming progress over Server-Sent Events; cancel
   terminates the worker. Loaded volumes are kept in an LRU cache sized to hold
   every cleanup stage of a dataset at once, so the shared cut slider scrubs
   without re-reading the ~100 MB volumes.
 - **In-browser** drives the pipeline **stage-by-stage** from JS, yielding between
   stages so the stepper + log update per stage. The Python side is a thin
-  in-process driver, **`ndiff.webbridge`**, that reuses the FastAPI-free server
+  in-process driver, **`nebula3d.webbridge`**, that reuses the FastAPI-free server
   helpers (`volumes`, `deltapdf`, `consistency`, `datasets`, `params`) against a
   virtual `/work` FS — slicing/discovery/consistency are *not* reimplemented in
   JS. `client.ts` branches on `PYODIDE_MODE` for every endpoint.
@@ -113,7 +113,7 @@ Run the backend and the Vite dev server (hot reload) separately:
 
 ```bash
 # terminal 1 — API on :8000
-ndiff-web --no-browser --reload
+nebula3d-web --no-browser --reload
 
 # terminal 2 — Vite dev server on :5173 (proxies /api to :8000)
 cd web && npm install && npm run dev      # http://localhost:5173
@@ -135,13 +135,13 @@ The React app is built into **two** gitignored targets (rerun the matching one
 after editing `web/src`):
 
 ```bash
-make ui            # → src/ndiff/server/static   (served by native ndiff-web; bundled in the wheel)
+make ui            # → src/nebula3d/server/static   (served by native nebula3d-web; bundled in the wheel)
 make ui-pages      # → web/dist                  (GitHub Pages / Pyodide build)
 ```
 
-> **Heads-up — the native bundle can go stale.** `src/ndiff/server/static/` is a
+> **Heads-up — the native bundle can go stale.** `src/nebula3d/server/static/` is a
 > gitignored build artifact that only changes when you run `make ui`. If you edit
-> `web/src` (or pull) and don't rebuild, `ndiff-web` keeps serving the **old** UI
+> `web/src` (or pull) and don't rebuild, `nebula3d-web` keeps serving the **old** UI
 > (it prints a `[warn]` at startup when the bundle is older than `web/src`). After
 > rebuilding, hard-refresh (Cmd/Ctrl-Shift-R). The two targets are independent.
 
@@ -153,17 +153,17 @@ cd web && npm run lint && npm run typecheck && npm run build
 
 ## Packaging & the data-free wheel
 
-The native SPA in `src/ndiff/server/static/` is a build artifact (git-ignored);
+The native SPA in `src/nebula3d/server/static/` is a build artifact (git-ignored);
 `package-data` bundles `static/**/*` so the published wheel serves the UI with no
 Node toolchain on the user's side. A release build is `cd web && npm ci &&
 npm run build`, then build the wheel.
 
-The **Pages** build instead micropip-installs an `ndiff` wheel at runtime, so it
+The **Pages** build instead micropip-installs an `nebula3d` wheel at runtime, so it
 must be built **data-free** — a careless build can bundle experimental data via
 the packaged `static/`. Always clean first:
 
 ```bash
-rm -rf build src/*.egg-info src/ndiff/server/static/data
+rm -rf build src/*.egg-info src/nebula3d/server/static/data
 python -m pip wheel . --no-deps --no-cache-dir -w web/public/wheels
 unzip -l web/public/wheels/*.whl | grep -iqE '\.(bin|nxs|h5)' && echo "DATA LEAK — stop" || echo "clean"
 ```
@@ -172,18 +172,18 @@ A clean wheel is ~252 KB. The CI workflow performs this same data-leak check.
 
 ## In-browser design notes
 
-- **Why Pyodide, not WebGPU or pre-baked data.** `ndiff` is pure Python and its
+- **Why Pyodide, not WebGPU or pre-baked data.** `nebula3d` is pure Python and its
   compute deps (numpy/scipy/h5py) are official Pyodide packages, so the existing,
   regression-gated pipeline runs in the browser essentially unchanged. WebGPU was
   shelved: profiling shows the 3D FFT is only ~4% of runtime while the dominant
   stage (ring removal, ~70%) is an irregular robust fit — a poor GPU fit — and a
-  WGSL rewrite would discard the "real `ndiff` runs unchanged" property. Pre-baked
+  WGSL rewrite would discard the "real `nebula3d` runs unchanged" property. Pre-baked
   static volumes were rejected because they would require *hosting the data*.
-- **Pyodide gotchas.** `import ndiff` pulls in matplotlib; Pyodide ships
+- **Pyodide gotchas.** `import nebula3d` pulls in matplotlib; Pyodide ships
   matplotlib 3.5.2 (< the wheel's `>=3.7` pin), so install with `deps=False` to
-  skip the version check. Pipeline entry points: `ndiff.load`,
-  `ndiff.core.HKLVolume.from_arrays`, `ndiff.pipeline.run_pipeline`,
-  `ndiff.analysis.compute_delta_pdf`.
+  skip the version check. Pipeline entry points: `nebula3d.load`,
+  `nebula3d.core.HKLVolume.from_arrays`, `nebula3d.pipeline.run_pipeline`,
+  `nebula3d.analysis.compute_delta_pdf`.
 - **Privacy.** The public app ships **no data**; users supply their own at
   runtime. `web/public/data/` and `web/public/wheels/` are gitignored, and the CI
   wheel build is data-free.

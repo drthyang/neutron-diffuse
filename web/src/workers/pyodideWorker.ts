@@ -1,4 +1,4 @@
-// Web Worker: hosts the Pyodide runtime so the ndiff pipeline runs off the
+// Web Worker: hosts the Pyodide runtime so the nebula3d pipeline runs off the
 // main thread.  Built as a classic worker (importScripts is available), driven
 // by message-passing from the main thread.
 //
@@ -85,15 +85,15 @@ async function boot(wheelBase: string): Promise<void> {
   postBoot("packages", "Loading numpy, scipy, h5py, matplotlib…", false);
   await py.loadPackage(["numpy", "scipy", "h5py", "matplotlib", "micropip"]);
 
-  postBoot("wheel", "Installing the ndiff reduction package…", false);
-  const wheelUrl = `${wheelBase}wheels/neutron_diffuse-0.2.0-py3-none-any.whl`;
-  py.globals.set("_ndiff_wheel_url", wheelUrl);
+  postBoot("wheel", "Installing the nebula3d reduction package…", false);
+  const wheelUrl = `${wheelBase}wheels/nebula3d-0.2.0-py3-none-any.whl`;
+  py.globals.set("_nebula3d_wheel_url", wheelUrl);
   await py.runPythonAsync(
-    "import micropip\nawait micropip.install(_ndiff_wheel_url, deps=False)\n",
+    "import micropip\nawait micropip.install(_nebula3d_wheel_url, deps=False)\n",
   );
-  py.globals.delete("_ndiff_wheel_url");
+  py.globals.delete("_nebula3d_wheel_url");
 
-  bridge = py.pyimport("ndiff.webbridge");
+  bridge = py.pyimport("nebula3d.webbridge");
   (bridge.setup as () => unknown)();
 
   postBoot("ready", "Ready — compute runs locally in your browser.", true);

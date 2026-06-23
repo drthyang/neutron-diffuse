@@ -92,7 +92,7 @@ export function App() {
             <BrandGlyph />
           </span>
           <span className="brand-name">
-            <b>neutron-diffuse</b>
+            <b>nebula3d</b>
             <span className="brand-sub">scattering console</span>
           </span>
         </div>

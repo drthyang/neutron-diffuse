@@ -2,7 +2,7 @@
 
 ## Overview
 
-`ndiff` ships a small **visualization** layer (`ndiff.visualization`) and
+`nebula3d` ships a small **visualization** layer (`nebula3d.visualization`) and
 interactive example scripts for inspecting an `HKLVolume` by eye: slices, radial
 profiles, azimuthal ring texture, and cleanup before/after panels.
 
@@ -12,7 +12,7 @@ GUI: each plot function takes an `HKLVolume`, draws into a Matplotlib `Axes`
 IPython session, or a Jupyter notebook. Future interactive front-ends (widget
 panels, a dashboard, Mantid-side hooks) should build on these same primitives.
 
-> This page documents the **matplotlib viewers and the `ndiff.visualization`
+> This page documents the **matplotlib viewers and the `nebula3d.visualization`
 > API**. For copy-paste launch commands across 22/45/100 K, see
 > [commands.md](commands.md); for the browser console, see [web.md](web.md).
 
@@ -162,7 +162,7 @@ After it loads, these names are in scope:
 
 > The background scan has no UB matrix of its own, so the preamble loads it with
 > `ub_matrix=data.ub_matrix` — all three volumes then share one physics-convention
-> (2π) |Q| scale. See [`io/mantid_nxs.py`](../src/ndiff/io/mantid_nxs.py).
+> (2π) |Q| scale. See [`io/mantid_nxs.py`](../src/nebula3d/io/mantid_nxs.py).
 
 `examples/explore.py` auto-discovers the long Mantid filenames in `data/raw/`,
 so it keeps working if you swap in a different dataset.
@@ -171,10 +171,10 @@ so it keeps working if you swap in a different dataset.
 
 ## 4. The Visualization API
 
-All functions live in `ndiff.visualization` and are re-exported at that level:
+All functions live in `nebula3d.visualization` and are re-exported at that level:
 
 ```python
-from ndiff.visualization import (
+from nebula3d.visualization import (
     extract_slice, plot_slice,
     plot_radial_profile, plot_azimuthal_map,
     plot_overview, SliceData,
@@ -229,7 +229,7 @@ Use it when you want the array, not a plot.
 ### `plot_radial_profile(vol, n_bins=500, stat="mean", ...) -> Axes`
 
 1D |Q| vs intensity profile (wraps
-`ndiff.preprocessing.powder_rings.radial_profile`). Options: `stat`
+`nebula3d.preprocessing.powder_rings.radial_profile`). Options: `stat`
 (`'mean'`/`'median'`), `q_range=(lo, hi)`, `mark_q=[...]` (vertical dashed lines
 at given |Q|, e.g. ring centres), plus any `**kwargs` forwarded to `ax.plot`.
 
@@ -304,7 +304,7 @@ import matplotlib; matplotlib.use("Agg")
     (`examples/explore_delta_pdf_multi.py`).
 - **Still planned:**
   - live `|Q|`-shell scrubbing for the azimuthal/ring texture views;
-  - migrating the standalone viewers onto the `ndiff.visualization` primitives
+  - migrating the standalone viewers onto the `nebula3d.visualization` primitives
     so the core stays free of GUI dependencies.
 
 ---

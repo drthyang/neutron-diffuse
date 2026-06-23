@@ -16,9 +16,9 @@ from pathlib import Path
 
 import numpy as np
 
-import ndiff
-from ndiff.analysis.delta_pdf import compute_delta_pdf, invert_delta_pdf
-from ndiff.pipeline import backfill, flatten, punch_bragg, remove_rings
+import nebula3d
+from nebula3d.analysis.delta_pdf import compute_delta_pdf, invert_delta_pdf
+from nebula3d.pipeline import backfill, flatten, punch_bragg, remove_rings
 
 DEFAULT = "data/raw/TbTi3Bi4_22K_mmm_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg.nxs"
 
@@ -34,7 +34,7 @@ def timed(label: str, fn):
 def main() -> None:
     path = Path(sys.argv[1] if len(sys.argv) > 1 else DEFAULT)
     print(f"Loading {path.name} …")
-    vol, t_load = timed("load (.nxs → HKLVolume)", lambda: ndiff.load(path))
+    vol, t_load = timed("load (.nxs → HKLVolume)", lambda: nebula3d.load(path))
     print(f"  grid {vol.data.shape}  ({vol.data.size/1e6:.1f} M voxels)\n")
 
     times: dict[str, float] = {"load": t_load}

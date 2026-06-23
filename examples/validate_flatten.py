@@ -49,8 +49,8 @@ from pathlib import Path
 
 import numpy as np
 
-import ndiff
-from ndiff.preprocessing import flatten_radial_background
+import nebula3d
+from nebula3d.preprocessing import flatten_radial_background
 
 HERE = Path(__file__).resolve().parent
 PROC = Path("data/processed")
@@ -129,7 +129,7 @@ q_max = os.environ.get("Q_MAX")
 q_range = (float(q_min), float(q_max)) if q_min and q_max else None
 
 print(f"loading {in_path.name}", flush=True)
-vol = ndiff.load(in_path)
+vol = nebula3d.load(in_path)
 q = vol.q_magnitude()
 valid = vol.mask & np.isfinite(vol.data)
 print(f"  shape={vol.shape}  valid={valid.mean()*100:.1f}%  "

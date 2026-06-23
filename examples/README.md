@@ -1,6 +1,6 @@
 # Examples
 
-This directory contains runnable scripts for the current `neutron-diffuse`
+This directory contains runnable scripts for the current `nebula3d`
 workflow. The scripts are meant to be run from the repository root with
 `PYTHONPATH=src`.
 
@@ -34,7 +34,7 @@ Regenerate those files by rerunning the scripts below.
 | `explore_delta_pdf_multi.py` | Multi-temperature 3D-DeltaPDF comparison viewer. |
 | `explore_delta_pdf.py` | Single-plane DeltaPDF viewer with an `x_H` slider. |
 | `explore_volume.py` | Raw versus processed reciprocal-space volume viewer. |
-| `explore.py` | IPython preamble for ad hoc plotting with `ndiff.visualization`. |
+| `explore.py` | IPython preamble for ad hoc plotting with `nebula3d.visualization`. |
 
 ## Diagnostics And Comparisons
 

@@ -48,12 +48,12 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-import ndiff
+import nebula3d
 
-# Import the new diagnostic straight from its module (not via ndiff.analysis) so
+# Import the new diagnostic straight from its module (not via nebula3d.analysis) so
 # this feature stays fully self-contained — it adds zero surface to the existing
-# ndiff.analysis package and no existing import path loads it.
-from ndiff.analysis.peak_profile import (
+# nebula3d.analysis package and no existing import path loads it.
+from nebula3d.analysis.peak_profile import (
     AXIS_NAMES,
     build_interpolator,
     calibrate_resolution,
@@ -105,7 +105,7 @@ def _detect_ringremoved() -> list[Path]:
 def analyse(path: Path):
     temp = _temp_of(path)
     print(f"\n{'='*70}\n▶ {temp}: {path.name}\n{'='*70}", flush=True)
-    vol = ndiff.load(path)
+    vol = nebula3d.load(path)
     print(f"  shape (H,K,L) = {vol.data.shape}", flush=True)
     interp = build_interpolator(vol)   # one masked-volume copy, shared by all cuts
 

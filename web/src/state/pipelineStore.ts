@@ -14,7 +14,7 @@ import { queryClient } from "../api/queryClient";
 import type { JobEvent, StageParamsIn } from "../api/types";
 import { useDatasetStore } from "./datasetStore";
 
-// Mirrors ndiff.pipeline.STAGES (incl. the 6th back-FFT consistency check) so the
+// Mirrors nebula3d.pipeline.STAGES (incl. the 6th back-FFT consistency check) so the
 // Execution stepper and log show every stage the backend streams progress for.
 export const STAGES = [
   "rings", "punch", "backfill", "flatten", "pdf", "pdf_check",

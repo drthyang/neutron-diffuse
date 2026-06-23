@@ -13,16 +13,16 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
-import ndiff
-from ndiff.core import HKLVolume
-from ndiff.pipeline import pipeline_paths
-from ndiff.server import deltapdf as dpdf_mod
-from ndiff.server import volumes as vol_mod
-from ndiff.server.app import create_app
-from ndiff.server.config import ServerConfig
-from ndiff.server.datasets import discover_datasets
-from ndiff.server.routers import datasets as datasets_router
-from ndiff.visualization import extract_slice
+import nebula3d
+from nebula3d.core import HKLVolume
+from nebula3d.pipeline import pipeline_paths
+from nebula3d.server import deltapdf as dpdf_mod
+from nebula3d.server import volumes as vol_mod
+from nebula3d.server.app import create_app
+from nebula3d.server.config import ServerConfig
+from nebula3d.server.datasets import discover_datasets
+from nebula3d.server.routers import datasets as datasets_router
+from nebula3d.visualization import extract_slice
 
 UB = 2 * np.pi * np.eye(3) / 4.0
 STEM = "TbTi3Bi4_22K_test_cc_sub_bkg"
@@ -42,8 +42,8 @@ def env(tmp_path):
     vol = _vol()
     paths = pipeline_paths(tmp_path / "raw" / f"{STEM}.nxs",
                            proc_dir=tmp_path / "processed")
-    ndiff.save(vol, paths.ringremoved)
-    ndiff.save(vol, paths.backfilled)
+    nebula3d.save(vol, paths.ringremoved)
+    nebula3d.save(vol, paths.backfilled)
     vol_mod.clear_cache()
     app = create_app(ServerConfig(data_root=tmp_path))
     return TestClient(app), vol
@@ -86,7 +86,7 @@ def test_data_root_can_be_switched(tmp_path):
     (tmp_path / "processed").mkdir()
     paths = pipeline_paths(tmp_path / "raw" / f"{STEM}.nxs",
                            proc_dir=tmp_path / "processed")
-    ndiff.save(_vol(), paths.ringremoved)
+    nebula3d.save(_vol(), paths.ringremoved)
 
     alt = tmp_path / "alt_data"
     (alt / "raw").mkdir(parents=True)
@@ -95,7 +95,7 @@ def test_data_root_can_be_switched(tmp_path):
     alt_slug = "TbTi3Bi4-45K-alt-cc-sub-bkg"
     alt_paths = pipeline_paths(alt / "raw" / f"{alt_stem}.nxs",
                                proc_dir=alt / "processed")
-    ndiff.save(_vol(seed=1), alt_paths.ringremoved)
+    nebula3d.save(_vol(seed=1), alt_paths.ringremoved)
 
     app = create_app(ServerConfig(data_root=tmp_path))
     client = TestClient(app)
@@ -127,7 +127,7 @@ def test_data_root_browse_switches_selected_folder(tmp_path, monkeypatch):
     alt_slug = "TbTi3Bi4-100K-picked-cc-sub-bkg"
     alt_paths = pipeline_paths(alt / "raw" / f"{alt_stem}.nxs",
                                proc_dir=alt / "processed")
-    ndiff.save(_vol(seed=2), alt_paths.ringremoved)
+    nebula3d.save(_vol(seed=2), alt_paths.ringremoved)
 
     monkeypatch.setattr(datasets_router, "_choose_directory", lambda _initial: alt)
 
@@ -137,7 +137,7 @@ def test_data_root_browse_switches_selected_folder(tmp_path, monkeypatch):
     blocked = client.post("/api/data-root/browse")
     assert blocked.status_code == 403
 
-    picked = client.post("/api/data-root/browse", headers={"X-Ndiff-Local": "1"})
+    picked = client.post("/api/data-root/browse", headers={"X-Nebula3d-Local": "1"})
     assert picked.status_code == 200
     body = picked.json()
     assert body["data_root"] == str(alt)
@@ -153,7 +153,7 @@ def test_data_root_browse_cancel_leaves_root(tmp_path, monkeypatch):
     app = create_app(ServerConfig(data_root=tmp_path))
     client = TestClient(app)
 
-    canceled = client.post("/api/data-root/browse", headers={"X-Ndiff-Local": "1"})
+    canceled = client.post("/api/data-root/browse", headers={"X-Nebula3d-Local": "1"})
     assert canceled.status_code == 409
     assert client.get("/api/data-root").json()["data_root"] == str(tmp_path)
 
@@ -170,8 +170,8 @@ def test_discovery_no_phantom_from_delta_pdf_names(tmp_path, dpdf_name):
     proc = tmp_path / "processed"
     proc.mkdir()
     paths = pipeline_paths(tmp_path / "raw" / f"{STEM}.nxs", proc_dir=proc)
-    ndiff.save(_vol(), paths.ringremoved)
-    ndiff.save(_vol(), paths.backfilled)
+    nebula3d.save(_vol(), paths.ringremoved)
+    nebula3d.save(_vol(), paths.backfilled)
     if dpdf_name in ("full_chain", "both"):
         _write_dpdf(paths.delta_pdf)               # …_backfilled_delta_pdf.h5
     if dpdf_name in ("short_legacy", "both"):
@@ -367,9 +367,9 @@ def test_consistency_unknown_dataset_404(env):
 # ---------------------------------------------------------------------------
 def test_build_params_ring_overrides():
     """Ring-removal overrides reach RingParams; omitted ones keep the defaults."""
-    from ndiff.pipeline import RingParams
-    from ndiff.server.routers.pipeline import build_params
-    from ndiff.server.schemas import PipelineRunRequest, StageParamsIn
+    from nebula3d.pipeline import RingParams
+    from nebula3d.server.routers.pipeline import build_params
+    from nebula3d.server.schemas import PipelineRunRequest, StageParamsIn
 
     defaults = build_params(PipelineRunRequest(dataset_id="x"))
     assert defaults.rings.n_patches == RingParams().n_patches
@@ -397,15 +397,15 @@ def test_build_params_ring_overrides():
     # the parametric radial model defaults to the continuous rolling sweep
     assert defaults.rings.ring_radial_mode == "rolling"
     # an unrelated stage keeps its default
-    from ndiff.pipeline import PunchParams
+    from nebula3d.pipeline import PunchParams
     assert overridden.punch.min_intensity == PunchParams().min_intensity
 
 
 def test_build_params_punch_overrides():
     """Punch overrides reach PunchParams; per-axis radii fall back to defaults."""
-    from ndiff.pipeline import PunchParams
-    from ndiff.server.routers.pipeline import build_params
-    from ndiff.server.schemas import PipelineRunRequest, StageParamsIn
+    from nebula3d.pipeline import PunchParams
+    from nebula3d.server.routers.pipeline import build_params
+    from nebula3d.server.schemas import PipelineRunRequest, StageParamsIn
 
     base = PunchParams()
     overridden = build_params(PipelineRunRequest(
@@ -436,9 +436,9 @@ def test_build_params_punch_overrides():
 
 def test_build_params_qspace_punch_overrides():
     """Q-space punch overrides (frame + isotropic / per-axis radii) reach PunchParams."""
-    from ndiff.pipeline import PunchParams
-    from ndiff.server.routers.pipeline import build_params
-    from ndiff.server.schemas import PipelineRunRequest, StageParamsIn
+    from nebula3d.pipeline import PunchParams
+    from nebula3d.server.routers.pipeline import build_params
+    from nebula3d.server.schemas import PipelineRunRequest, StageParamsIn
 
     base = PunchParams()
     iso = build_params(PipelineRunRequest(
@@ -474,8 +474,8 @@ def test_build_params_qspace_punch_overrides():
 def test_job_manager_runs_pipeline_in_process(tmp_path):
     import time
 
-    from ndiff.pipeline import DeltaPdfParams, PipelineParams, pipeline_paths
-    from ndiff.server.jobs import JobManager
+    from nebula3d.pipeline import DeltaPdfParams, PipelineParams, pipeline_paths
+    from nebula3d.server.jobs import JobManager
 
     proc = tmp_path / "processed"
     proc.mkdir()
@@ -491,7 +491,7 @@ def test_job_manager_runs_pipeline_in_process(tmp_path):
     for idx in [(8, 8, 8), (7, 8, 9)]:
         vol.data[idx] = -9.0
         vol.mask[idx] = False
-    ndiff.save(vol, paths.braggpunched)
+    nebula3d.save(vol, paths.braggpunched)
 
     params = PipelineParams(
         delta_pdf=DeltaPdfParams(apodization="hann", zero_pad=False, crop_hkl=None))

@@ -1,6 +1,6 @@
 # Documentation Guide
 
-This directory contains the deeper notes for `neutron-diffuse`. The README at
+This directory contains the deeper notes for `nebula3d`. The README at
 the repository root is the quick entry point; these pages explain the algorithms,
 viewers, and reproducible command recipes in more detail.
 

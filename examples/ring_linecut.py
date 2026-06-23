@@ -14,11 +14,11 @@ from pathlib import Path
 import numpy as np
 from scipy.signal import find_peaks
 
-import ndiff
-from ndiff.preprocessing import al_ring_q_positions, line_profile
+import nebula3d
+from nebula3d.preprocessing import al_ring_q_positions, line_profile
 
 raw = Path("data/raw")
-data = ndiff.load([p for p in sorted(raw.glob("*.nxs"))
+data = nebula3d.load([p for p in sorted(raw.glob("*.nxs"))
                    if not p.stem.endswith(("_bkg", "_sub_bkg"))][0])
 
 # Bragg-free radial cuts along (0, +1, l) and (0, -1, l); they share the same

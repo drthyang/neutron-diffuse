@@ -1,8 +1,8 @@
-"""Tests for ndiff.pipeline orchestration: chaining, resume, force, progress.
+"""Tests for nebula3d.pipeline orchestration: chaining, resume, force, progress.
 
 The heavy per-stage maths is covered elsewhere (test_pipeline.py,
 test_radial_flatten.py, test_bragg.py, ...).  These tests pin the *orchestration*
-contract of :func:`ndiff.pipeline.run_pipeline`:
+contract of :func:`nebula3d.pipeline.run_pipeline`:
 
 * the chained output file names match the original ``run_pipeline.py``;
 * stages are skipped when their output already exists (resume);
@@ -19,9 +19,9 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-import ndiff
-from ndiff import pipeline
-from ndiff.core import HKLVolume
+import nebula3d
+from nebula3d import pipeline
+from nebula3d.core import HKLVolume
 
 UB = 2 * np.pi * np.eye(3) / 4.0
 
@@ -69,7 +69,7 @@ def test_pdf_input_is_backfilled_when_flatten_disabled(tmp_path):
 
 def _ring_vol_3d(shape=(5, 41, 41), ring_q=3.0, ring_fwhm=0.14, seed=0):
     """3-D volume with a textured powder ring in each 0kl plane (slice_axis='H')."""
-    from ndiff.preprocessing.parametric_ring import _pseudo_voigt
+    from nebula3d.preprocessing.parametric_ring import _pseudo_voigt
 
     rng = np.random.default_rng(seed)
     vol = HKLVolume.from_arrays(
@@ -158,7 +158,7 @@ def stubbed(monkeypatch):
 
 def _seed_input(tmp_path):
     inp = tmp_path / "sample.nxs"
-    ndiff.save(_vol(), tmp_path / "sample.nxs")
+    nebula3d.save(_vol(), tmp_path / "sample.nxs")
     return inp
 
 
@@ -215,7 +215,7 @@ def test_force_recomputes_everything(tmp_path, stubbed):
 def test_stage_subset_runs_only_requested(tmp_path, stubbed):
     inp = _seed_input(tmp_path)
     # seed the punched file so backfill has an input to load
-    ndiff.save(stubbed.vol, pipeline.pipeline_paths(inp, proc_dir=tmp_path).braggpunched)
+    nebula3d.save(stubbed.vol, pipeline.pipeline_paths(inp, proc_dir=tmp_path).braggpunched)
     pipeline.run_pipeline(inp, proc_dir=tmp_path, stages=("backfill",))
     assert stubbed.calls == ["backfill"]
 
@@ -260,7 +260,7 @@ def test_real_backfill_flatten_pdf_writes_viewer_schema(tmp_path):
 
     inp = tmp_path / "s.nxs"
     paths = pipeline.pipeline_paths(inp, proc_dir=tmp_path)
-    ndiff.save(_punched_vol(), paths.braggpunched)
+    nebula3d.save(_punched_vol(), paths.braggpunched)
 
     params = pipeline.PipelineParams(
         delta_pdf=pipeline.DeltaPdfParams(apodization="hann", zero_pad=False,
@@ -272,7 +272,7 @@ def test_real_backfill_flatten_pdf_writes_viewer_schema(tmp_path):
                           progress=lambda *a: events.append(a))
 
     # backfill produced an all-finite volume
-    filled = ndiff.load(paths.backfilled)
+    filled = nebula3d.load(paths.backfilled)
     assert np.isfinite(filled.data).all()
     assert paths.flattened.exists()
 
@@ -295,7 +295,7 @@ def test_real_backfill_flatten_pdf_writes_viewer_schema(tmp_path):
 def test_real_pdf_stale_guard_skips_on_rerun(tmp_path):
     inp = tmp_path / "s.nxs"
     paths = pipeline.pipeline_paths(inp, proc_dir=tmp_path)
-    ndiff.save(_punched_vol(), paths.braggpunched)
+    nebula3d.save(_punched_vol(), paths.braggpunched)
     params = pipeline.PipelineParams(
         delta_pdf=pipeline.DeltaPdfParams(apodization="hann", zero_pad=False,
                                           crop_hkl=None),
@@ -328,7 +328,7 @@ def test_real_pdf_check_roundtrip_metrics(tmp_path):
                                           crop_hkl=None),
     )
     paths = pipeline.pipeline_paths(inp, proc_dir=tmp_path, flatten_enabled=False)
-    ndiff.save(_diffuse_vol(15), paths.backfilled)   # = pdf_input when flatten off
+    nebula3d.save(_diffuse_vol(15), paths.backfilled)   # = pdf_input when flatten off
 
     events = []
     pipeline.run_pipeline(inp, params, proc_dir=tmp_path,

@@ -9,15 +9,15 @@ import dataclasses
 
 import numpy as np
 
-from ndiff.analysis import backfill_bragg, bragg_mask, compute_delta_pdf
-from ndiff.core import HKLVolume
-from ndiff.preprocessing import (
+from nebula3d.analysis import backfill_bragg, bragg_mask, compute_delta_pdf
+from nebula3d.core import HKLVolume
+from nebula3d.preprocessing import (
     EmptySubtractor,
     PatchedRingModel,
     RingShell,
     backfill_ring_shells,
 )
-from ndiff.preprocessing.ring_model import _gaussian
+from nebula3d.preprocessing.ring_model import _gaussian
 
 RING_Q = 2.6
 RING_SIGMA = 0.08

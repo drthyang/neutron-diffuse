@@ -1,6 +1,6 @@
-# neutron-diffuse
+# nebula3d
 
-`neutron-diffuse` is a Python toolkit for cleaning 3D reciprocal-space neutron
+`nebula3d` is a Python toolkit for cleaning 3D reciprocal-space neutron
 diffuse scattering volumes and preparing them for 3D-DeltaPDF analysis.
 
 The current workflow is built around symmetrised Mantid HKL volumes. It removes
@@ -28,13 +28,13 @@ Bragg satellites, use `examples/investigate_bragg_diffuse.py`.
 
 ## Web UI
 
-`neutron-diffuse` ships a single browser console (React) that unifies the
+`nebula3d` ships a single browser console (React) that unifies the
 cleanup and 3D-ΔPDF viewers and drives the whole pipeline from a raw `.nxs` with
 live progress. It has two interchangeable run modes that share the same UI:
 
-- **Native** — `pip install -e ".[web]"` then `ndiff-web` (serves
+- **Native** — `pip install -e ".[web]"` then `nebula3d-web` (serves
   http://127.0.0.1:8000); full-resolution local work.
-- **In-browser** — the hosted GitHub Pages build runs the real `ndiff` pipeline
+- **In-browser** — the hosted GitHub Pages build runs the real `nebula3d` pipeline
   client-side via Pyodide on your own data, no install (modest volumes).
 
 A sidebar console with five views — a pipeline runner (the default landing
@@ -49,8 +49,8 @@ the reference, architecture, and development workflow.
 Requires Python 3.10 or newer.
 
 ```bash
-git clone https://github.com/drthyang/neutron-diffuse
-cd neutron-diffuse
+git clone https://github.com/drthyang/nebula3d
+cd nebula3d
 pip install -e ".[dev]"
 ```
 
@@ -71,7 +71,7 @@ Before pushing, run the same checks as CI (tests, lint, type check):
 bash scripts/check.sh
 ```
 
-It runs `pytest`, `ruff check src/ tests/`, and `mypy src/ndiff`. Set
+It runs `pytest`, `ruff check src/ tests/`, and `mypy src/nebula3d`. Set
 `PY=/path/to/python` to choose the interpreter. To run it automatically on every
 push, install it as a git hook in your clone:
 
@@ -89,7 +89,7 @@ The preferred input is a Mantid-background-subtracted NeXus file in
 ```
 
 Here `cc` means CORELLI correlation chopper, and `sub_bkg` means the empty-can
-background has already been subtracted. You can also load ndiff HDF5 files
+background has already been subtracted. You can also load nebula3d HDF5 files
 written by the package itself.
 
 ## Quick Start
@@ -267,10 +267,10 @@ contrast control, and unit-cell gridlines.
 ## Python API
 
 ```python
-import ndiff
-from ndiff.analysis import BraggRemover, backfill_bragg, compute_delta_pdf
+import nebula3d
+from nebula3d.analysis import BraggRemover, backfill_bragg, compute_delta_pdf
 
-vol = ndiff.load("data/processed/sample_ringremoved.h5")
+vol = nebula3d.load("data/processed/sample_ringremoved.h5")
 
 remover = BraggRemover(
     mode="both",
@@ -313,9 +313,9 @@ Key pages:
 ## Package Layout
 
 ```text
-src/ndiff/
+src/nebula3d/
 ├── core.py              HKLVolume: 3D array, HKL axes, mask, sigma, UB matrix
-├── io/                  Mantid NeXus, ndiff HDF5, and ASCII HKL I/O
+├── io/                  Mantid NeXus, nebula3d HDF5, and ASCII HKL I/O
 ├── preprocessing/       powder-ring models, background handling, sampling
 ├── analysis/            Bragg punch/fill and 3D-DeltaPDF
 ├── inpainting/          symmetry, TV, RBF, and biharmonic fallbacks
@@ -329,7 +329,7 @@ Run locally in a Python 3.10+ environment with dev dependencies:
 ```bash
 PYTHONPATH=src python3 -m pytest -o addopts=''
 python3 -m ruff check src/ tests/
-python3 -m mypy src/ndiff --ignore-missing-imports
+python3 -m mypy src/nebula3d --ignore-missing-imports
 ```
 
 GitHub Actions runs the same checks on Python 3.10, 3.11, and 3.12.

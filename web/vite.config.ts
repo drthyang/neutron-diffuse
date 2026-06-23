@@ -2,7 +2,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 // Dev: `npm run dev` serves on :5173 and proxies /api to the FastAPI backend
-// (run `ndiff-web` or uvicorn on :8000).  Build: emits the SPA into the Python
+// (run `nebula3d-web` or uvicorn on :8000).  Build: emits the SPA into the Python
 // package so the installed wheel can serve it.
 export default defineConfig(({ mode }) => ({
   plugins: [react()],
@@ -11,11 +11,11 @@ export default defineConfig(({ mode }) => ({
   // self-hosted builds stay at /.  Using `mode` rather than process.env keeps the
   // config type-checkable without @types/node.
   // See docs/web.md for the two run modes and the Pages build.
-  base: mode === "pages" ? "/neutron-diffuse/" : "/",
+  base: mode === "pages" ? "/nebula3d/" : "/",
   build: {
     // Pages build (Pyodide, backend-less) goes to web/dist so it does not clobber
     // the api-mode bundle baked into the Python package.
-    outDir: mode === "pages" ? "dist" : "../src/ndiff/server/static",
+    outDir: mode === "pages" ? "dist" : "../src/nebula3d/server/static",
     emptyOutDir: true,
   },
   // Classic workers (pyodideWorker.ts) need IIFE format so importScripts is

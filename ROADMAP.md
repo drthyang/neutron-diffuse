@@ -15,7 +15,7 @@
 ```
 
 Stage 6 inverse-transforms the ΔPDF back to reciprocal space
-(`ndiff.analysis.invert_delta_pdf`) and compares it to the diffuse data the ΔPDF
+(`nebula3d.analysis.invert_delta_pdf`) and compares it to the diffuse data the ΔPDF
 was built from, writing a metric (Pearson r + normalised RMS residual) and a
 `data | back-FFT | residual` figure.  On 22K the round trip reproduces the data
 (r ≈ 0.9999); a gross mismatch would flag a transform bug or an over-aggressive
@@ -132,7 +132,7 @@ shells and subtracts a smooth, continuous per-shell background **floor** so the
 radial pedestal flattens to ≈0 while anisotropic diffuse and Bragg residuals are
 preserved.
 
-- `ndiff.preprocessing.flatten_radial_background` (`src/ndiff/preprocessing/radial_flatten.py`)
+- `nebula3d.preprocessing.flatten_radial_background` (`src/nebula3d/preprocessing/radial_flatten.py`)
 - `examples/flatten_background_3d.py`; the explicit background-removal step 4 in
   `run_pipeline.py`, default ON (disable with `FLATTEN=0`). The ΔPDF's own
   Gaussian `SUBTRACT_BG` blur defaults off — it is the alternative remover, never
@@ -177,7 +177,7 @@ Open validation:
 
 Implemented API and drivers:
 
-- `ndiff.analysis.compute_delta_pdf` (algorithm: `docs/algorithms/delta_pdf.md`)
+- `nebula3d.analysis.compute_delta_pdf` (algorithm: `docs/algorithms/delta_pdf.md`)
 - apodization: `hann`, `gaussian`, `none`; optional mean subtraction; symmetric
   zero padding; real-space axes from the UB matrix
 - `examples/delta_pdf.py` — full 3D transform; slice/line-cut/radial PNGs and a
@@ -219,7 +219,7 @@ Two siblings to the ΔPDF path, added 2026-06-08:
   off (it is a ΔPDF-only axis-cross fix). Output `*_3dpdf.h5` carries a `kind`
   attr so the ortho viewer labels 3D-PDF vs 3D-ΔPDF.
 - **Bragg/diffuse separation diagnostic.** `examples/investigate_bragg_diffuse.py`
-  + `ndiff.analysis.peak_profile`, for magnetic diffuse co-located at the
+  + `nebula3d.analysis.peak_profile`, for magnetic diffuse co-located at the
   q=integer±1/3 satellites. Calibrates resolution σ(|Q|) on nuclear Bragg, fits
   a sharp core + broad diffuse per axis, and reports ξ and the diffuse fraction.
   The T-series shows broad diffuse at 22/45 K and none at 100 K.
@@ -229,7 +229,7 @@ the satellites, rather than punching them.
 
 ## Phase 6 — Q-Space Bragg Punch  Complete (Q is the default since Phase 4)
 
-Migrate the Bragg punch ([`src/ndiff/analysis/bragg.py`](src/ndiff/analysis/bragg.py))
+Migrate the Bragg punch ([`src/nebula3d/analysis/bragg.py`](src/nebula3d/analysis/bragg.py))
 from HKL-axis radii to a **Q-space resolution-ellipsoid** described by one
 quadratic form `δhklᵀ A δhkl ≤ 1`. Motivation: the peak profile is a function of
 **Q** (instrument resolution + size/strain/mosaic), not of the lattice constants;
@@ -265,7 +265,7 @@ Phase 0 (done): [`tests/test_bragg_qspace_phase0.py`](tests/test_bragg_qspace_ph
 must satisfy. No production code changed.
 
 Phase 1 (done): the single shape kernel `_ellipsoid_inside(δ, radii | shape_matrix)`
-in [`src/ndiff/analysis/bragg.py`](src/ndiff/analysis/bragg.py). Both `_punch_one`
+in [`src/nebula3d/analysis/bragg.py`](src/nebula3d/analysis/bragg.py). Both `_punch_one`
 and `_punch_origin_ellipsoid` now go through it. The `radii=` fast path keeps the
 exact `(d/r)²` arithmetic, so the Phase 0 golden masters pass **bit-identical** —
 production is unchanged. The `shape_matrix=` path is the general `δᵀ A δ ≤ 1` the
@@ -352,7 +352,7 @@ Before treating the pipeline as a stable release candidate:
 - Add a lightweight CLI or config-file runner if env-var scripts become hard to
   reproduce.
 - Done: `scripts/check.sh` mirrors GitHub CI (`.github/workflows/ci.yml`) —
-  pytest + `ruff check src/ tests/` + `mypy src/ndiff` — and can be installed as
+  pytest + `ruff check src/ tests/` + `mypy src/nebula3d` — and can be installed as
   a `pre-push` hook; the suite is at 162 passing tests.
 - Done for `v0.2.0`: the recommended workflow now has a documented endpoint
   (`pdf_check` / consistency viewer), and package/web/API version metadata is

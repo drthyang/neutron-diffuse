@@ -86,8 +86,8 @@ import time
 
 import numpy as np
 
-import ndiff
-from ndiff.analysis import BraggRemover
+import nebula3d
+from nebula3d.analysis import BraggRemover
 
 proc = Path("data/processed")
 PRESETS = {
@@ -226,7 +226,7 @@ out_file = os.environ.get("OUT_FILE")
 out_path = Path(out_file) if out_file else proc / f"{in_path.stem}_braggpunched.h5"
 
 print(f"loading {in_path.name}", flush=True)
-vol = ndiff.load(in_path)
+vol = nebula3d.load(in_path)
 
 remover = BraggRemover(
     mode=mode, punch_radii=r_hkl, min_intensity=min_i, min_prominence=1.0,
@@ -283,10 +283,10 @@ print(f"max intensity: {float(np.nanmax(d)):.1f} (before) -> {kept_max:.1f} (aft
 
 punched_vol = dataclasses.replace(vol, mask=vol.mask & keep)
 print(f"saving punched volume -> {out_path}", flush=True)
-ndiff.save(punched_vol, out_path)
+nebula3d.save(punched_vol, out_path)
 
 if os.environ.get("PREVIEW", "1") != "0":
-    from ndiff.visualization import interactive_slices
+    from nebula3d.visualization import interactive_slices
     H_VALUE = float(os.environ.get("H_VALUE", "0.0"))
     print("Drag the H plane slider; punched Bragg holes show grey, surviving "
           "(satellite) peaks stay bright.  Close the window to exit.", flush=True)

@@ -24,9 +24,9 @@ import hashlib
 
 import numpy as np
 
-from ndiff.analysis.bragg import BraggRemover
-from ndiff.core import HKLVolume
-from ndiff.pipeline import PunchParams, punch_bragg
+from nebula3d.analysis.bragg import BraggRemover
+from nebula3d.core import HKLVolume
+from nebula3d.pipeline import PunchParams, punch_bragg
 
 # Real 22 K UB matrix (columns = reciprocal-lattice vectors, Å^-1).  Rotated in
 # the lab frame, but its metric g = UB^T UB is diagonal to ~0.5% → orthorhombic.

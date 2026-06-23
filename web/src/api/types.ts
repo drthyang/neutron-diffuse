@@ -1,4 +1,4 @@
-// TypeScript mirrors of the FastAPI response models (ndiff/server/schemas.py).
+// TypeScript mirrors of the FastAPI response models (nebula3d/server/schemas.py).
 
 export type VolumeKind = "hkl" | "delta_pdf";
 

@@ -13,8 +13,8 @@ equivalent HKL punch; and per-axis Q radii give the expected anisotropy.
 import numpy as np
 import pytest
 
-from ndiff.analysis.bragg import BraggRemover
-from ndiff.core import HKLVolume
+from nebula3d.analysis.bragg import BraggRemover
+from nebula3d.core import HKLVolume
 
 # Real 22 K UB (metric diagonal to ~0.5%); and an exactly diagonal UB built from
 # its reciprocal-axis lengths for the clean-equivalence tests.

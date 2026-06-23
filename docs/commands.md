@@ -10,7 +10,7 @@ these from the repository root.
 ```bash
 export PY=/opt/homebrew/Caskroom/miniforge/base/envs/sci-general/bin/python
 export PYTHONPATH=src
-export MPLCONFIGDIR=/private/tmp/ndiff-mpl
+export MPLCONFIGDIR=/private/tmp/nebula3d-mpl
 ```
 
 If you use a different Python 3.10+ environment with the package dependencies,

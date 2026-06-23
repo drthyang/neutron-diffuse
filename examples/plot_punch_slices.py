@@ -27,8 +27,8 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 from matplotlib.colors import ListedColormap  # noqa: E402
 
-import ndiff  # noqa: E402
-from ndiff.pipeline import PunchParams, punch_bragg  # noqa: E402
+import nebula3d  # noqa: E402
+from nebula3d.pipeline import PunchParams, punch_bragg  # noqa: E402
 
 # Proposed Q default = the current HKL footprint expressed in Å⁻¹ (≈ HKL × b*).
 Q_RADII = (0.097, 0.072, 0.115)
@@ -56,7 +56,7 @@ def main() -> None:
                    if "braggpunched" not in p)
     if not paths:
         raise SystemExit(f"no *_ringremoved.h5 for DATASET={tag}")
-    vol = ndiff.load(paths[0])
+    vol = nebula3d.load(paths[0])
     valid = vol.mask & np.isfinite(vol.data)
 
     punched_hkl = valid & ~punch_bragg(vol, PunchParams()).mask

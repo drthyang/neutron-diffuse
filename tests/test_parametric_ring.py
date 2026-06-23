@@ -2,9 +2,9 @@
 
 import numpy as np
 
-from ndiff.core import HKLVolume
-from ndiff.preprocessing import ParametricRingModel
-from ndiff.preprocessing.parametric_ring import _fit_multi_pseudo_voigt, _pseudo_voigt
+from nebula3d.core import HKLVolume
+from nebula3d.preprocessing import ParametricRingModel
+from nebula3d.preprocessing.parametric_ring import _fit_multi_pseudo_voigt, _pseudo_voigt
 
 
 def _ring_vol(
@@ -250,7 +250,7 @@ def _phi_width_ring_vol(N=121, q0=2.6, f0=0.12, f1=0.06, eta=0.4, seed=0,
                         const=False):
     """hk slice with one ring at fixed |Q| whose WIDTH varies azimuthally:
     fwhm(φ) = f0 + f1·cos(2φ)  (or constant f0 when ``const``)."""
-    from ndiff.preprocessing.parametric_ring import _pseudo_voigt_phi
+    from nebula3d.preprocessing.parametric_ring import _pseudo_voigt_phi
     rng = np.random.default_rng(seed)
     h = np.linspace(-4, 4, N)
     ub = 2 * np.pi * np.eye(3) / 4.0

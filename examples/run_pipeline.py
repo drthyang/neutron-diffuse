@@ -1,4 +1,4 @@
-"""End-to-end neutron-diffuse workflow: raw .nxs → 3D-ΔPDF → consistency QA.
+"""End-to-end nebula3d workflow: raw .nxs → 3D-ΔPDF → consistency QA.
 
 Runs the processing stages in order, runs the back-FFT consistency check, then
 opens the interactive viewers:

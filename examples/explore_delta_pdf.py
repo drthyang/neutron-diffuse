@@ -72,8 +72,8 @@ if pdf_file.exists():
         z_axis = fh["z_axis"][...]
         apodization = fh.attrs.get("apodization", "?")
 else:
-    import ndiff
-    from ndiff.analysis import compute_delta_pdf
+    import nebula3d
+    from nebula3d.analysis import compute_delta_pdf
 
     proc_file = os.environ.get("PROC_FILE")
     if proc_file:
@@ -87,7 +87,7 @@ else:
             )
         proc_path = cands[0]
     print(f"{pdf_file.name} not found — computing from {proc_path.name} ...", flush=True)
-    vol = ndiff.load(proc_path)
+    vol = nebula3d.load(proc_path)
     dpdf = compute_delta_pdf(vol, apodization="hann", zero_pad=True, subtract_mean=True)
     data, x_axis, y_axis, z_axis = dpdf.data, dpdf.x_axis, dpdf.y_axis, dpdf.z_axis
     apodization = dpdf.apodization

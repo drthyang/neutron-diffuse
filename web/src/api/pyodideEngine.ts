@@ -1,6 +1,6 @@
 // In-browser compute engine (Pyodide) — Web Worker edition.
 //
-// When VITE_DATA_MODE === "pyodide" there is no FastAPI server: the *real* ndiff
+// When VITE_DATA_MODE === "pyodide" there is no FastAPI server: the *real* nebula3d
 // reduction pipeline runs locally in the user's browser via Pyodide hosted in a
 // Web Worker.  Moving Pyodide off the main thread means the UI stays responsive
 // during the ~3-minute pipeline run: progress events stream in as Worker messages

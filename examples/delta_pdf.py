@@ -49,8 +49,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-import ndiff
-from ndiff.analysis import compute_delta_pdf
+import nebula3d
+from nebula3d.analysis import compute_delta_pdf
 
 # ------------------------------------------------------------------
 # locate backfilled file
@@ -71,7 +71,7 @@ else:
         print(f"[warn] multiple backfilled files; using {proc_path.name}")
 
 print(f"loading {proc_path.name} ...", flush=True)
-vol = ndiff.load(proc_path)
+vol = nebula3d.load(proc_path)
 print(f"  volume shape (H,K,L): {vol.data.shape}", flush=True)
 
 finite_mask = np.isfinite(vol.data)

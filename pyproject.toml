@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "neutron-diffuse"
+name = "nebula3d"
 version = "0.2.0"
 description = "3D diffuse neutron scattering processing: powder ring removal and 3D-ΔPDF"
 readme = "README.md"
@@ -46,17 +46,17 @@ docs = [
 ]
 
 [project.scripts]
-ndiff-web = "ndiff.server.cli:main"
+nebula3d-web = "nebula3d.server.cli:main"
 
 [project.urls]
-Repository = "https://github.com/drthyang/neutron-diffuse"
-Changelog = "https://github.com/drthyang/neutron-diffuse/blob/main/CHANGELOG.md"
+Repository = "https://github.com/drthyang/nebula3d"
+Changelog = "https://github.com/drthyang/nebula3d/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-"ndiff.server" = ["static/**/*"]
+"nebula3d.server" = ["static/**/*"]
 
 [tool.ruff]
 line-length = 100
@@ -79,4 +79,4 @@ disable_error_code = ["type-arg", "no-any-return", "unused-ignore"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=ndiff --cov-report=term-missing"
+addopts = "--cov=nebula3d --cov-report=term-missing"

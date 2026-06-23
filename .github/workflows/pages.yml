@@ -1,8 +1,8 @@
 # Build the backend-less SPA and deploy it to GitHub Pages.
 #
-# The Pages build runs the *real* ndiff reduction pipeline in the user's browser
+# The Pages build runs the *real* nebula3d reduction pipeline in the user's browser
 # via Pyodide (see web/.env.pages → VITE_DATA_MODE=pyodide, web/src/api/
-# pyodideEngine.ts).  The pipeline code ships as a data-free `ndiff` wheel that
+# pyodideEngine.ts).  The pipeline code ships as a data-free `nebula3d` wheel that
 # the page micropip-installs at runtime; the wheel is gitignored (a careless
 # build could bundle experimental data), so CI builds it fresh here — data-free —
 # into web/public/wheels/ before `vite build` copies it into the bundle.
@@ -35,11 +35,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Build data-free ndiff wheel
+      - name: Build data-free nebula3d wheel
         working-directory: .
         run: |
           python -m pip install --upgrade pip build
-          rm -rf build src/*.egg-info src/ndiff/server/static/data
+          rm -rf build src/*.egg-info src/nebula3d/server/static/data
           python -m pip wheel . --no-deps --no-cache-dir -w web/public/wheels
           # Fail the build if any experimental data leaked into the wheel.
           if unzip -l web/public/wheels/*.whl | grep -iqE '\.(bin|nxs|h5|hdf5|npy)'; then

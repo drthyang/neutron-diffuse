@@ -1,4 +1,4 @@
-"""Tests for ndiff.visualization slice extraction and colour limits."""
+"""Tests for nebula3d.visualization slice extraction and colour limits."""
 
 import matplotlib
 
@@ -6,8 +6,8 @@ matplotlib.use("Agg")  # headless; no display needed
 
 import numpy as np
 
-from ndiff.core import HKLVolume
-from ndiff.visualization import (
+from nebula3d.core import HKLVolume
+from nebula3d.visualization import (
     extract_slice,
     interactive_slices,
     plot_overview,
@@ -119,7 +119,7 @@ def test_interactive_slices_hkl_selector_retargets_slider():
         show=False,
     )
     try:
-        widgets = fig._ndiff_widgets
+        widgets = fig._nebula3d_widgets
         s_val = widgets[3]
         plane_radio = widgets[4]
 

@@ -1,4 +1,4 @@
-// Typed fetch wrappers for the ndiff API, including the binary slice envelope.
+// Typed fetch wrappers for the nebula3d API, including the binary slice envelope.
 
 import { engine, PYODIDE_MODE } from "./pyodideEngine";
 import type {
@@ -78,7 +78,7 @@ export async function setDataRoot(dataRoot: string): Promise<DataRoot> {
 export async function browseDataRoot(): Promise<DataRoot> {
   const r = await fetch("/api/data-root/browse", {
     method: "POST",
-    headers: { "X-Ndiff-Local": "1" },
+    headers: { "X-Nebula3d-Local": "1" },
   });
   if (!r.ok) {
     const body = await r.text();

@@ -30,8 +30,8 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 
-import ndiff
-from ndiff.visualization import (
+import nebula3d
+from nebula3d.visualization import (
     extract_slice,
     plot_azimuthal_map,
     plot_overview,
@@ -78,14 +78,14 @@ def _find_background() -> Path | None:
     return hits[0] if hits else None
 
 
-data = ndiff.load(_find_data())
+data = nebula3d.load(_find_data())
 _bkg_path = _find_background()
 if _bkg_path is None:
     bkg = None
     sub = data
 else:
     # Background scan has no UB of its own -> inherit the data's for consistent |Q|.
-    bkg = ndiff.load_mantid_nxs(_bkg_path, ub_matrix=data.ub_matrix)
+    bkg = nebula3d.load_mantid_nxs(_bkg_path, ub_matrix=data.ub_matrix)
     sub = data
 
 plt.ion()  # interactive: figures show without blocking

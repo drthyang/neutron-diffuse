@@ -3,15 +3,15 @@
 import numpy as np
 import pytest
 
-from ndiff.analysis.bragg import BraggRemover, bragg_mask
-from ndiff.analysis.bragg_fill import backfill_bragg
-from ndiff.analysis.delta_pdf import (
+from nebula3d.analysis.bragg import BraggRemover, bragg_mask
+from nebula3d.analysis.bragg_fill import backfill_bragg
+from nebula3d.analysis.delta_pdf import (
     DeltaPDF,
     _next_power_of_2,
     compute_delta_pdf,
     invert_delta_pdf,
 )
-from ndiff.core import HKLVolume
+from nebula3d.core import HKLVolume
 
 
 def _make_vol(shape=(15, 15, 15), hkl_range=(-2, 2)):

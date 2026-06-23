@@ -2,11 +2,11 @@
 
 import numpy as np
 
-from ndiff.core import HKLVolume
-from ndiff.inpainting.interpolation import biharmonic_fill, rbf_fill
-from ndiff.inpainting.pipeline import fill
-from ndiff.inpainting.symmetry import ORTHORHOMBIC_MMM, symmetry_fill
-from ndiff.inpainting.tv_inpainting import tv_inpaint
+from nebula3d.core import HKLVolume
+from nebula3d.inpainting.interpolation import biharmonic_fill, rbf_fill
+from nebula3d.inpainting.pipeline import fill
+from nebula3d.inpainting.symmetry import ORTHORHOMBIC_MMM, symmetry_fill
+from nebula3d.inpainting.tv_inpainting import tv_inpaint
 
 
 def _smooth_volume(shape=(15, 15, 15)):

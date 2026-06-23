@@ -45,14 +45,14 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-import ndiff
-from ndiff.preprocessing import (
+import nebula3d
+from nebula3d.preprocessing import (
     ParametricRingModel,
     PatchedRadialRingModel,
     azimuthal_sampling_mask,
     confirm_ring_shells_across_h,
 )
-from ndiff.visualization import extract_slice
+from nebula3d.visualization import extract_slice
 
 raw = Path("data/raw")
 data_file = os.environ.get("DATA_FILE")
@@ -179,7 +179,7 @@ else:
 out_path.parent.mkdir(parents=True, exist_ok=True)
 
 print(f"loading {in_path.name}", flush=True)
-vol = ndiff.load(in_path)
+vol = nebula3d.load(in_path)
 nh, nk, nl = vol.data.shape
 slice_cfg = _slice_config_from_env()
 axis_values = getattr(vol, slice_cfg.axis_attr)
@@ -329,7 +329,7 @@ print(f"over-subtracted voxels (residual < -0.05): {neg_voxels} "
 
 out_vol = dataclasses.replace(vol, data=res_data, mask=out_mask)
 print(f"\nsaving residual volume -> {out_path}", flush=True)
-ndiff.save(out_vol, out_path)
+nebula3d.save(out_vol, out_path)
 
 # ---- spot-check PNGs: data vs residual on selected stack slices -----------
 for value in _spot_values():

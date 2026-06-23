@@ -10,8 +10,8 @@ union φ-tail is unchanged (Phase 0 golden masters still pass).
 import numpy as np
 import pytest
 
-from ndiff.analysis.bragg import BraggRemover
-from ndiff.core import HKLVolume
+from nebula3d.analysis.bragg import BraggRemover
+from nebula3d.core import HKLVolume
 
 UB_DIAG = np.diag([1.07979, 0.60344, 0.25464])  # ~TbTi3Bi4 |a*|,|b*|,|c*|
 

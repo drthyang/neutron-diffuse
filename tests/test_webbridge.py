@@ -1,4 +1,4 @@
-"""End-to-end test of the in-browser bridge (:mod:`ndiff.webbridge`).
+"""End-to-end test of the in-browser bridge (:mod:`nebula3d.webbridge`).
 
 Exercises the same code path the Pyodide build uses — minus Pyodide itself —
 on a tiny synthetic volume: set up the virtual workspace, run the full pipeline,
@@ -19,7 +19,7 @@ import sys
 import numpy as np
 import pytest
 
-from ndiff import webbridge
+from nebula3d import webbridge
 
 
 def _decode_envelope(buf: bytes) -> tuple[dict, np.ndarray]:
@@ -38,7 +38,7 @@ def test_webbridge_imports_without_fastapi():
     this from other tests in the suite (e.g. test_server) that do import FastAPI.
     """
     code = (
-        "import sys; import ndiff.webbridge; "
+        "import sys; import nebula3d.webbridge; "
         "assert 'fastapi' not in sys.modules, sorted(sys.modules)"
     )
     proc = subprocess.run([sys.executable, "-c", code], capture_output=True,
