@@ -66,6 +66,11 @@ background-removed) volume, so the transform's own `SUBTRACT_BG` is left off. (T
 use the legacy in-FFT Gaussian blur instead, point `PROC_FILE` at the
 `*_backfilled.h5` and add `SUBTRACT_BG="0,1.5,1.5"` — but not both.)
 
+The `CROP_H=4 CROP_K=8 CROP_L=15` below is an **optional band-limit**. The
+default (omit them) is the full `|Q|` range, which gives a finer real-space grid
+that matches the web 3D-ΔPDF page and the consistency view — at the cost of a
+larger transform (~4× the voxels) that includes the noisier outer `|Q|` shells.
+
 ```bash
 # 22 K
 PROC_FILE="data/processed/TbTi3Bi4_22K_mmm_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg_ringremoved_braggpunched_backfilled_flattened.h5" \

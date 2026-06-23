@@ -100,6 +100,13 @@ already correct. Zero-padding is sinc-interpolation only — it gives a finer
 display grid, not more intrinsic resolution (that is fixed by the `|Q|` range
 and the apodization window).
 
+Because the real-space pixel size is set by the `|Q|` extent kept, the pipeline
+transforms the **full `|Q|` range by default** (`crop_hkl=None`) so the saved
+ΔPDF is as fine as the data supports and matches the back-FFT consistency view
+(which always uses the full range). Pass a `crop_hkl=(h, k, l)` to band-limit —
+a smaller, faster transform that trims the noisier outer `|Q|` shells at the cost
+of a coarser real-space grid.
+
 ## Near-origin spike (expected, not the bug)
 
 A strong feature at `r < ~3 Å` remains after the fix. It comes from residual

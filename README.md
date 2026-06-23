@@ -197,8 +197,7 @@ isotropic, strong-feature contrast 100% retained, no over-subtraction).
 ### 5. Compute The 3D-DeltaPDF
 
 ```bash
-PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
-CROP_H=4 CROP_K=8 CROP_L=15 APODIZE=gaussian \
+PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl APODIZE=gaussian \
 python3 examples/delta_pdf.py
 ```
 
@@ -211,9 +210,14 @@ examples/_delta_pdf_h0l.png
 examples/_delta_pdf_0kl.png
 ```
 
-The standard 3D workflow crops reciprocal space to `|H| <= 4`, `|K| <= 8`, and
-`|L| <= 15` before the transform. The background has already been removed at
-step 4, so the transform's own smooth-background subtraction is **off**.
+By default the transform uses the **full `|Q|` range** (no crop), which gives the
+finest real-space ΔPDF — the real-space pixel size is fixed by the `|Q|` extent
+kept, not by zero-padding (see [docs/algorithms/delta_pdf.md](docs/algorithms/delta_pdf.md)).
+This matches the back-FFT consistency view, which always uses the full range.
+`CROP_H=4 CROP_K=8 CROP_L=15` is an optional band-limit (smaller transform, trims
+the noisier outer `|Q|` shells at the cost of a coarser real-space grid). The
+background has already been removed at step 4, so the transform's own
+smooth-background subtraction is **off**.
 `SUBTRACT_BG=0,sigma,sigma` is the *legacy alternative*: it subtracts a smooth
 per-H-plane Gaussian background inside the FFT. Use the flatten **or**
 `SUBTRACT_BG`, never both — running both removes the background twice, and the

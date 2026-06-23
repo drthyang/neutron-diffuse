@@ -214,7 +214,12 @@ class DeltaPdfParams:
     gaussian_sigma: float = 0.4
     zero_pad: bool = True
     subtract_mean: bool = True
-    crop_hkl: tuple[float, float, float] | None = (4.0, 8.0, 15.0)
+    # Full |Q| range by default (no crop) so the saved/display ΔPDF has the same
+    # real-space resolution as the back-FFT consistency view, which always uses the
+    # full range.  Real-space pixel size is fixed by the |Q| extent kept, not by
+    # padding (see docs/algorithms/delta_pdf.md); cropping coarsens the grid.  Pass
+    # a (h, k, l) tuple to band-limit (smaller files, trims the noisier outer |Q|).
+    crop_hkl: tuple[float, float, float] | None = None
     q_band: tuple[float, float] | None = None
     # None = off; float = isotropic blur σ; (σ_H, σ_K, σ_L) = per-axis.
     subtract_smooth_bg: float | tuple[float, float, float] | None = None
