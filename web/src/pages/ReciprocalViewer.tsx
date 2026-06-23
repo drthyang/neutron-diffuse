@@ -2,7 +2,7 @@
 // One panel per existing HKLVolume stage, all sharing plane / cut / contrast /
 // log / colormap controls so the cleanup stages are directly comparable.
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { keepPreviousData, useQueries } from "@tanstack/react-query";
 
@@ -132,12 +132,37 @@ export function ReciprocalViewer() {
   // stages still carry the Bragg peaks (~10× the post-punch diffuse), so on the
   // single scale the backfilled / flattened panels read darker — raise the contrast
   // slider to lift the diffuse stages.
-  let globalVmax = 0;
+  //
+  // The pool must be *stable*: the five centre-cut fetches resolve one-by-one (so a
+  // naive running max climbs as they land) and carry no placeholder data (so on a
+  // dataset/axis switch, or any transient refetch, the pool momentarily empties and
+  // would collapse the scale to 1).  Either makes the shared scale jump around and
+  // the panels look mismatched.  So we only *commit* the pooled max once every stage
+  // has reported, and otherwise hold the last value committed for this (dataset, axis)
+  // — the scale changes exactly once per identity, when it is fully known.
+  const scaleIdentity = `${datasetId}|${fixedAxis}`;
+  const committedScaleRef = useRef<{ id: string; vmax: number } | null>(null);
+
+  let pooledVmax = 0;
+  let scaleReady = stages.length > 0;
   stages.forEach((_s, i) => {
     const rm = scaleResults[i]?.data?.header.robust_max;
-    if (rm && Number.isFinite(rm)) globalVmax = Math.max(globalVmax, rm);
+    if (rm && Number.isFinite(rm) && rm > 0) pooledVmax = Math.max(pooledVmax, rm);
+    else scaleReady = false;
   });
-  globalVmax = globalVmax || 1;
+
+  const committed = committedScaleRef.current;
+  let globalVmax: number;
+  if (scaleReady && pooledVmax > 0) {
+    committedScaleRef.current = { id: scaleIdentity, vmax: pooledVmax };
+    globalVmax = pooledVmax;
+  } else if (committed && committed.id === scaleIdentity) {
+    // Transient gap (a fetch is mid-flight) for the same dataset/axis — hold steady.
+    globalVmax = committed.vmax;
+  } else {
+    // Cold load of a new identity: the partial pool only grows, never collapses.
+    globalVmax = pooledVmax || 1;
+  }
   const sliceVmax = contrast * globalVmax;
 
   return (
