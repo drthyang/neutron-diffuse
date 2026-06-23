@@ -23,7 +23,7 @@ Env overrides:
     GAUSSIAN_SIGMA  fraction of Q_max for gaussian window (default: 0.5)
     ZERO_PAD        0|1  (default: 1)
     SUBTRACT_MEAN   0|1  (default: 1)
-    CROP_H          max |H| in r.l.u. to include in FFT (default: 4)
+    CROP_H          max |H| in r.l.u. to include in FFT (default: full range)
     CROP_K          max |K| in r.l.u. to include in FFT (default: full range)
     CROP_L          max |L| in r.l.u. to include in FFT (default: full range)
     SUBTRACT_BG     Gaussian-blur sigma in r.l.u. to subtract the smooth diffuse
@@ -89,7 +89,7 @@ gaussian_sigma = float(os.environ.get("GAUSSIAN_SIGMA", "0.5"))
 zero_pad       = bool(int(os.environ.get("ZERO_PAD", "1")))
 subtract_mean  = bool(int(os.environ.get("SUBTRACT_MEAN", "1")))
 
-_crop_h = os.environ.get("CROP_H", "4")
+_crop_h = os.environ.get("CROP_H")
 _crop_k = os.environ.get("CROP_K")
 _crop_l = os.environ.get("CROP_L")
 if _crop_h or _crop_k or _crop_l:

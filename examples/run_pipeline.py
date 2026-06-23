@@ -51,7 +51,7 @@ Env:
                 0,1.5,1.5 to use the legacy per-H-plane Gaussian blur instead —
                 but do NOT combine it with the flatten (double subtraction; the
                 σ_H=0 blur destroys the H-axis signal).
-    CROP_H (4)  CROP_K (8)  CROP_L (15)  APODIZE (gaussian)  GAUSSIAN_SIGMA (0.4)
+    CROP_H/K/L (default: full |Q|, no crop)  APODIZE (gaussian)  GAUSSIAN_SIGMA (0.4)
     # plus every stage's own env vars (RING_PRESET, MODE, METHOD, ...).
 """
 import os
@@ -92,7 +92,7 @@ STAGE_DEFAULTS = {
     # The per-H-plane Gaussian blur is the legacy alternative — set it explicitly
     # to use it instead, but never together with the flatten (see the header).
     "pdf": {
-        "SUBTRACT_BG": "0", "CROP_H": "4", "CROP_K": "8", "CROP_L": "15",
+        "SUBTRACT_BG": "0",
         "APODIZE": "gaussian", "GAUSSIAN_SIGMA": "0.4",
     },
     "qa": {"H_VALUE": "0.3333", "SLIDER_MIN": "0.0", "SLIDER_MAX": "1.0"},
