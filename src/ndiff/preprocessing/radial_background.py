@@ -968,10 +968,10 @@ def _robust_radial_profile(
     order = np.argsort(bi, kind="stable")
     bi_sorted = bi[order]
     I_sorted = Iv[order]
-    starts = np.searchsorted(bi_sorted, np.arange(n_bins), side="left")
-    ends = np.searchsorted(bi_sorted, np.arange(n_bins), side="right")
+    segment_starts = np.searchsorted(bi_sorted, np.arange(n_bins), side="left")
+    segment_ends = np.searchsorted(bi_sorted, np.arange(n_bins), side="right")
     for b in range(n_bins):
-        sel = I_sorted[starts[b]:ends[b]]
+        sel = I_sorted[segment_starts[b]:segment_ends[b]]
         counts[b] = sel.size
         if sel.size >= min_per_bin:
             out[b] = _robust_bin_stat(sel, lo_p, hi_p, method)
