@@ -67,21 +67,26 @@ export function ConsistencyViewer() {
   const setLog = useViewerStore((s) => s.setLog);
   const setColormap = useViewerStore((s) => s.setColormap);
 
+  // Display controls (contrast / window / colormap / gridlines) are shared with the
+  // 3D-ΔPDF viewer via the store.  The cut *indices* are NOT shared: the
+  // consistency round-trip can use a different real-space grid than the saved ΔPDF
+  // volume, so sharing indices would push this viewer's centre cut onto the other
+  // viewer's slider (out of range → it snaps to max).  Keep cuts local here.
   const dpdfContrast = useDpdfStore((s) => s.contrast);
   const windowFull = useDpdfStore((s) => s.windowFull);
   const dpdfColormap = useDpdfStore((s) => s.colormap);
   const dpdfGridlines = useDpdfStore((s) => s.gridlines);
-  const cutX = useDpdfStore((s) => s.cutX);
-  const cutY = useDpdfStore((s) => s.cutY);
-  const cutZ = useDpdfStore((s) => s.cutZ);
 
   const setDpdfContrast = useDpdfStore((s) => s.setContrast);
   const setWindowFull = useDpdfStore((s) => s.setWindowFull);
   const setDpdfColormap = useDpdfStore((s) => s.setColormap);
   const setDpdfGridlines = useDpdfStore((s) => s.setGridlines);
-  const setCutX = useDpdfStore((s) => s.setCutX);
-  const setCutY = useDpdfStore((s) => s.setCutY);
-  const setCutZ = useDpdfStore((s) => s.setCutZ);
+
+  const [dpdfCuts, setDpdfCuts] = useState<{ X: number; Y: number; Z: number }>({
+    X: 0,
+    Y: 0,
+    Z: 0,
+  });
 
   const [band, setBand] = useState<{ min: number; max: number } | null>(null);
   const [draftMin, setDraftMin] = useState(0);
@@ -92,8 +97,9 @@ export function ConsistencyViewer() {
   const [draftRMax, setDraftRMax] = useState(0);
 
   const [dpdfFixedAxis, setDpdfFixedAxis] = useState<RealAxis>("Z");
-  const dpdfCutIndex = dpdfFixedAxis === "X" ? cutX : dpdfFixedAxis === "Y" ? cutY : cutZ;
-  const setDpdfCutIndex = dpdfFixedAxis === "X" ? setCutX : dpdfFixedAxis === "Y" ? setCutY : setCutZ;
+  const dpdfCutIndex = dpdfCuts[dpdfFixedAxis];
+  const setDpdfCutIndex = (i: number) =>
+    setDpdfCuts((c) => ({ ...c, [dpdfFixedAxis]: i }));
 
   // Meta drives the metrics + grid ranges + |Q| span; it recomputes the (heavy)
   // round trip whenever the committed band changes.
@@ -151,9 +157,14 @@ export function ConsistencyViewer() {
     return { min, max, n, step: n > 1 ? (max - min) / (n - 1) : 0 };
   }, [meta, dpdfFixedAxis]);
 
+  // Centre the selected real-space cut when the grid or axis changes (functional
+  // setState keeps the dep list stable — setDpdfCutIndex is a fresh closure each
+  // render).
   useEffect(() => {
-    if (dpdfAxisInfo) setDpdfCutIndex(Math.floor(dpdfAxisInfo.n / 2));
-  }, [dpdfAxisInfo, setDpdfCutIndex]);
+    if (dpdfAxisInfo) {
+      setDpdfCuts((c) => ({ ...c, [dpdfFixedAxis]: Math.floor(dpdfAxisInfo.n / 2) }));
+    }
+  }, [dpdfAxisInfo, dpdfFixedAxis]);
 
   const idx = axisInfo ? Math.min(cutIndex, axisInfo.n - 1) : 0;
   const value = axisInfo ? axisInfo.min + idx * axisInfo.step : 0;
