@@ -195,6 +195,62 @@ def test_volume_meta(env):
     assert "hk" in m["planes"] and "0kl" in m["planes"]
 
 
+def test_bragg_profile_missing_returns_empty_state(env):
+    client, _ = env
+    r = client.get(f"/api/bragg/{SLUG}/profile")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["dataset_id"] == SLUG
+    assert body["has_profile"] is False
+    assert body["n_peaks"] == 0
+    assert body["peaks"] == []
+
+
+def test_bragg_profile_reads_saved_json(tmp_path):
+    (tmp_path / "raw").mkdir()
+    proc = tmp_path / "processed"
+    proc.mkdir()
+    paths = pipeline_paths(tmp_path / "raw" / f"{STEM}.nxs", proc_dir=proc)
+    nebula3d.save(_vol(), paths.braggpunched)
+    paths.bragg_profile_json.write_text(json.dumps({
+        "schema_version": 1,
+        "width_labels": ["Qx", "Qy", "Qz"],
+        "hkl_width_labels": ["H", "K", "L"],
+        "width_units": {"hkl": "r.l.u.", "q": "Å⁻¹"},
+        "n_peaks": 1,
+        "fit_covariance": True,
+        "punch_frame": "q",
+        "peaks": [{
+            "index": 0,
+            "source_node_hkl": [1, 0, 0],
+            "center_hkl": [1.0, 0.0, 0.0],
+            "q_abs": 1.57,
+            "intensity": 4.2,
+            "local_background": 1.1,
+            "width_hkl": [0.3, 0.2, 0.1],
+            "width_q": [0.12, 0.08, 0.04],
+            "principal_width_hkl": [0.3, 0.2, 0.1],
+            "principal_width_q": [0.12, 0.08, 0.04],
+            "principal_directions_hkl": [
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ],
+            "fit_kind": "tilted",
+        }],
+    }), encoding="utf-8")
+
+    app = create_app(ServerConfig(data_root=tmp_path))
+    client = TestClient(app)
+    r = client.get(f"/api/bragg/{SLUG}/profile")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["has_profile"] is True
+    assert body["fit_covariance"] is True
+    assert body["peaks"][0]["width_q"] == [0.12, 0.08, 0.04]
+
+
 @pytest.mark.parametrize("plane,value", [("hk", 0.0), ("0kl", 0.0), ("h0l", 1.0)])
 def test_slice_matches_extract_slice(env, plane, value):
     client, vol = env

@@ -3,6 +3,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import {
+  fetchBraggProfile,
   fetchDataRoot,
   fetchDatasets,
   fetchDpdfMeta,
@@ -54,5 +55,13 @@ export function useDpdfSlice(
     queryFn: () => fetchDpdfSlice(volumeId as string, plane, value),
     enabled: Boolean(volumeId),
     placeholderData: keepPreviousData,
+  });
+}
+
+export function useBraggProfile(datasetId: string | undefined) {
+  return useQuery({
+    queryKey: ["braggProfile", datasetId],
+    queryFn: () => fetchBraggProfile(datasetId as string),
+    enabled: Boolean(datasetId),
   });
 }

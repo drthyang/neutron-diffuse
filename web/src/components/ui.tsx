@@ -338,6 +338,18 @@ export function IconLattice({ size = 17 }: IconProps) {
   );
 }
 
+/* profile curve — Bragg peak width distribution */
+export function IconProfileWave({ size = 17 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 18 18" {...stroke}>
+      <path d="M2.5 14.5h13" opacity={0.55} />
+      <path d="M2.5 13.5c2.1 0 2.2-8.8 4.5-8.8 2 0 1.9 6.7 3.7 6.7 1.6 0 1.8-3.2 3-3.2.8 0 1.2 1.3 1.8 3.2" />
+      <circle cx={7} cy={4.7} r={0.8} fill="currentColor" stroke="none" />
+      <circle cx={10.7} cy={11.4} r={0.65} fill="currentColor" stroke="none" opacity={0.75} />
+    </svg>
+  );
+}
+
 /* concentric PDF shells */
 export function IconOrbits({ size = 17 }: IconProps) {
   return (

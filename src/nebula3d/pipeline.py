@@ -67,6 +67,7 @@ __all__ = [
     "delta_pdf_transform_config",
     "pdf_consistency_check",
     "consistency_reconstruction",
+    "write_bragg_profile_json",
     "pipeline_paths",
     "run_pipeline",
 ]
@@ -90,6 +91,107 @@ def _emit(progress: ProgressFn | None, stage: str, status: Status,
           fraction: float | None, message: str) -> None:
     if progress is not None:
         progress(stage, status, fraction, message)
+
+
+def _q_at(vol: HKLVolume, hkl: tuple[float, float, float]) -> float:
+    return float(np.linalg.norm(np.asarray(hkl, dtype=float) @ vol.ub_matrix.T))
+
+
+def _principal_widths_from_shape(
+    vol: HKLVolume,
+    shape_hkl: np.ndarray,
+) -> tuple[list[float], list[float], list[list[float]]]:
+    """Return ellipsoid semi-widths in HKL and Q units, sorted largest first."""
+    lam, vecs = np.linalg.eigh(shape_hkl)
+    radii = 1.0 / np.sqrt(np.clip(lam, 1e-300, None))
+    order = np.argsort(radii)[::-1]
+    widths_hkl = [float(radii[i]) for i in order]
+    directions = [np.asarray(vecs[:, i], dtype=float) for i in order]
+    widths_q = [
+        float(widths_hkl[i] * np.linalg.norm(vol.ub_matrix @ directions[i]))
+        for i in range(3)
+    ]
+    direction_rows = [directions[i].tolist() for i in range(3)]
+    return widths_hkl, widths_q, direction_rows
+
+
+def _axis_widths_from_shape(
+    vol: HKLVolume,
+    shape_hkl: np.ndarray,
+) -> tuple[list[float], list[float]]:
+    """Return ellipsoid half-widths along HKL grid axes and Cartesian Q axes."""
+    cov_hkl = np.linalg.inv(shape_hkl)
+    widths_hkl = [
+        float(np.sqrt(max(float(cov_hkl[i, i]), 0.0))) for i in range(3)
+    ]
+    inv_ub = np.linalg.inv(vol.ub_matrix)
+    shape_q = inv_ub.T @ shape_hkl @ inv_ub
+    cov_q = np.linalg.inv(shape_q)
+    widths_q = [
+        float(np.sqrt(max(float(cov_q[i, i]), 0.0))) for i in range(3)
+    ]
+    return widths_hkl, widths_q
+
+
+def _shape_from_radii(radii: tuple[float, float, float]) -> np.ndarray:
+    return np.diag([1.0 / (float(r) * float(r)) for r in radii])
+
+
+def bragg_profile_from_records(
+    vol: HKLVolume,
+    remover: BraggRemover,
+    peaks: Sequence,
+) -> dict:
+    """Summarise detected Bragg peak ellipsoid widths for review charts."""
+    base = remover._fit_base_radii(vol)  # noqa: SLF001 - profile mirrors punch internals
+    rows = []
+    for idx, peak in enumerate(peaks):
+        if peak.shape_hkl is not None:
+            shape = np.asarray(peak.shape_hkl, dtype=float)
+            fit_kind = "tilted"
+        else:
+            shape = _shape_from_radii(peak.radii_hkl or base)
+            fit_kind = "axis_aligned"
+        widths_hkl_principal, widths_q_principal, directions = (
+            _principal_widths_from_shape(vol, shape)
+        )
+        widths_hkl, widths_q = _axis_widths_from_shape(vol, shape)
+        rows.append({
+            "index": idx,
+            "source_node_hkl": (
+                list(peak.source_node_hkl) if peak.source_node_hkl is not None else None
+            ),
+            "center_hkl": [float(v) for v in peak.center_hkl],
+            "q_abs": _q_at(vol, peak.center_hkl),
+            "intensity": (
+                float(peak.intensity) if np.isfinite(peak.intensity) else None
+            ),
+            "local_background": (
+                float(peak.local_background)
+                if np.isfinite(peak.local_background) else None
+            ),
+            "width_hkl": widths_hkl,
+            "width_q": widths_q,
+            "principal_width_hkl": widths_hkl_principal,
+            "principal_width_q": widths_q_principal,
+            "principal_directions_hkl": directions,
+            "fit_kind": fit_kind,
+        })
+    return {
+        "schema_version": 1,
+        "width_labels": ["Qx", "Qy", "Qz"],
+        "hkl_width_labels": ["H", "K", "L"],
+        "width_units": {"hkl": "r.l.u.", "q": "Å⁻¹"},
+        "n_peaks": len(rows),
+        "fit_covariance": bool(remover.integer_fit_covariance),
+        "punch_frame": str(remover.punch_frame),
+        "peaks": rows,
+    }
+
+
+def write_bragg_profile_json(profile: dict, out_path: Path) -> None:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(profile, indent=2), encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -424,13 +526,17 @@ def punch_bragg(vol: HKLVolume, params: PunchParams | None = None, *,
         punch_frame=p.punch_frame, punch_q_radius=p.punch_q_radius,
         punch_q_radii=p.punch_q_radii,
     )
-    peaks = remover.detect_peaks(vol)
-    keep = remover.build_mask(vol)
+    peak_records = remover._detect_peak_records(vol)  # noqa: SLF001 - avoid refitting
+    keep = remover._punch_centers(
+        vol, np.ones(vol.shape, dtype=bool), peak_records)  # noqa: SLF001
+    keep = remover._punch_incident_beam(vol, keep)  # noqa: SLF001
+    profile = bragg_profile_from_records(vol, remover, peak_records)
     valid = vol.mask & np.isfinite(vol.data)
     punched = int((valid & ~keep).sum())
     out_vol = dataclasses.replace(vol, mask=vol.mask & keep)
     _emit(progress, "punch", "done", 1.0,
-          f"detected {len(peaks)} peaks; punched {punched:,} voxels")
+          f"detected {len(peak_records)} peaks; punched {punched:,} voxels")
+    setattr(out_vol, "_bragg_profile", profile)
     return out_vol
 
 
@@ -775,6 +881,7 @@ class PipelinePaths:
     input: Path
     ringremoved: Path
     braggpunched: Path
+    bragg_profile_json: Path
     backfilled: Path
     flattened: Path
     delta_pdf: Path
@@ -798,8 +905,9 @@ def pipeline_paths(input_path: str | Path, *, proc_dir: str | Path | None = None
     flat = proc / f"{fill.stem}_flattened.h5"
     pdf = proc / f"{fill.stem}_delta_pdf.h5"
     return PipelinePaths(
-        input=inp, ringremoved=ring, braggpunched=punch, backfilled=fill,
-        flattened=flat, delta_pdf=pdf,
+        input=inp, ringremoved=ring, braggpunched=punch,
+        bragg_profile_json=proc / f"{punch.stem}_profile.json",
+        backfilled=fill, flattened=flat, delta_pdf=pdf,
         pdf_input=flat if flatten_enabled else fill,
         pdf_check_json=proc / f"{pdf.stem}_consistency.json",
         pdf_check_png=proc / f"{pdf.stem}_consistency.png",
@@ -879,6 +987,9 @@ def run_pipeline(
             vol = nebula3d.load(paths.ringremoved)
             out = punch_bragg(vol, p.punch, progress=progress)
             nebula3d.save(out, paths.braggpunched)
+            profile = getattr(out, "_bragg_profile", None)
+            if profile is not None:
+                write_bragg_profile_json(profile, paths.bragg_profile_json)
 
     # --- stage 3: backfill --------------------------------------------------
     if want("backfill"):

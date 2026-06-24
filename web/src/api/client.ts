@@ -2,6 +2,7 @@
 
 import { engine, PYODIDE_MODE } from "./pyodideEngine";
 import type {
+  BraggProfile,
   ConsistencyMeta,
   DataRoot,
   Dataset,
@@ -143,6 +144,25 @@ export function fetchConsistencyMeta(
   const qs = bandParams(qMin, qMax, rMin, rMax);
   const url = `/api/consistency/${encodeURIComponent(datasetId)}/meta${qs ? `?${qs}` : ""}`;
   return getJSON<ConsistencyMeta>(url);
+}
+
+export function fetchBraggProfile(datasetId: string): Promise<BraggProfile> {
+  if (PYODIDE_MODE) {
+    return Promise.resolve({
+      dataset_id: datasetId,
+      profile_path: null,
+      has_profile: false,
+      schema_version: 1,
+      width_labels: ["Qx", "Qy", "Qz"],
+      hkl_width_labels: ["H", "K", "L"],
+      width_units: { hkl: "r.l.u.", q: "Å⁻¹" },
+      n_peaks: 0,
+      fit_covariance: false,
+      punch_frame: null,
+      peaks: [],
+    });
+  }
+  return getJSON<BraggProfile>(`/api/bragg/${encodeURIComponent(datasetId)}/profile`);
 }
 
 export function fetchConsistencySlice(

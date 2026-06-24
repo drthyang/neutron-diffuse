@@ -84,6 +84,35 @@ export interface ConsistencyMeta {
   metrics: ConsistencyMetrics;
 }
 
+export interface BraggPeakWidth {
+  index: number;
+  source_node_hkl: number[] | null;
+  center_hkl: [number, number, number];
+  q_abs: number;
+  intensity: number | null;
+  local_background: number | null;
+  width_hkl: [number, number, number];
+  width_q: [number, number, number];
+  principal_width_hkl?: [number, number, number];
+  principal_width_q?: [number, number, number];
+  principal_directions_hkl: number[][];
+  fit_kind: string;
+}
+
+export interface BraggProfile {
+  dataset_id: string;
+  profile_path: string | null;
+  has_profile: boolean;
+  schema_version: number;
+  width_labels: string[];
+  hkl_width_labels?: string[];
+  width_units: Record<string, string>;
+  n_peaks: number;
+  fit_covariance: boolean;
+  punch_frame: string | null;
+  peaks: BraggPeakWidth[];
+}
+
 // Header decoded from the binary slice envelope.
 export interface SliceHeader {
   ny: number;

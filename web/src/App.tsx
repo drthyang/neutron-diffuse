@@ -9,9 +9,11 @@ import {
   IconLattice,
   IconLayers,
   IconOrbits,
+  IconProfileWave,
   IconRun,
 } from "./components/ui";
 import { ConsistencyViewer } from "./pages/ConsistencyViewer";
+import { BraggProfileViewer } from "./pages/BraggProfileViewer";
 import { DeltaPdfViewer } from "./pages/DeltaPdfViewer";
 import { MultiTempViewer } from "./pages/MultiTempViewer";
 import { PipelineConfig } from "./pages/PipelineConfig";
@@ -19,7 +21,7 @@ import { PipelineExecution } from "./pages/PipelineExecution";
 import { ReciprocalViewer } from "./pages/ReciprocalViewer";
 import { usePipelineStore } from "./state/pipelineStore";
 
-type Tab = "config" | "execution" | "reciprocal" | "dpdf" | "multi" | "consistency";
+type Tab = "config" | "execution" | "reciprocal" | "bragg" | "dpdf" | "multi" | "consistency";
 
 const NAV: { id: Tab; label: string; desc: string; icon: ReactNode }[] = [
   {
@@ -39,6 +41,12 @@ const NAV: { id: Tab; label: string; desc: string; icon: ReactNode }[] = [
     label: "Reciprocal cleanup",
     desc: "Compare cleanup stages slice-by-slice across the reciprocal-space volume.",
     icon: <IconLattice />,
+  },
+  {
+    id: "bragg",
+    label: "Bragg profile",
+    desc: "Review fitted Bragg peak ellipsoid widths after punching with |Q| trends and width histograms.",
+    icon: <IconProfileWave />,
   },
   {
     id: "dpdf",
@@ -68,6 +76,8 @@ function renderPage(tab: Tab, setTab: (t: Tab) => void): ReactNode {
       return <PipelineExecution />;
     case "reciprocal":
       return <ReciprocalViewer />;
+    case "bragg":
+      return <BraggProfileViewer />;
     case "dpdf":
       return <DeltaPdfViewer />;
     case "multi":
