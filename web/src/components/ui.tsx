@@ -401,6 +401,18 @@ export function IconCheck({ size = 17 }: IconProps) {
   );
 }
 
+/* forward + backward arrows — Q↔R round-trip transform */
+export function IconTransform({ size = 17 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 18 18" {...stroke}>
+      <path d="M2.5 6.5h11" />
+      <path d="M11 4 13.5 6.5 11 9" />
+      <path d="M15.5 11.5h-11" />
+      <path d="M7 9 4.5 11.5 7 14" />
+    </svg>
+  );
+}
+
 /* scattering brand glyph: centre beam + diffuse satellites */
 export function BrandGlyph({ size = 18 }: IconProps) {
   return (

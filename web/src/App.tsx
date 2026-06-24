@@ -4,13 +4,13 @@ import { useHealth } from "./api/hooks";
 import { PYODIDE_MODE } from "./api/pyodideEngine";
 import {
   BrandGlyph,
-  IconCheck,
   IconFlow,
   IconLattice,
   IconLayers,
   IconOrbits,
   IconProfileWave,
   IconRun,
+  IconTransform,
 } from "./components/ui";
 import { ConsistencyViewer } from "./pages/ConsistencyViewer";
 import { BraggProfileViewer } from "./pages/BraggProfileViewer";
@@ -56,9 +56,9 @@ const NAV: { id: Tab; label: string; desc: string; icon: ReactNode }[] = [
   },
   {
     id: "consistency",
-    label: "Consistency check",
+    label: "Q–R Band Transform",
     desc: "Inverse-FFT the ΔPDF back to reciprocal space and compare to the data; band-limit |Q| to separate low- vs high-frequency signal.",
-    icon: <IconCheck />,
+    icon: <IconTransform />,
   },
   {
     id: "multi",
