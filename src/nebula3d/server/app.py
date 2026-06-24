@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from nebula3d import __version__
 from nebula3d.server.config import ServerConfig, config_from_env
 from nebula3d.server.jobs import JobManager
+from nebula3d.server.routers import bragg as bragg_router
 from nebula3d.server.routers import consistency as consistency_router
 from nebula3d.server.routers import datasets as datasets_router
 from nebula3d.server.routers import deltapdf as deltapdf_router
@@ -51,6 +52,7 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
     app.include_router(deltapdf_router.router)
     app.include_router(pipeline_router.router)
     app.include_router(consistency_router.router)
+    app.include_router(bragg_router.router)
 
     @app.get("/api/health")
     def health() -> dict:

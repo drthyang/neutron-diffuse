@@ -807,6 +807,182 @@ input[type="range"]::-moz-range-track {
 }
 
 /* ---------------------------------------------------------------------------
+   Bragg profile review
+   --------------------------------------------------------------------------- */
+
+.profile-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.profile-summary-row {
+  display: grid;
+  grid-template-columns: minmax(54px, 0.45fr) repeat(3, minmax(112px, 1fr));
+  gap: 12px;
+  align-items: baseline;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  min-width: 0;
+}
+.profile-summary-row span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text);
+}
+.profile-summary-row i,
+.profile-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
+.profile-summary-row b,
+.profile-summary-row em {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.profile-summary-row b {
+  color: var(--text);
+  font-weight: 650;
+}
+.profile-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.profile-chart {
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+.profile-chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.profile-chart-head h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+}
+.profile-chart-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.profile-chart-title span {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.profile-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 13px;
+  justify-content: flex-end;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.profile-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.profile-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--surface);
+}
+.profile-plot-bg {
+  fill: var(--surface-2);
+}
+.profile-drag-plane {
+  fill: transparent;
+  cursor: grab;
+  touch-action: none;
+}
+.profile-drag-plane.dragging {
+  cursor: grabbing;
+}
+.profile-grid {
+  stroke: color-mix(in srgb, var(--border) 74%, transparent);
+  stroke-width: 1;
+}
+.profile-axis {
+  stroke: var(--border-strong);
+  stroke-width: 1.2;
+}
+.profile-fit-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.92;
+  pointer-events: none;
+}
+.profile-fit-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  cursor: crosshair;
+}
+.profile-tooltip {
+  pointer-events: none;
+}
+.profile-tooltip rect {
+  fill: color-mix(in srgb, var(--surface-3) 94%, transparent);
+  stroke: var(--border-strong);
+}
+.profile-tooltip text {
+  fill: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+.profile-tick,
+.profile-axis-label {
+  fill: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.profile-axis-label {
+  font-size: 11.5px;
+}
+
+@media (max-width: 1160px) {
+  .profile-chart-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 720px) {
+  .profile-summary-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
    pipeline runner
    --------------------------------------------------------------------------- */
 

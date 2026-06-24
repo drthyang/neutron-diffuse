@@ -61,6 +61,33 @@ class DeltaPdfMetaOut(BaseModel):
     planes: list[str]
 
 
+class BraggPeakWidthOut(BaseModel):
+    index: int
+    source_node_hkl: list[int] | None = None
+    center_hkl: list[float]
+    q_abs: float
+    intensity: float | None = None
+    local_background: float | None = None
+    width_hkl: list[float]
+    width_q: list[float]
+    principal_directions_hkl: list[list[float]]
+    fit_kind: str
+
+
+class BraggProfileOut(BaseModel):
+    dataset_id: str
+    profile_path: str | None = None
+    has_profile: bool
+    schema_version: int = 1
+    width_labels: list[str] = []
+    hkl_width_labels: list[str] = []
+    width_units: dict[str, str] = {}
+    n_peaks: int = 0
+    fit_covariance: bool = False
+    punch_frame: str | None = None
+    peaks: list[BraggPeakWidthOut] = []
+
+
 class StageParamsIn(BaseModel):
     """Curated, optional per-stage overrides (None = use the validated default)."""
 
