@@ -115,8 +115,8 @@ def _clear_caches() -> None:
 def _safe_stem(name: str) -> str:
     """Filename → a clean stem for the raw ``.nxs`` (drops the extension)."""
     stem = Path(name).name
-    # Strip a known volume extension; keep the rest verbatim so the temperature
-    # token (e.g. "_22K") survives for dataset grouping / display.
+    # Strip a known volume extension; keep the rest verbatim so condition labels
+    # survive for dataset grouping / display.
     for ext in (".nxs", ".hdf5", ".h5", ".txt", ".dat", ".hkl"):
         if stem.lower().endswith(ext):
             stem = stem[: -len(ext)]
@@ -223,10 +223,10 @@ def make_demo_input(n: int = 24) -> str:
     data = data + 0.02 * rng.standard_normal(data.shape)
     vol = nebula3d.core.HKLVolume.from_arrays(
         data.astype(np.float64), (-6.0, 6.0), (-6.0, 6.0), (-6.0, 6.0))
-    dest = cfg.raw_dir / "demo_22K.nxs"
+    dest = cfg.raw_dir / "demo_condition_a.nxs"
     nebula3d.save(vol, dest)
     _S.input = dest
-    _S.dataset_id = _ds._slug("demo_22K")
+    _S.dataset_id = _ds._slug("demo_condition_a")
     _clear_caches()
     return _S.dataset_id
 

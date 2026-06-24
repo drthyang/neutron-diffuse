@@ -171,9 +171,8 @@ class PunchParams:
     # Q-space punch (ROADMAP Phase 6, default since Phase 4).  The punch footprint
     # is the reciprocal-Å⁻¹ resolution floor (per a*,b*,c*); the per-peak fit +
     # φ-tail still modulate it (adaptive), so this reproduces the legacy HKL punch
-    # while being lattice/temperature-portable.  ΔPDF A/B vs the old HKL default:
-    # r=0.9998 (22K).  Set punch_frame="hkl" + punch_radii to restore the legacy
-    # rlu footprint; punch_q_radii ≈ HKL radii (0.09,0.12,0.45) × b*(22K).
+    # while being lattice/condition-portable. Set punch_frame="hkl" + punch_radii
+    # to restore the legacy rlu footprint.
     punch_frame: str = "q"
     punch_q_radius: float | None = None
     punch_q_radii: tuple[float, float, float] | None = (0.097, 0.072, 0.115)
@@ -789,7 +788,7 @@ def pipeline_paths(input_path: str | Path, *, proc_dir: str | Path | None = None
     """Resolve the chained output paths for ``input_path``.
 
     Names match ``examples/run_pipeline.py`` exactly so the viewers and the
-    multi-temperature auto-detection find the same ``*_delta_pdf.h5`` files.
+    multi-volume auto-detection find the same ``*_delta_pdf.h5`` files.
     """
     inp = Path(input_path)
     proc = Path(proc_dir) if proc_dir is not None else Path("data/processed")

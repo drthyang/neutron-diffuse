@@ -9,8 +9,8 @@ Two groups:
 
 1. **Golden masters** — snapshot the default ``punch_bragg`` keep-mask (count +
    content hash) and per-mechanism punch counts on a deterministic synthetic
-   volume built on the *real* TbTi3Bi4 reciprocal metric.  Any drift in the
-   detector/punch geometry trips these.
+   volume built on a representative orthorhombic reciprocal metric.  Any drift
+   in the detector/punch geometry trips these.
 
 2. **Specification invariants** — reference implementations of the HKL-axis and
    Q-axis ellipsoids, proving on the grid that for a diagonal (orthogonal)
@@ -28,9 +28,9 @@ from nebula3d.analysis.bragg import BraggRemover
 from nebula3d.core import HKLVolume
 from nebula3d.pipeline import PunchParams, punch_bragg
 
-# Real 22 K UB matrix (columns = reciprocal-lattice vectors, Å^-1).  Rotated in
-# the lab frame, but its metric g = UB^T UB is diagonal to ~0.5% → orthorhombic.
-UB_22K = np.array([
+# Representative UB matrix (columns = reciprocal-lattice vectors, Å^-1).
+# Rotated in the lab frame, but its metric g = UB^T UB is nearly diagonal.
+UB_REFERENCE = np.array([
     [-0.73475, -0.43626,  0.03571],
     [-0.75725,  0.41688,  0.03877],
     [-0.22948, -0.00539, -0.24912],
@@ -38,10 +38,10 @@ UB_22K = np.array([
 
 
 def _synthetic_vol() -> HKLVolume:
-    """Deterministic diffuse background + planted peaks on the real metric.
+    """Deterministic diffuse background + planted peaks on the reference metric.
 
-    Kept CI-small (41^3) but faithful: the UB is the measured 22 K orientation,
-    so the metric anisotropy (b* = 1.08, 0.60, 0.25 Å^-1) is real.  Peaks are
+    Kept CI-small (41^3) while preserving a realistic anisotropic reciprocal
+    metric.  Peaks are
     planted at the origin (incident beam), two integer Bragg nodes, an integer
     node off the kz=0 plane, and one off-integer satellite at (0.5, 0, 0).
     """
@@ -49,7 +49,7 @@ def _synthetic_vol() -> HKLVolume:
     rng = np.random.default_rng(20240613)
     data = rng.uniform(0.4, 1.2, shape).astype(np.float64)
     vol = HKLVolume.from_arrays(
-        data, (-2.0, 2.0), (-2.0, 2.0), (-2.0, 2.0), ub_matrix=UB_22K)
+        data, (-2.0, 2.0), (-2.0, 2.0), (-2.0, 2.0), ub_matrix=UB_REFERENCE)
 
     def _set(h0: float, k0: float, l0: float, amp: float) -> None:
         ih = int(np.argmin(np.abs(vol.h_axis - h0)))
@@ -243,11 +243,11 @@ def test_hkl_and_q_axis_masks_identical_on_exactly_diagonal_metric():
 
 
 def test_real_ub_hkl_vs_q_axis_differ_only_at_boundary():
-    """Honesty test on the *real* (slightly sheared) 22 K UB: HKL-axis and
+    """Honesty test on the representative slightly sheared UB: HKL-axis and
     Q-axis punches are not bit-identical, but disagree only at a handful of
     boundary voxels — and every disagreement sits within one grid step of the
     ellipsoid surface.  This bounds the real-world impact of the 0.5% shear."""
-    vol = _synthetic_vol()  # carries the real UB_22K
+    vol = _synthetic_vol()  # carries the representative UB
     bstar = np.sqrt(np.diag(vol.ub_matrix.T @ vol.ub_matrix))
     for center in [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0),
                    (1.0, 0.0, 1.0)]:

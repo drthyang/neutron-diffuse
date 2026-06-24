@@ -38,8 +38,8 @@ live progress. It has two interchangeable run modes that share the same UI:
   client-side via Pyodide on your own data, no install (modest volumes).
 
 A sidebar console with five views — a pipeline runner (the default landing
-view), reciprocal-space cleanup, 3D-ΔPDF orthoslices, multi-temperature
-comparison, and the consistency check — replaces the standalone
+view), reciprocal-space cleanup, 3D-ΔPDF orthoslices, multi-volume comparison,
+and the consistency check — replaces the standalone
 `examples/explore_*.py` viewers (which remain as a fallback). See
 [QUICKSTART.md](QUICKSTART.md) to get running and [docs/web.md](docs/web.md) for
 the reference, architecture, and development workflow.
@@ -94,9 +94,8 @@ written by the package itself.
 
 ## Quick Start
 
-To run the app, see [QUICKSTART.md](QUICKSTART.md). For the current TbTi3Bi4
-CLI command set (concise commands for the 22 K, 45 K, and 100 K workflows and
-viewers), see [docs/commands.md](docs/commands.md).
+To run the app, see [QUICKSTART.md](QUICKSTART.md). For concise CLI command
+recipes for batch workflows and viewers, see [docs/commands.md](docs/commands.md).
 
 Run the complete pipeline:
 
@@ -190,9 +189,9 @@ data/processed/*_backfilled_flattened.h5
 Sweeps spherical `|Q|` shells and subtracts a smooth, continuous per-shell
 background floor (default estimator `floor`/p25), so the isotropic radial
 pedestal flattens to ≈0 while the anisotropic diffuse and Bragg residuals are
-preserved. This is the explicit background-removal step. Its robustness is
-validated across 22/45/100 K by `examples/validate_flatten.py` (background is
-isotropic, strong-feature contrast 100% retained, no over-subtraction).
+preserved. This is the explicit background-removal step. Use
+`examples/validate_flatten.py` to check isotropy, feature retention, and
+over-subtraction on your own volumes.
 
 ### 5. Compute The 3D-DeltaPDF
 
@@ -305,7 +304,7 @@ Key pages:
 | [docs/algorithms/bragg_cleanup.md](docs/algorithms/bragg_cleanup.md) | Bragg/satellite detection, punching, and backfill. |
 | [docs/algorithms/delta_pdf.md](docs/algorithms/delta_pdf.md) | 3D-DeltaPDF transform, centring, background subtraction, and consistency checks. |
 | [QUICKSTART.md](QUICKSTART.md) | Get the app running (native or in-browser) in a few commands. |
-| [docs/commands.md](docs/commands.md) | Concise CLI command recipes for 22 K, 45 K, and 100 K data. |
+| [docs/commands.md](docs/commands.md) | Concise CLI command recipes for batch workflows and viewers. |
 | [docs/web.md](docs/web.md) | Browser console: run modes, viewers, architecture, dev workflow. |
 | [docs/interactive.md](docs/interactive.md) | Matplotlib viewer usage and visualization API. |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes and version history. |

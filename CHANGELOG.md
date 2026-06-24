@@ -15,5 +15,5 @@
 
 ## 0.1.0 - Initial alpha
 
-- Initial alpha toolkit for reciprocal-space neutron diffuse cleanup and
+- Initial alpha toolkit for reciprocal-space diffuse-scattering cleanup and
   3D-DeltaPDF exploration.

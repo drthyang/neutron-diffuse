@@ -10,10 +10,10 @@ viewers, and reproducible command recipes in more detail.
 2. [Quickstart](../QUICKSTART.md) - get the browser app running (native or
    in-browser) in a few commands.
 3. [Web UI](web.md) - the browser console that runs the pipeline and unifies the
-   cleanup, DeltaPDF, multi-temperature, and consistency views; both run modes,
+   cleanup, DeltaPDF, multi-volume, and consistency views; both run modes,
    architecture, and the development workflow.
-4. [Command recipes](commands.md) - concise CLI commands for the 22 K, 45 K, and
-   100 K workflow and viewers.
+4. [Command recipes](commands.md) - concise CLI commands for batch workflows and
+   viewers.
 6. [Powder ring removal](algorithms/powder_rings.md) - how smooth powder-ring
    intensity is estimated and subtracted.
 7. [Bragg cleanup](algorithms/bragg_cleanup.md) - integer-node Bragg punching,
@@ -30,7 +30,7 @@ viewers, and reproducible command recipes in more detail.
 | Page | Use it when you need to... |
 | --- | --- |
 | [../QUICKSTART.md](../QUICKSTART.md) | Get the app running (native or in-browser). |
-| [commands.md](commands.md) | Run the current 22 K, 45 K, and 100 K workflow from the CLI. |
+| [commands.md](commands.md) | Run batch workflows and viewers from the CLI. |
 | [web.md](web.md) | Launch, use, or develop the browser console (both run modes + consistency check). |
 | [algorithms/powder_rings.md](algorithms/powder_rings.md) | Understand or tune powder-ring subtraction. |
 | [algorithms/bragg_cleanup.md](algorithms/bragg_cleanup.md) | Tune Bragg punching, satellite search, or q-shell backfill. |
@@ -49,7 +49,7 @@ Common generated files:
 | `data/processed/*_braggpunched.h5` | Ring-removed volume with Bragg/satellite holes punched. |
 | `data/processed/*_braggpunched_backfilled.h5` | Cleaned diffuse volume after Bragg-hole backfill. |
 | `data/processed/*_backfilled_flattened.h5` | Background-removed diffuse volume (step-4 radial flatten; feeds the DeltaPDF). |
-| `data/processed/*_delta_pdf.h5` | Per-temperature 3D-DeltaPDF output. |
+| `data/processed/*_delta_pdf.h5` | Per-volume 3D-DeltaPDF output. |
 | `data/processed/*_delta_pdf_consistency.json` | Back-FFT consistency metrics from the library/web pipeline. |
 | `data/processed/*_delta_pdf_consistency.png` | `data | back-FFT | residual` consistency figure. |
 | `data/processed/*_3dpdf.h5` | Total-scattering 3D-PDF output (Bragg kept; `run_pipeline_pdf.py`). |

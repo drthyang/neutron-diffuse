@@ -1,23 +1,23 @@
-"""Investigate Bragg vs co-located diffuse scattering at the magnetic satellites.
+"""Investigate Bragg vs co-located diffuse scattering.
 
-Diagnostic for the case where **magnetic diffuse sits at/near the magnetic Bragg
-satellites** (the q = integer±1/3 family).  Punch + backfill would destroy that
-diffuse, so before separating we measure the peak shape on real line cuts:
+Diagnostic for the case where diffuse scattering sits at or near sharp Bragg or
+satellite features. Punch + backfill would destroy that diffuse, so before
+separating we measure the peak shape on line cuts:
 
     1. Calibrate the instrument resolution σ(|Q|) on resolution-limited *nuclear*
        (integer-node) Bragg peaks — these set the sharp-core width.
-    2. Locate the magnetic satellites (q=1/3 family) and any auto-detected node
-       that carries a broad component.
+    2. Locate satellite candidates from configurable fractional-H planes and any
+       auto-detected node that carries a broad component.
     3. Decompose each along H, K, L into a sharp (resolution) Gaussian core + a
        broad (diffuse) Lorentzian / squared-Lorentzian, keeping the better AIC.
     4. Report per-axis points-across-FWHM (which axes even resolve the core),
        correlation length ξ = 1/κ, and the diffuse fraction.
 
 Outputs (in OUTDIR, default examples/):
-    _investigate_bragg_diffuse_<T>.png   per-satellite 3-axis cuts + fits (log-y)
-    _investigate_bragg_summary_<T>.png   resolution σ(|Q|) + points/FWHM + ξ/frac
-    _investigate_bragg_diffuse_<T>.csv   the full per-axis table
-    _investigate_bragg_Tseries.png       (T_SERIES=1) broad component vs T
+    _investigate_bragg_diffuse_<label>.png   per-satellite 3-axis cuts + fits
+    _investigate_bragg_summary_<label>.png   resolution σ(|Q|) + points/FWHM + ξ/frac
+    _investigate_bragg_diffuse_<label>.csv   the full per-axis table
+    _investigate_bragg_series.png            (SERIES=1) broad component overlay
 
 Run::
 
@@ -26,8 +26,8 @@ Run::
 
 Env:
     DATA_FILE      ring-removed .h5 (default: auto-detect *_ringremoved.h5)
-    TEMP           22K | 45K | 100K — pick one temperature's ringremoved file
-    T_SERIES       1 → process all detected temperatures + the T-overlay
+    DATASET        substring used to pick one ringremoved file
+    SERIES         1 → process all detected files + the series overlay
     FRACTIONS      comma list of H fractional parts (default 0.3333,0.6667)
     H_HALF_WIDTH   half-width (rlu) around each fraction plane (default 0.08)
     MAX_SATELLITES detailed cut panels to draw (default 6)
@@ -77,11 +77,9 @@ _BROAD = os.environ.get("BROAD", "auto")
 BROAD = None if _BROAD == "auto" else _BROAD
 
 
-def _temp_of(path: Path) -> str:
-    for t in ("22K", "45K", "100K"):
-        if t in path.name:
-            return t
-    return path.stem[:8]
+def _label_of(path: Path) -> str:
+    stem = path.stem
+    return stem[:-len("_ringremoved")] if stem.endswith("_ringremoved") else stem
 
 
 def _detect_ringremoved() -> list[Path]:
@@ -90,12 +88,11 @@ def _detect_ringremoved() -> list[Path]:
         return [Path(env)]
     cands = sorted(PROC.glob("*_ringremoved.h5"))
     cands = [c for c in cands if "braggpunched" not in c.name]  # the raw ring-removed stage
-    temp = os.environ.get("TEMP")
-    if temp:
-        cands = [c for c in cands if temp in c.name]
-    if os.environ.get("T_SERIES", "0") != "1" and cands:
-        # default: just the 22 K (or the first) unless a T-series is requested
-        cands = [next((c for c in cands if "22K" in c.name), cands[0])]
+    dataset = os.environ.get("DATASET")
+    if dataset:
+        cands = [c for c in cands if dataset in c.name]
+    if os.environ.get("SERIES", "0") != "1" and cands:
+        cands = [cands[0]]
     return cands
 
 
@@ -103,8 +100,8 @@ def _detect_ringremoved() -> list[Path]:
 # Per-volume analysis
 # ---------------------------------------------------------------------------
 def analyse(path: Path):
-    temp = _temp_of(path)
-    print(f"\n{'='*70}\n▶ {temp}: {path.name}\n{'='*70}", flush=True)
+    label = _label_of(path)
+    print(f"\n{'='*70}\n▶ {label}: {path.name}\n{'='*70}", flush=True)
     vol = nebula3d.load(path)
     print(f"  shape (H,K,L) = {vol.data.shape}", flush=True)
     interp = build_interpolator(vol)   # one masked-volume copy, shared by all cuts
@@ -115,7 +112,7 @@ def analyse(path: Path):
         print(f"    σ_{AXIS_NAMES[a]}(|Q|) = {res.intercept[a]:.4f} + "
               f"{res.slope[a]:.4f}·|Q|  ({res.n_ref[a]} refs)", flush=True)
 
-    print("  locating q=1/3 magnetic satellites ...", flush=True)
+    print("  locating satellite candidates ...", flush=True)
     centers = magnetic_satellite_centers(
         vol, fractions=FRACTIONS, h_half_width=H_HALF_WIDTH, max_peaks=40,
     )
@@ -129,7 +126,7 @@ def analyse(path: Path):
         for a in range(3):
             d = dec[a]
             rows.append({
-                "temp": temp, "h": round(c[0], 4), "k": round(c[1], 4), "l": round(c[2], 4),
+                "label": label, "h": round(c[0], 4), "k": round(c[1], 4), "l": round(c[2], 4),
                 "axis": AXIS_NAMES[a], "q": round(d.q_center, 4),
                 "sharp_fwhm_rlu": round(d.sharp_fwhm, 4),
                 "broad_fwhm_rlu": round(d.broad_fwhm, 4),
@@ -139,13 +136,13 @@ def analyse(path: Path):
                 "broad_shape": d.broad_shape, "is_diffuse": d.is_diffuse,
                 "success": d.success,
             })
-    return temp, vol, res, decomps, rows, interp
+    return label, vol, res, decomps, rows, interp
 
 
 # ---------------------------------------------------------------------------
 # Plots
 # ---------------------------------------------------------------------------
-def plot_satellite_cuts(temp, vol, res, decomps, interp):
+def plot_satellite_cuts(label, vol, res, decomps, interp):
     sats = decomps[:MAX_SATELLITES]
     if not sats:
         return
@@ -176,16 +173,16 @@ def plot_satellite_cuts(temp, vol, res, decomps, interp):
             ax.set_title(title, fontsize=8)
             if r == 0 and a == 2:
                 ax.legend(fontsize=7, loc="upper right")
-    fig.suptitle(f"{temp}: magnetic-satellite line cuts — sharp (Bragg) vs broad (diffuse)",
+    fig.suptitle(f"{label}: satellite line cuts — sharp (Bragg) vs broad (diffuse)",
                  y=1.0, fontsize=12)
     fig.tight_layout()
-    out = OUTDIR / f"_investigate_bragg_diffuse_{temp}.png"
+    out = OUTDIR / f"_investigate_bragg_diffuse_{label}.png"
     fig.savefig(out, dpi=140, bbox_inches="tight")
     plt.close(fig)
     print(f"  saved {out.name}", flush=True)
 
 
-def plot_summary(temp, vol, res, rows):
+def plot_summary(label, vol, res, rows):
     fig, axes = plt.subplots(1, 3, figsize=(15, 4.2))
 
     # (1) resolution σ(|Q|) per axis with the reference points
@@ -232,16 +229,16 @@ def plot_summary(temp, vol, res, rows):
     ax.legend(fontsize=8)
     ax.grid(alpha=0.3)
 
-    fig.suptitle(f"{temp}: Bragg/diffuse separation diagnostics", fontsize=12)
+    fig.suptitle(f"{label}: Bragg/diffuse separation diagnostics", fontsize=12)
     fig.tight_layout()
-    out = OUTDIR / f"_investigate_bragg_summary_{temp}.png"
+    out = OUTDIR / f"_investigate_bragg_summary_{label}.png"
     fig.savefig(out, dpi=140, bbox_inches="tight")
     plt.close(fig)
     print(f"  saved {out.name}", flush=True)
 
 
-def write_csv(temp, rows):
-    out = OUTDIR / f"_investigate_bragg_diffuse_{temp}.csv"
+def write_csv(label, rows):
+    out = OUTDIR / f"_investigate_bragg_diffuse_{label}.csv"
     if not rows:
         return
     with open(out, "w", newline="") as fh:
@@ -251,9 +248,9 @@ def write_csv(temp, rows):
     print(f"  saved {out.name}  ({len(rows)} rows)", flush=True)
 
 
-def print_table(temp, rows):
+def print_table(label, rows):
     diffuse = [r for r in rows if r["is_diffuse"]]
-    print(f"\n  {temp}: {len(diffuse)}/{len(rows)} (node,axis) entries flagged diffuse "
+    print(f"\n  {label}: {len(diffuse)}/{len(rows)} (node,axis) entries flagged diffuse "
           f"(broad, >2× resolution, >20% area)", flush=True)
     hdr = f"    {'node':>20} {'ax':>2} {'|Q|':>5} {'sharpFWHM':>9} {'broadFWHM':>9} "\
           f"{'pts/FW':>6} {'xi(Å)':>6} {'frac':>5} {'shape':>17}"
@@ -277,18 +274,15 @@ def _best_axis(dec):
     return max(range(3), key=lambda a: dec[a].diffuse_fraction)
 
 
-def plot_t_series(per_temp):
-    """Overlay the broad (diffuse) component vs temperature at a *fixed* satellite.
+def plot_series(per_items):
+    """Overlay the broad (diffuse) component for a fixed satellite candidate.
 
-    Picks the satellite with the strongest separable diffuse in the coldest
-    dataset, then re-decomposes that **same (h,k,l) position** (no recentering) in
-    every temperature — the magnetic satellite itself disappears at high T, so we
-    must hold Q fixed rather than re-detect a peak.  The overlay then shows the
-    diffuse present at 22/45 K and gone by 100 K while the sharp core is constant.
+    Picks the satellite with the strongest separable diffuse in the first
+    dataset, then re-decomposes that **same (h,k,l) position** (no recentering)
+    in every loaded file so the comparison holds Q fixed.
     """
-    order = {"22K": 0, "45K": 1, "100K": 2}
-    series = sorted(per_temp, key=lambda e: order.get(e[0], 9))
-    _ref_temp, _ref_vol, _ref_res, ref_decomps, _ref_interp = series[0]
+    series = list(per_items)
+    _ref_label, _ref_vol, _ref_res, ref_decomps, _ref_interp = series[0]
 
     best = None
     for center, dec in ref_decomps:
@@ -296,14 +290,14 @@ def plot_t_series(per_temp):
         if dec[a].is_diffuse and (best is None or dec[a].diffuse_fraction > best[0]):
             best = (dec[a].diffuse_fraction, center, a)
     if best is None:
-        print("  [T-series] no flagged-diffuse satellite in the reference dataset — skipped",
+        print("  [series] no flagged-diffuse satellite in the reference dataset — skipped",
               flush=True)
         return
     _, center0, axis = best
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    for i, (temp, vol, res, _decomps, interp) in enumerate(series):
-        # hold the position fixed (refine=False) so every temperature is the same Q
+    for i, (label, vol, res, _decomps, interp) in enumerate(series):
+        # hold the position fixed (refine=False) so every file is the same Q
         dec = decompose_peak(vol, center0, res, half_window=HALF_WINDOW,
                              broad=BROAD, interp=interp, refine=False)[axis]
         coord, inten = extract_orthogonal_cuts(
@@ -313,22 +307,22 @@ def plot_t_series(per_temp):
         if dec.success:
             xf = np.linspace(coord.min(), coord.max(), 400)
             _, broad, base, total = evaluate_components(dec, xf)
-            tag = (f"{temp}: frac={dec.diffuse_fraction:.2f} ξ={dec.xi_angstrom:.1f}Å"
-                   if dec.is_diffuse else f"{temp}: no diffuse")
+            tag = (f"{label}: frac={dec.diffuse_fraction:.2f} ξ={dec.xi_angstrom:.1f}Å"
+                   if dec.is_diffuse else f"{label}: no diffuse")
             ax.plot(xf, total, "-", color=color, lw=1.5, label=tag)
             ax.plot(xf, base + broad, "--", color=color, lw=1.0)
     ax.set_yscale("log")
     ax.set_xlabel(f"{AXIS_NAMES[axis]} (rlu)")
     ax.set_ylabel("I")
     ax.set_title(
-        f"Magnetic diffuse vs T at "
+        f"Diffuse component comparison at "
         f"({center0[0]:.3f},{center0[1]:.2f},{center0[2]:.2f}) — {AXIS_NAMES[axis]} cut\n"
         "(— total fit, -- broad/diffuse component)"
     )
     ax.legend(fontsize=9)
     ax.grid(alpha=0.3, which="both")
     fig.tight_layout()
-    out = OUTDIR / "_investigate_bragg_Tseries.png"
+    out = OUTDIR / "_investigate_bragg_series.png"
     fig.savefig(out, dpi=140, bbox_inches="tight")
     plt.close(fig)
     print(f"\nsaved {out.name}", flush=True)
@@ -342,19 +336,19 @@ def main():
                  "or set DATA_FILE=/path/to/file.h5.")
     OUTDIR.mkdir(parents=True, exist_ok=True)
 
-    per_temp = []
+    per_items = []
     for path in files:
         if not path.exists():
             sys.exit(f"input not found: {path}")
-        temp, vol, res, decomps, rows, interp = analyse(path)
-        plot_satellite_cuts(temp, vol, res, decomps, interp)
-        plot_summary(temp, vol, res, rows)
-        print_table(temp, rows)
-        write_csv(temp, rows)
-        per_temp.append((temp, vol, res, decomps, interp))
+        label, vol, res, decomps, rows, interp = analyse(path)
+        plot_satellite_cuts(label, vol, res, decomps, interp)
+        plot_summary(label, vol, res, rows)
+        print_table(label, rows)
+        write_csv(label, rows)
+        per_items.append((label, vol, res, decomps, interp))
 
-    if os.environ.get("T_SERIES", "0") == "1" and len(per_temp) > 1:
-        plot_t_series(per_temp)
+    if os.environ.get("SERIES", "0") == "1" and len(per_items) > 1:
+        plot_series(per_items)
     print("\ndone.", flush=True)
 
 

@@ -54,8 +54,8 @@ const NAV: { id: Tab; label: string; desc: string; icon: ReactNode }[] = [
   },
   {
     id: "multi",
-    label: "Multi-temperature",
-    desc: "ΔPDF orthoslices side by side across temperatures, with shared cuts and pooled colour scale.",
+    label: "Multi-volume",
+    desc: "ΔPDF orthoslices side by side across related files, with shared cuts and pooled colour scale.",
     icon: <IconLayers />,
   },
 ];

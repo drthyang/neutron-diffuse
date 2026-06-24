@@ -73,7 +73,7 @@ def _find_input() -> Path:
     if df:
         return Path(df)
     raw = Path("data/raw")
-    cands = sorted(raw.glob("*22K*cc_sub_bkg.nxs")) or sorted(raw.glob("*.nxs"))
+    cands = sorted(raw.glob("*cc_sub_bkg.nxs")) or sorted(raw.glob("*.nxs"))
     if not cands:
         raise FileNotFoundError("No input .nxs found; set DATA_FILE=…")
     return cands[0]

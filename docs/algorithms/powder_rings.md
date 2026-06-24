@@ -74,7 +74,7 @@ same cross-stack confirmed-shell guards; select with `RingParams.ring_model`
 
 ### A/B status (2026-06-16)
 
-Compared on 22K with `examples/compare_ring_models.py` (H = 0, 1/3, 1, same
+Compared with `examples/compare_ring_models.py` (representative H planes, same
 confirmed shells). The two are **close** but fail in *opposite* directions:
 **patched over-subtracts** (digs shallow negative troughs at the ring centres,
 worst at the first ring ≈1.93 Å⁻¹) while **parametric rolling under-subtracts**

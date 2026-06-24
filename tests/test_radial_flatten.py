@@ -150,8 +150,7 @@ def test_subtraction_is_purely_radial_so_anisotropy_is_untouched():
     voxel loses the *same* amount.  That is the precise guarantee that it cannot
     distort anisotropic features: any contrast between two voxels at the same |Q|
     (a Bragg/diffuse peak vs its background) is preserved exactly — only the
-    radial mean is shifted.  Validated on real 22/45/100K data (100% feature-
-    contrast retention); this locks it in on synthetic data.
+    radial mean is shifted. This locks the guarantee in on synthetic data.
     """
     vol, q, _ = _base_vol()
     H, K, L = vol.hkl_grid()

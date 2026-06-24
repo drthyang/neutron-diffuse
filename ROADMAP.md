@@ -17,8 +17,7 @@
 Stage 6 inverse-transforms the ΔPDF back to reciprocal space
 (`nebula3d.analysis.invert_delta_pdf`) and compares it to the diffuse data the ΔPDF
 was built from, writing a metric (Pearson r + normalised RMS residual) and a
-`data | back-FFT | residual` figure.  On 22K the round trip reproduces the data
-(r ≈ 0.9999); a gross mismatch would flag a transform bug or an over-aggressive
+`data | back-FFT | residual` figure. A gross mismatch would flag a transform bug or an over-aggressive
 `crop_hkl` / apodization.  Default ON (`pdf_check_enabled`).
 
 Background removal is an explicit step (4 — the radial flatten), not a hidden
@@ -49,8 +48,8 @@ Current production path:
 Current decisions:
 
 - Ring removal is subtractive only.
-- **Patched is the default model.** A/B on 22K (`examples/compare_ring_models.py`,
-  2026-06-16): patched and parametric rolling are close but fail oppositely
+- **Patched is the default model.** A/B with `examples/compare_ring_models.py`
+  showed that patched and parametric rolling are close but fail oppositely
   (patched over-subtracts at the ring centres, parametric under-subtracts on
   H=1/3); patched hugs the diffuse baseline better overall.
 - Use the Mantid-background-subtracted `*_cc_sub_bkg.nxs` input when available
@@ -139,15 +138,15 @@ preserved.
   combined with the flatten.
 - Default estimator `floor` (p25); `mode` / `median` / `snip` also available.
 
-Validated on 22K (flatten preserves diffuse: ~94% of bright satellites retained;
-flattens the radial pedestal). **Use the flatten instead of a K-L `SUBTRACT_BG`
-blur, not with it** — the blur (σ_H=0) destroys the on-axis H-direction ΔPDF
-signal (real lattice-`a` peaks → ~1-3%, any σ), which the isotropic flatten
-preserves. Judge on the L=0 (H-K) plane.
+Use the flatten instead of a K-L `SUBTRACT_BG` blur, not with it. The blur can
+attenuate on-axis real-space signal at the same length scale as the smooth
+background, while the isotropic flatten preserves anisotropic contrast by
+subtracting only a function of `|Q|`. Judge the result on representative planes
+and by the round-trip consistency check.
 
-Robustness validated across 22/45/100K (2026-06-10) via `examples/validate_flatten.py`
-— a **non-circular** QA (the per-shell-median check is nearly tautological).
-Results, all three temperatures **PASS**:
+Robustness should be checked with `examples/validate_flatten.py`, a
+**non-circular** QA (the per-shell-median check is nearly tautological). The
+expected diagnostics are:
 
 - **Background is isotropic** — octant-floor spread / |bg| ≈ 0.10–0.14 (≪ 0.3),
   so subtracting one level per |Q| shell is valid; we are not mislabeling
@@ -160,9 +159,6 @@ Results, all three temperatures **PASS**:
 - **`floor` (p25) is the validated default** — `median`/`mode` centre the shell
   (~50% negative) and flag as over-subtraction; `floor` keeps the bulk positive
   and preserves possibly-real isotropic diffuse. No default change warranted.
-- Anisotropic-tail shell fraction tracks temperature (40% at 22K vs 16–17% at
-  45/100K), consistent with stronger magnetic diffuse at low T — all retained.
-
 Open validation:
 
 - Caveat (bounded): only ~2–3% of voxels sit beyond the reliably-sampled
@@ -219,10 +215,10 @@ Two siblings to the ΔPDF path, added 2026-06-08:
   off (it is a ΔPDF-only axis-cross fix). Output `*_3dpdf.h5` carries a `kind`
   attr so the ortho viewer labels 3D-PDF vs 3D-ΔPDF.
 - **Bragg/diffuse separation diagnostic.** `examples/investigate_bragg_diffuse.py`
-  + `nebula3d.analysis.peak_profile`, for magnetic diffuse co-located at the
-  q=integer±1/3 satellites. Calibrates resolution σ(|Q|) on nuclear Bragg, fits
-  a sharp core + broad diffuse per axis, and reports ξ and the diffuse fraction.
-  The T-series shows broad diffuse at 22/45 K and none at 100 K.
+  + `nebula3d.analysis.peak_profile`, for diffuse scattering co-located with
+  sharp Bragg or satellite features. Calibrates resolution σ(|Q|) on sharp
+  Bragg peaks, fits a sharp core + broad diffuse per axis, and reports ξ and the
+  diffuse fraction.
 
 Open: decide "Phase B" — subtract the sharp core but keep the broad diffuse at
 the satellites, rather than punching them.
@@ -235,12 +231,12 @@ quadratic form `δhklᵀ A δhkl ≤ 1`. Motivation: the peak profile is a funct
 **Q** (instrument resolution + size/strain/mosaic), not of the lattice constants;
 HKL radii bake in the `b*` scaling and rotate the wrong way off-axis.
 
-Key finding (TbTi3Bi4 22/45/100 K): the reciprocal metric `g = UBᵀUB` is diagonal
-to ~0.5% (orthorhombic). The default `punch_radii=(0.09,0.12,0.45)` rlu — a 5×
-HKL anisotropy — is `≈(0.097,0.072,0.115)` Å⁻¹, i.e. **near-isotropic in Q**
-(max/min < 1.6). So for this data a Q-axis punch is mathematically the current
-punch in different units; the genuine gain is off-axis peaks, oblique crystals,
-and lattice-/temperature-portable parameters in Å⁻¹.
+Key implementation point: the reciprocal metric `g = UBᵀUB` maps fractional HKL
+radii into physical Q-space units. Large apparent anisotropy in HKL can become
+near-isotropic in Q when lattice constants and grid sampling are accounted for.
+The practical gain from Q-space punching is correct off-axis peak orientation,
+support for oblique crystals, and lattice-/condition-portable parameters in
+Å⁻¹.
 
 Design — one kernel, multiple shape specs:
 
@@ -260,9 +256,9 @@ Design — one kernel, multiple shape specs:
 
 Phase 0 (done): [`tests/test_bragg_qspace_phase0.py`](tests/test_bragg_qspace_phase0.py)
 — 9 tests. Golden masters freeze the current default `punch_bragg` keep-mask
-(sha256 + per-mechanism punch counts) on a synthetic volume built on the real
-22 K UB; specification tests pin the HKL ↔ Q-axis equivalence the future kernel
-must satisfy. No production code changed.
+(sha256 + per-mechanism punch counts) on a synthetic volume built on a
+representative UB; specification tests pin the HKL ↔ Q-axis equivalence the
+future kernel must satisfy. No production code changed.
 
 Phase 1 (done): the single shape kernel `_ellipsoid_inside(δ, radii | shape_matrix)`
 in [`src/nebula3d/analysis/bragg.py`](src/nebula3d/analysis/bragg.py). Both `_punch_one`
@@ -298,29 +294,21 @@ server `punch_fit_covariance`, and a web punch-card toggle.
 (diagonal reduction, tilted orientation, φ-tail tangent-only inflation, fit
 integration, Q-mode adaptivity) plus a server `build_params` test.
 
-Phase 4 (validating): real-data HKL-vs-Q comparison via
-[`examples/compare_punch_frames.py`](examples/compare_punch_frames.py). Findings on
-22/45/100 K: the volume-matched Q radius **ρ ≈ 0.093 Å⁻¹ is T-invariant**
-(portability confirmed); isotropic Q differs ~22–27% from HKL because the peaks
-are ~1.6× anisotropic in Q (so a single ρ is not justified). Two fixes landed:
+Phase 4 (validating): HKL-vs-Q comparison via
+[`examples/compare_punch_frames.py`](examples/compare_punch_frames.py). The
+validation path compares matched Q radii against the legacy HKL footprint and
+checks whether an isotropic Q radius is justified for a given volume. Two fixes landed:
 (a) Q-mode was silently ignoring `margin` — now applied; (b) Q-mode was
 *fixed-shape* (bypassing the per-peak fit + φ-tail), which would under-punch ~41%
-vs the validated ~6% punch — Q-mode is now **adaptive** (`_fit_base_radii` floors
+vs the intended punch — Q-mode is now **adaptive** (`_fit_base_radii` floors
 the per-peak fit to the Q resolution, in Å⁻¹; the diagonal fit then punches via
-the same radii path as HKL). Production HKL vs Q-anisotropic-adaptive default now
-agrees at **Jaccard 0.89–0.93**; the residual ~8% is search peaks (Q
-metric-ellipsoid + folded φ-tail vs HKL axis-aligned + union φ-tail), a frame
-difference rather than a regression. The final gate — a **ΔPDF-level A/B** through
-the full pipeline ([`examples/compare_delta_pdf_frames.py`](examples/compare_delta_pdf_frames.py)) —
-passed cleanly on 22 K: HKL vs Q-adaptive ΔPDF maps agree at **Pearson r =
-0.9998**, relative RMS 1.9%, max difference 0.06% of the peak (the difference is
-invisible at the data colour scale). The slice-level check
-([`examples/plot_punch_slices.py`](examples/plot_punch_slices.py)) confirmed the
-two punches differ only at Bragg-peak edges and leave the H=1/3 diffuse plane
-untouched.
+the same radii path as HKL). The final gate is a **ΔPDF-level A/B** through
+the full pipeline ([`examples/compare_delta_pdf_frames.py`](examples/compare_delta_pdf_frames.py)),
+followed by slice-level checks with
+[`examples/plot_punch_slices.py`](examples/plot_punch_slices.py).
 
 **The default is now Q** (`PunchParams.punch_frame="q"`,
-`punch_q_radii=(0.097, 0.072, 0.115)` Å⁻¹ ≈ the old HKL footprint × b*): the punch
+`punch_q_radii=(0.097, 0.072, 0.115)` Å⁻¹): the punch
 footprint is a lattice-/temperature-portable reciprocal-Å⁻¹ resolution floor,
 still modulated by the per-peak fit + φ-tail. The Phase 0 golden master was
 regenerated to freeze the new default; set `punch_frame="hkl"` to restore the

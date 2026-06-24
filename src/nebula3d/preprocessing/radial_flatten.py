@@ -48,13 +48,12 @@ Validation
 matter: (1) **isotropy** — is the level we subtract really azimuthally flat?
 (octant-floor spread vs |Q|); and (2) **feature preservation / over-subtraction**
 — background-population residual, negative fraction vs noise, and strong-feature
-contrast retention.  Validated on 22/45/100K TbTi3Bi4 (2026-06-10): background is
-isotropic (spread ≈0.10–0.14 ≪ 0.3), strong-feature contrast 100% retained, and
-the default ``floor`` is the robust operating point — ``median``/``mode`` centre
-the shell (~50% negative) and flag as over-subtraction, while ``floor`` (p25)
-keeps the bulk positive (~25% negative) and preserves possibly-real isotropic
-diffuse.  The subtraction is a function of |Q| alone, so it cannot create or
-distort anisotropic structure (regression: ``test_radial_flatten.py``).
+contrast retention.  Validation on representative real volumes showed that the
+default ``floor`` is the robust operating point: ``median``/``mode`` centre the
+shell and can flag as over-subtraction, while ``floor`` keeps the bulk positive
+and preserves possibly-real isotropic diffuse.  The subtraction is a function of
+|Q| alone, so it cannot create or distort anisotropic structure (regression:
+``test_radial_flatten.py``).
 """
 
 from __future__ import annotations

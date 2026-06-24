@@ -58,7 +58,7 @@ Five views in the left sidebar; a session typically runs top to bottom:
 3. **3D-ΔPDF** — three linked real-space orthoslices with a unit-cell overlay.
 4. **Consistency check** — inverse-FFT the ΔPDF back to reciprocal space and
    compare *data | back-FFT | residual*, with `|Q|` and real-space `r` bands.
-5. **Multi-temperature** — ΔPDF orthoslices side by side across temperatures.
+5. **Multi-volume** — DeltaPDF orthoslices side by side across related files.
 
 ## Going further
 

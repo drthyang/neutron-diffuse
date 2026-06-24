@@ -48,9 +48,8 @@ from nebula3d.preprocessing import (
 from nebula3d.visualization import interactive_slices
 
 raw = Path("data/raw")
-# Default to the preferred 22K mmm validation file; the alphabetically-first
-# .nxs is the older 28K file, so select the 22K one explicitly unless DATA_FILE
-# overrides.  VIEW_AXIS and H_VALUE/K_VALUE/L_VALUE pick the initial viewer cut.
+# DATA_FILE overrides auto-detection. VIEW_AXIS and H_VALUE/K_VALUE/L_VALUE pick
+# the initial viewer cut.
 USE_BACKGROUND = os.environ.get("USE_BACKGROUND", "0") not in {"0", "false", "False", ""}
 data_file = os.environ.get("DATA_FILE")
 if data_file:
@@ -67,10 +66,7 @@ else:
         raise FileNotFoundError(
             "No input .nxs files found in data/raw. Set DATA_FILE=/path/to/input.nxs."
         )
-    data = nebula3d.load(next(
-        (p for p in cands if "22K_mmm" in p.stem and "cc_sub_bkg" in p.stem),
-        next((p for p in cands if "22K_mmm" in p.stem), cands[0]),
-    ))
+    data = nebula3d.load(next((p for p in cands if "cc_sub_bkg" in p.stem), cands[0]))
 
 VIEW_PLANES = {"H": "0kl", "K": "h0l", "L": "hk0"}
 VIEW_AXIS = os.environ.get("VIEW_AXIS", "H").strip().upper()

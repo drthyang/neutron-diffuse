@@ -35,7 +35,7 @@ Run::
       python3 examples/run_pipeline.py
 
 Env:
-    DATA_FILE   raw input .nxs (default: auto-detect 22K mmm cc_sub_bkg in data/raw)
+    DATA_FILE   raw input .nxs (default: auto-detect a background-subtracted .nxs in data/raw)
     FORCE       1 → recompute every stage even if its output exists
     FORCE_FROM  rings | punch | backfill | flatten | pdf | check — recompute from here on
     FLATTEN     radial-background flatten (step 4) — default ON.  FLATTEN=0 skips
@@ -82,8 +82,8 @@ STAGE_DEFAULTS = {
     },
     "backfill": {"METHOD": "q_shell"},
     # isotropic radial-background flatten — the explicit step-4 background
-    # remover (default ON).  floor (p25) keeps diffuse and is validated robust
-    # across 22/45/100K (see examples/validate_flatten.py).
+    # remover (default ON).  floor (p25) keeps diffuse; validate on your data
+    # with examples/validate_flatten.py.
     "flatten": {
         "ESTIMATOR": "floor", "FLOOR_PCT": "25", "Q_STEP": "0.05",
         "SMOOTH": "0.10", "MIN_COUNT": "20",
@@ -130,10 +130,7 @@ def _detect_raw() -> Path:
     cands = [p for p in sorted(RAW.glob("*.nxs")) if not is_empty_bkg(p)]
     if not cands:
         sys.exit("No input .nxs in data/raw; set DATA_FILE=/path/to/input.nxs.")
-    return next(
-        (p for p in cands if "22K_mmm" in p.stem and "cc_sub_bkg" in p.stem),
-        next((p for p in cands if "22K_mmm" in p.stem), cands[0]),
-    )
+    return next((p for p in cands if "cc_sub_bkg" in p.stem), cands[0])
 
 
 def _stage_env(stage: str, **explicit) -> dict:

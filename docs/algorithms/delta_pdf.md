@@ -73,9 +73,8 @@ marks the reliably-recovered region.
 `examples/delta_pdf_consistency.py`) runs this inverse and compares it to the
 diffuse data the ΔPDF was built from (cropped to the transform window), writing a
 metric JSON (Pearson r + normalised RMS residual) and a `data | back-FFT |
-residual` figure. Because the `mmm` data is centrosymmetric and the gaussian
-window is invertible, a faithful ΔPDF round-trips to **r ≈ 1** (22K: r = 0.9999,
-RMS ≈ 1%). The check is therefore a regression/validation gate: a wrong axis,
+residual` figure. Because the gaussian window is invertible, a faithful ΔPDF
+round-trips to **r ≈ 1**. The check is therefore a regression/validation gate: a wrong axis,
 sign flip, or normalisation bug, or an over-aggressive `crop_hkl` / apodization,
 would surface here as a visible residual. (On an **even** grid the `Q=0` centre
 leaves one index unpaired, so the real-part projection drops a small asymmetric
@@ -188,6 +187,6 @@ background with an **explicit step 4**, the isotropic radial flatten
 by default. The flatten subtracts a smooth `bg(|Q|)` per spherical shell without
 touching per-plane DC, so it **preserves the on-axis H signal** while still
 roughly halving the L=0 axis cross. The two are alternatives — never run both
-(double subtraction, and the blur re-introduces the H-axis loss). Robustness of
-the flatten is validated across 22/45/100 K by `examples/validate_flatten.py`.
+(double subtraction, and the blur re-introduces the H-axis loss). Validate the
+flatten on your own inputs with `examples/validate_flatten.py`.
 Judge the effect on the L=0 (H–K) plane, where the methods diverge.

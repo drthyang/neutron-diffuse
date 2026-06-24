@@ -1,6 +1,6 @@
 """Dataset discovery: group raw inputs with their pipeline-stage outputs.
 
-A *dataset* is anchored by a raw input stem (e.g. the 22 K ``.nxs``).  Its stage
+A *dataset* is anchored by a raw input stem (for example one ``.nxs`` volume). Its stage
 outputs are the chained ``.h5`` files named by :func:`nebula3d.pipeline.pipeline_paths`
 — so discovery reuses that single source of truth for the naming convention.
 Datasets are also discovered from processed files alone (when the raw ``.nxs`` is
@@ -104,7 +104,7 @@ def discover_datasets(cfg: ServerConfig) -> list[Dataset]:
         # a file is attached to its real dataset by _find_delta_pdf (exact path or
         # prefix match), so seeding it again would create a phantom dataset with
         # only the ΔPDF stage.  Its base relates to the stem in either direction:
-        # a short name is a *prefix* of the stem (``TbTi3Bi4_22K``), while a full
+        # a short name is a *prefix* of the stem (``sample_condition_a``), while a full
         # chained name *extends* it (``…_backfilled``); skip both.
         for p in sorted(cfg.processed_dir.glob("*_delta_pdf.h5")):
             base = p.name[: -len("_delta_pdf.h5")]

@@ -1,4 +1,4 @@
-// Shared view state for the ΔPDF viewers (single + multi-temperature).
+// Shared view state for the ΔPDF viewers (single + multi-volume).
 // Cut positions are indices along x_H / y_K / z_L; all temperatures share the
 // same grid shape, so the indices are reused across the multi-temp comparison.
 

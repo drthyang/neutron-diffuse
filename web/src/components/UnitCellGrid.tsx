@@ -3,7 +3,7 @@
 // displayed axis, over a square [-half, +half] Å window.  Renders into a
 // normalized viewBox with a non-scaling stroke, so it fills its square parent
 // responsively — used both at a fixed px size (single ΔPDF panel) and in the
-// fluid multi-temperature grid cells.
+// fluid multi-volume grid cells.
 
 interface Props {
   half: number; // half-window in Å (box spans [-half, +half] on both axes)

@@ -11,7 +11,7 @@ punch → backfill → flatten → ΔPDF *both ways* and compares the resulting 
 
 Run (no venv; see the run-environment note):
 
-    PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl DATASET=22K \
+    PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl DATASET=condition_a \
     /path/to/sci-general/python examples/compare_delta_pdf_frames.py
 """
 
@@ -56,11 +56,12 @@ def _crop(s: np.ndarray, ar: np.ndarray, ac: np.ndarray, w: float):
 
 
 def main() -> None:
-    tag = os.environ.get("DATASET", "22K")
-    paths = sorted(p for p in glob.glob(f"data/processed/*{tag}*ringremoved.h5")
-                   if "braggpunched" not in p)
+    tag = os.environ.get("DATASET", "")
+    pattern = f"data/processed/*{tag}*ringremoved.h5" if tag else "data/processed/*ringremoved.h5"
+    paths = sorted(p for p in glob.glob(pattern) if "braggpunched" not in p)
     if not paths:
-        raise SystemExit(f"no *_ringremoved.h5 for DATASET={tag}")
+        hint = f" for DATASET={tag}" if tag else ""
+        raise SystemExit(f"no *_ringremoved.h5{hint}")
     vol = nebula3d.load(paths[0])
 
     print("running HKL arm …")

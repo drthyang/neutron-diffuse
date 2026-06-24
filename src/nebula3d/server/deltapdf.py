@@ -33,7 +33,7 @@ import numpy as np
 #: Orthoslice plane keys (and the axis each one fixes).
 DPDF_PLANES: tuple[str, ...] = ("xy", "xz", "yz")
 
-_CACHE_MAX = 3  # keep all three temperatures resident for the multi-temp viewer
+_CACHE_MAX = 3  # keep several DeltaPDF volumes resident for the comparison viewer
 _cache: OrderedDict[tuple[str, float], DeltaPdfData] = OrderedDict()
 _lock = threading.Lock()
 

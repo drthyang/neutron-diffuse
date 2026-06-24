@@ -133,17 +133,16 @@ The punch ellipsoid is currently defined in **fractional HKL**: a peak at
 with `punch_radii = (rh, rk, rl)` in r.l.u. This is convenient (it matches the
 grid axes) but the *physical* peak profile is a function of **Q** — instrument
 resolution plus size/strain/mosaic — and does not depend on the lattice
-constants. HKL radii therefore bake in the `b*` scaling: on TbTi3Bi4 the default
-`(0.09, 0.12, 0.45)` r.l.u. looks 5× anisotropic but is `≈(0.097, 0.072, 0.115)`
-Å⁻¹ — **near-isotropic in Q**. The factor-5 "L is broad" is almost entirely the
-small `c* = 0.25 Å⁻¹` and the coarse `ΔL = 0.15` r.l.u. sampling, not the peak.
+constants. HKL radii therefore bake in reciprocal-lattice scaling: an ellipsoid
+that looks strongly anisotropic in r.l.u. may be much closer to isotropic after
+mapping through `g = UBᵀUB`.
 
-The metric `g = UBᵀUB` for these crystals is diagonal to ~0.5% (orthorhombic),
-so an axis-aligned ellipsoid in Q is — to that precision — the same set of voxels
-as today's HKL punch. The motivation to move to Q is therefore not this dataset's
-masks but capability: correct off-axis peak orientation (radial vs tangential),
-oblique crystals (where an HKL-axis ellipsoid shears relative to the resolution
-ellipsoid), and parameters in Å⁻¹ that transfer across temperatures and samples.
+When `g` is nearly diagonal, an axis-aligned ellipsoid in Q can be close to an
+HKL-axis punch in voxel space. The motivation to move to Q is broader
+capability: correct off-axis peak orientation (radial vs tangential), oblique
+crystals (where an HKL-axis ellipsoid shears relative to the resolution
+ellipsoid), and parameters in Å⁻¹ that transfer across lattice constants,
+temperatures, and samples.
 
 **A single quadratic-form kernel** `δhklᵀ A δhkl ≤ 1` (`_ellipsoid_inside`)
 subsumes all current shapes and the Q-space upgrade:
@@ -156,26 +155,26 @@ subsumes all current shapes and the Q-space upgrade:
 | fitted resolution ellipsoid (Phase 3) | per-peak 3×3 `A` from the covariance (φ-tail = rank-1 mod) |
 
 **The Q-space punch is the default** (`punch_frame="q"`,
-`punch_q_radii=(0.097, 0.072, 0.115)` Å⁻¹ ≈ the old HKL footprint × b*). The Q
+`punch_q_radii=(0.097, 0.072, 0.115)` Å⁻¹). The Q
 radii are the **resolution floor** in Å⁻¹ (lattice- and temperature-independent);
 set `punch_q_radius` for an isotropic floor instead, or `punch_frame="hkl"` +
 `punch_radii` to restore the legacy r.l.u. footprint. In the web Run-pipeline
-panel this is the **Frame → Q-space (Å⁻¹)** selector. The default was validated
-against the old HKL punch by a full-pipeline ΔPDF A/B (Pearson r = 0.9998 on
-22 K; see `examples/compare_delta_pdf_frames.py`).
+panel this is the **Frame → Q-space (Å⁻¹)** selector. Validate a new dataset
+against the HKL punch with the full-pipeline DeltaPDF A/B in
+`examples/compare_delta_pdf_frames.py`.
 
 In Q-mode the punch is **adaptive**, not fixed: the per-peak shape-fit is floored
 to the Q resolution and then punches through the same mechanism as the HKL path
 (axis-aligned ellipsoid + union φ-tail, intensity-scaled), so the Q frame only
 relocates the floor from r.l.u. to Å⁻¹ — it does not discard the fit or the
 φ-tail. Off-integer search peaks (no per-peak fit) use the fixed Q metric
-ellipsoid. Validated against the production HKL punch at Jaccard ≈ 0.89–0.93 on
-the 22/45/100 K series (see `examples/compare_punch_frames.py`); the matched
-isotropic radius ρ ≈ 0.093 Å⁻¹ is temperature-invariant.
+ellipsoid. Use `examples/compare_punch_frames.py` to compare the Q and HKL
+footprints on representative inputs and decide whether a matched isotropic
+radius is appropriate.
 
 Phase 0/1/2 tests live in `tests/test_bragg_qspace_phase{0,1,2}.py`. Note that
-HKL- and Q-axis punches are bit-identical only for an *exactly* diagonal metric —
-on the real (~0.5%-sheared) UB they differ at a handful of boundary voxels.
+HKL- and Q-axis punches are bit-identical only for an *exactly* diagonal metric;
+small UB shears can move a handful of boundary voxels.
 
 ## Backfill Modes
 

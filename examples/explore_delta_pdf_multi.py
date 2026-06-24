@@ -1,16 +1,15 @@
-"""Interactive 3D-ΔPDF temperature comparison — 22 K / 45 K / 100 K.
+"""Interactive 3D-DeltaPDF comparison for multiple related files.
 
-Shows three rows (one per temperature) × three orthogonal real-space cuts:
+Shows one row per DeltaPDF file × three orthogonal real-space cuts:
 
     col 0: x_H – y_K  (at z_L = cut)
     col 1: x_H – z_L  (at y_K = cut)
     col 2: y_K – z_L  (at x_H = cut)
 
-Each column (plane) uses its own colour scale — p<PERCENTILE> of |ΔPDF| at
-r > 3 Å in that plane's central slice, pooled across the three temperatures — so
-the temperatures are directly comparable *within* a plane and every plane uses
-its full dynamic range (a single global scale washes the weaker planes out and
-saturates the stronger ones).  The contrast × slider multiplies these.
+Each column (plane) uses its own colour scale: p<PERCENTILE> of |DeltaPDF| at
+r > 3 Å in that plane's central slice, pooled across all loaded files. Related
+files are directly comparable *within* a plane, while every plane uses its full
+dynamic range. The contrast × slider multiplies these.
 
 Run::
 
@@ -18,9 +17,9 @@ Run::
       python3 examples/explore_delta_pdf_multi.py
 
 Env:
-    PDF_22K / PDF_45K / PDF_100K  explicit paths to each ΔPDF .h5.  If unset,
-              auto-detects the pipeline output data/processed/*{T}*_delta_pdf.h5
-              (newest match), falling back to examples/_delta_pdf_{T}.h5.
+    PDF_FILES comma-separated DeltaPDF .h5 paths. If unset, auto-detects up to
+              three newest data/processed/*_delta_pdf.h5 files.
+    PDF_LABELS optional comma-separated row labels matching PDF_FILES.
     RMAX      display half-window in Å for all axes (default: 50)
     PERCENTILE global colour-scale percentile at r > 3 Å (default: 98)
     CONTRAST_MIN / CONTRAST_MAX  contrast-× slider range (default: 0.1 / 20)
@@ -42,36 +41,46 @@ from matplotlib.widgets import CheckButtons, Slider
 HERE = Path(__file__).resolve().parent
 PROC = HERE.parent / "data" / "processed"
 
-TEMPS = ["22K", "45K", "100K"]
-PDF_ENVS = {"22K": "PDF_22K", "45K": "PDF_45K", "100K": "PDF_100K"}
-
 RMAX = float(os.environ.get("RMAX", "50.0"))
 PCT = float(os.environ.get("PERCENTILE", "98.0"))
 CMIN = float(os.environ.get("CONTRAST_MIN", "0.1"))
 CMAX = float(os.environ.get("CONTRAST_MAX", "20.0"))
 
 
-def _resolve(t):
-    """ΔPDF .h5 for temperature *t*: an explicit env var wins; otherwise
-    auto-detect the pipeline output (newest data/processed/*{t}*_delta_pdf.h5),
-    falling back to the legacy examples/_delta_pdf_{t}.h5."""
-    env = os.environ.get(PDF_ENVS[t])
-    if env:
-        return Path(env)
-    hits = sorted(PROC.glob(f"*{t}*_delta_pdf.h5"), key=lambda q: q.stat().st_mtime)
-    return hits[-1] if hits else HERE / f"_delta_pdf_{t}.h5"
+def _resolve_files() -> list[tuple[str, Path]]:
+    """Return ``(label, path)`` pairs for DeltaPDF files."""
+    files_env = os.environ.get("PDF_FILES", "").strip()
+    if files_env:
+        paths = [Path(p.strip()) for p in files_env.split(",") if p.strip()]
+    else:
+        paths = sorted(
+            PROC.glob("*_delta_pdf.h5"), key=lambda q: q.stat().st_mtime,
+            reverse=True,
+        )[:3]
+        paths.reverse()
+    if not paths:
+        sys.exit("no DeltaPDF files found: set PDF_FILES=/path/a.h5,/path/b.h5")
+
+    labels_env = os.environ.get("PDF_LABELS", "").strip()
+    labels = [x.strip() for x in labels_env.split(",")] if labels_env else []
+    out = []
+    for i, path in enumerate(paths):
+        label = labels[i] if i < len(labels) and labels[i] else path.stem.replace("_delta_pdf", "")
+        out.append((label, path))
+    return out
 
 
 # ------------------------------------------------------------------
 # load all three ΔPDF files
 # ------------------------------------------------------------------
+items = _resolve_files()
 datasets = {}
-for t in TEMPS:
-    p = _resolve(t)
+labels = []
+for label, p in items:
     if not p.exists():
-        sys.exit(f"no ΔPDF for {t}: set {PDF_ENVS[t]}=/path/to/file.h5, or run the "
-                 f"pipeline so data/processed/*{t}*_delta_pdf.h5 exists.")
-    print(f"loading {t}: {p.name} ...", flush=True)
+        sys.exit(f"DeltaPDF file does not exist for {label}: {p}")
+    labels.append(label)
+    print(f"loading {label}: {p.name} ...", flush=True)
     with h5py.File(p, "r") as fh:
         data = fh["data"][...]
         x = fh["x_axis"][...]
@@ -86,9 +95,9 @@ for t in TEMPS:
     mx = np.abs(x) <= RMAX
     my = np.abs(y) <= RMAX
     mz = np.abs(z) <= RMAX
-    datasets[t] = dict(data=data, x=x, y=y, z=z, apod=apod, lat=lat,
-                       mx=mx, my=my, mz=mz,
-                       xw=x[mx], yw=y[my], zw=z[mz])
+    datasets[label] = dict(data=data, x=x, y=y, z=z, apod=apod, lat=lat,
+                           mx=mx, my=my, mz=mz,
+                           xw=x[mx], yw=y[my], zw=z[mz])
     print(f"  shape={data.shape}  apod={apod}", flush=True)
 
 def nidx(ax, v):
@@ -106,8 +115,8 @@ def _slices(d, ix, iy, iz):
 
 # ------------------------------------------------------------------
 # per-plane colour scale: p<PCT> of |ΔPDF| at r>3 Å in each plane's central
-# slice, pooled across the three temperatures.  Each column (plane) gets its own
-# scale, so the temperatures stay directly comparable *within* a plane and every
+# slice, pooled across all loaded files.  Each column (plane) gets its own
+# scale, so the files stay directly comparable *within* a plane and every
 # plane uses its full dynamic range — a single global scale washes the weaker
 # planes out and saturates the stronger ones.  The contrast × slider multiplies
 # these.  The central slices computed here are reused as the initial panels.
@@ -115,9 +124,9 @@ def _slices(d, ix, iy, iz):
 print(f"computing per-plane colour scale (p{PCT:.0f} at r>3 Å) ...", flush=True)
 central = {}
 _col_vals = [[], [], []]
-for t in TEMPS:
-    d = datasets[t]
-    central[t] = _slices(d, nidx(d["x"], 0.0), nidx(d["y"], 0.0), nidx(d["z"], 0.0))
+for label in labels:
+    d = datasets[label]
+    central[label] = _slices(d, nidx(d["x"], 0.0), nidx(d["y"], 0.0), nidx(d["z"], 0.0))
     a12 = [(d["xw"], d["yw"]), (d["xw"], d["zw"]), (d["yw"], d["zw"])]
     for ci, (img, (a1, a2)) in enumerate(zip(central[t], a12)):
         rr = np.hypot(a1[:, None], a2[None, :]) > 3.0
@@ -129,12 +138,12 @@ print("  per-plane vmax = "
       flush=True)
 
 # use first dataset's axes for the shared cut sliders
-ref = datasets[TEMPS[0]]
+ref = datasets[labels[0]]
 
 # ------------------------------------------------------------------
 # figure layout: 3 rows × 3 cols
 # ------------------------------------------------------------------
-fig, axes = plt.subplots(3, 3, figsize=(21, 17))
+fig, axes = plt.subplots(len(labels), 3, figsize=(21, 5.5 * len(labels)), squeeze=False)
 plt.subplots_adjust(left=0.05, right=0.99, bottom=0.16, top=0.93,
                     wspace=0.26, hspace=0.42)
 
@@ -144,12 +153,12 @@ YLABELS = ["y_K (Å)", "z_L (Å)", "z_L (Å)"]
 
 panels = {}   # panels[temp][col] = AxesImage
 
-for ri, t in enumerate(TEMPS):
-    d = datasets[t]
-    imgs0 = central[t]
+for ri, label in enumerate(labels):
+    d = datasets[label]
+    imgs0 = central[label]
     a12 = [(d["xw"], d["yw"]), (d["xw"], d["zw"]), (d["yw"], d["zw"])]
 
-    panels[t] = []
+    panels[label] = []
     for ci, (img, (a1, a2), xl, yl, plane) in enumerate(
             zip(imgs0, a12, XLABELS, YLABELS, COL_PLANES)):
         ax = axes[ri][ci]
@@ -157,18 +166,18 @@ for ri, t in enumerate(TEMPS):
                        extent=[a1[0], a1[-1], a2[0], a2[-1]],
                        cmap="RdBu_r", vmin=-vmax_col[ci], vmax=vmax_col[ci],
                        interpolation="bilinear")
-        ax.set_title(f"{t}  {plane}", fontsize=10)
+        ax.set_title(f"{label}  {plane}", fontsize=10)
         ax.set_xlabel(xl, fontsize=8)
         ax.set_ylabel(yl, fontsize=8)
         fig.colorbar(im, ax=ax, shrink=0.7)
-        panels[t].append(im)
+        panels[label].append(im)
 
 # ------------------------------------------------------------------
 # unit-cell gridlines (one set per dataset row, toggleable)
 # ------------------------------------------------------------------
 gridlines_all = []
-for ri, t in enumerate(TEMPS):
-    d = datasets[t]
+for ri, label in enumerate(labels):
+    d = datasets[label]
     lat = d["lat"]
     if lat is None:
         continue
@@ -216,18 +225,18 @@ chk.on_clicked(_toggle_grid)
 
 def update(_):
     c = s_c.val
-    for t in TEMPS:
-        d = datasets[t]
+    for label in labels:
+        d = datasets[label]
         ix = nidx(d["x"], s_x.val)
         iy = nidx(d["y"], s_y.val)
         iz = nidx(d["z"], s_z.val)
         imgs = _slices(d, ix, iy, iz)
         titles = [
-            f"{t}  x_H–y_K  (z_L={d['z'][iz]:+.1f} Å)",
-            f"{t}  x_H–z_L  (y_K={d['y'][iy]:+.1f} Å)",
-            f"{t}  y_K–z_L  (x_H={d['x'][ix]:+.1f} Å)",
+            f"{label}  x_H–y_K  (z_L={d['z'][iz]:+.1f} Å)",
+            f"{label}  x_H–z_L  (y_K={d['y'][iy]:+.1f} Å)",
+            f"{label}  y_K–z_L  (x_H={d['x'][ix]:+.1f} Å)",
         ]
-        for ci, (im, img, ttl) in enumerate(zip(panels[t], imgs, titles)):
+        for ci, (im, img, ttl) in enumerate(zip(panels[label], imgs, titles)):
             im.set_data(img.T)
             im.set_clim(-vmax_col[ci] * c, vmax_col[ci] * c)   # per-plane scale × contrast
             im.axes.set_title(ttl, fontsize=10)
@@ -238,8 +247,8 @@ for s in (s_x, s_y, s_z, s_c):
     s.on_changed(update)
 
 fig.suptitle(
-    f"3D-ΔPDF: 22 K / 45 K / 100 K  ·  ±{RMAX:.0f} Å  ·  per-plane scale "
-    "(temps comparable within a column)  — drag cut sliders; contrast × to rescale",
+    f"3D-DeltaPDF comparison  ·  ±{RMAX:.0f} Å  ·  per-plane scale "
+    "(files comparable within a column)  — drag cut sliders; contrast × to rescale",
     y=0.975, fontsize=13,
 )
 

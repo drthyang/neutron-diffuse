@@ -16,14 +16,14 @@ import pytest
 from nebula3d.analysis.bragg import BraggRemover
 from nebula3d.core import HKLVolume
 
-# Real 22 K UB (metric diagonal to ~0.5%); and an exactly diagonal UB built from
-# its reciprocal-axis lengths for the clean-equivalence tests.
-UB_22K = np.array([
+# Representative UB (metric diagonal to ~0.5%); and an exactly diagonal UB built
+# from its reciprocal-axis lengths for the clean-equivalence tests.
+UB_REFERENCE = np.array([
     [-0.73475, -0.43626,  0.03571],
     [-0.75725,  0.41688,  0.03877],
     [-0.22948, -0.00539, -0.24912],
 ])
-BSTAR = np.sqrt(np.diag(UB_22K.T @ UB_22K))         # |a*|,|b*|,|c*| in Å^-1
+BSTAR = np.sqrt(np.diag(UB_REFERENCE.T @ UB_REFERENCE))  # |a*|,|b*|,|c*| in Å^-1
 UB_DIAG = np.diag(BSTAR)
 
 
@@ -64,10 +64,10 @@ def test_default_frame_is_hkl_no_q_shape():
 
 
 def test_q_shape_matrix_isotropic_is_metric_over_rho2():
-    vol = _single_peak_vol(UB_22K)
+    vol = _single_peak_vol(UB_REFERENCE)
     rho = 0.1
     a = _q_remover(punch_frame="q", punch_q_radius=rho)._q_shape_matrix(vol)
-    np.testing.assert_allclose(a, (UB_22K.T @ UB_22K) / rho**2, rtol=1e-12)
+    np.testing.assert_allclose(a, (UB_REFERENCE.T @ UB_REFERENCE) / rho**2, rtol=1e-12)
 
 
 def test_q_shape_matrix_per_axis_on_diagonal_metric():
@@ -96,7 +96,7 @@ def test_q_isotropic_punch_is_a_metric_sphere():
     """Every punched voxel is within ρ (Å^-1) of the peak; every kept voxel near
     it is outside ρ — i.e. the hole is the true Q-sphere |δQ| ≤ ρ."""
     rho = 0.12
-    vol = _single_peak_vol(UB_22K, center=(1.0, 0.0, 0.0))
+    vol = _single_peak_vol(UB_REFERENCE, center=(1.0, 0.0, 0.0))
     keep = _q_remover(punch_frame="q", punch_q_radius=rho).build_mask(vol)
     punched = ~keep
 
@@ -132,7 +132,7 @@ def test_q_isotropic_equals_equivalent_hkl_on_diagonal_metric():
 def test_q_punch_honors_margin():
     """The margin guard band inflates the Q-space hole too (it was silently
     ignored before — a Q-mode/HKL-mode inconsistency)."""
-    vol = _single_peak_vol(UB_22K, center=(1.0, 0.0, 0.0))
+    vol = _single_peak_vol(UB_REFERENCE, center=(1.0, 0.0, 0.0))
     keep0 = _q_remover(punch_frame="q", punch_q_radius=0.10,
                        margin=0.0).build_mask(vol)
     keepm = _q_remover(punch_frame="q", punch_q_radius=0.10,

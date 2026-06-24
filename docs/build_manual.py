@@ -414,7 +414,7 @@ _DOC_KW = dict(
     bottomMargin=2.5 * cm,
     title="nebula3d Manual",
     author="nebula3d Development Team",
-    subject="3D Neutron Diffuse Scattering Analysis",
+    subject="3D Diffuse-Scattering Analysis",
 )
 
 
@@ -452,8 +452,8 @@ def build_manual(output_path: str) -> None:
         ["License",          Paragraph("MIT", _meta_cell)],
         ["Dependencies",     Paragraph("numpy, scipy, h5py, matplotlib", _meta_cell)],
         ["Instrument",       Paragraph("Mantid NeXus (MDHistoWorkspace)", _meta_cell)],
-        ["Reference material", Paragraph(
-            "TbTi<sub>3</sub>Bi<sub>4</sub>  (22 K / 45 K / 100 K)", _meta_cell)],
+        ["Reference data", Paragraph(
+            "Mantid NeXus HKL volumes", _meta_cell)],
     ]
     meta_tbl = Table(meta_rows, colWidths=[4.5 * cm, 10 * cm])
     meta_tbl.setStyle(TableStyle([
@@ -547,8 +547,8 @@ def build_manual(output_path: str) -> None:
         "This manual covers the background physics and mathematics of 3D diffuse "
         "neutron scattering analysis, the detailed algorithms and their theoretical "
         "basis, a step-by-step workflow guide, the full Python API, configuration "
-        "parameters, worked examples for the reference TbTi<sub>3</sub>Bi<sub>4</sub> dataset at "
-        "22 K, 45 K, and 100 K, interactive visualization, known limitations, and "
+        "parameters, generic worked examples for single-volume and multi-volume "
+        "workflows, interactive visualization, known limitations, and "
         "a complete reference list."
     ))
 
@@ -1123,8 +1123,7 @@ def build_manual(output_path: str) -> None:
     story.append(P(
         "A common artifact in 3D-ΔPDF maps is a bright cross along the "
         "<i>y</i><sub>K</sub>=0 and <i>z</i><sub>L</sub>=0 axes in the "
-        "<i>y</i><sub>K</sub>–<i>z</i><sub>L</sub> plane. Diagnosis (confirmed "
-        "on TbTi<sub>3</sub>Bi<sub>4</sub> data, 2026-06-05) showed:"
+        "<i>y</i><sub>K</sub>–<i>z</i><sub>L</sub> plane. Diagnosis showed:"
     ))
     for d in [
         "The cross is present on planes with <i>no</i> Bragg peaks (e.g. H=1/3).",
@@ -1158,8 +1157,8 @@ def build_manual(output_path: str) -> None:
         "Parameter recommendation",
         "Use SUBTRACT_BG=\"0,1.5,1.5\" to apply a per-axis Gaussian blur with "
         "σ_H=0 (slice-wise background, preserves H-layering), "
-        "σ_K=1.5, σ_L=1.5 r.l.u. This is the validated default for "
-        "the TbTi<sub>3</sub>Bi<sub>4</sub> dataset."
+        "σ_K=1.5, σ_L=1.5 r.l.u. Tune the blur widths for the length scale "
+        "of the smooth background in your volume."
     ))
 
     story.append(H3("4.4.4  Near-Origin Spike"))
@@ -1268,7 +1267,7 @@ def build_manual(output_path: str) -> None:
     story.append(P("Key environment overrides:"))
     pipe_rows = [
         [Paragraph("<tt>DATA_FILE</tt>", styles["code"]),
-         Paragraph("Path to input .nxs file (default: auto-detected 22 K file)", styles["body_left"])],
+         Paragraph("Path to input .nxs file", styles["body_left"])],
         [Paragraph("<tt>NO_VIEWER=1</tt>", styles["code"]),
          Paragraph("Skip GUI stages; stop after writing _delta_pdf.h5", styles["body_left"])],
         [Paragraph("<tt>FORCE=1</tt>", styles["code"]),
@@ -1321,34 +1320,33 @@ def build_manual(output_path: str) -> None:
     ))
     story.append(PL("Outputs: <tt>examples/_delta_pdf.h5</tt> and PNG central-cut images."))
 
-    story.append(H2("6.3  Multi-Temperature Workflow (TbTi<sub>3</sub>Bi<sub>4</sub>)"))
+    story.append(H2("6.3  Multi-Volume Workflow"))
     story.append(P(
-        "The reference dataset consists of three temperatures. Run the pipeline "
-        "for each temperature by overriding <tt>DATA_FILE</tt>:"
+        "Run the pipeline once per input volume by overriding <tt>DATA_FILE</tt>:"
     ))
     story.append(code_block(
-        "# 22 K\n"
+        "# condition A\n"
         "NO_VIEWER=1 \\\n"
-        "DATA_FILE=\"data/raw/TbTi3Bi4_22K_mmm_..._cc_sub_bkg.nxs\" \\\n"
+        "DATA_FILE=\"data/raw/condition_a_cc_sub_bkg.nxs\" \\\n"
         "python examples/run_pipeline.py\n"
         "\n"
-        "# 45 K\n"
+        "# condition B\n"
         "NO_VIEWER=1 \\\n"
-        "DATA_FILE=\"data/raw/TbTi3Bi4_45K_..._cc_sub_bkg.nxs\" \\\n"
+        "DATA_FILE=\"data/raw/condition_b_cc_sub_bkg.nxs\" \\\n"
         "python examples/run_pipeline.py\n"
         "\n"
-        "# 100 K\n"
+        "# condition C\n"
         "NO_VIEWER=1 \\\n"
-        "DATA_FILE=\"data/raw/TbTi3Bi4_100K_..._cc_sub_bkg.nxs\" \\\n"
+        "DATA_FILE=\"data/raw/condition_c_cc_sub_bkg.nxs\" \\\n"
         "python examples/run_pipeline.py"
     ))
     story.append(P(
-        "To generate persistent per-temperature ΔPDF files in "
+        "To generate persistent per-condition ΔPDF files in "
         "<tt>data/processed/</tt> use <tt>OUT_FILE</tt> and <tt>PROC_FILE</tt>:"
     ))
     story.append(code_block(
-        "PROC_FILE=\"data/processed/TbTi3Bi4_22K_..._backfilled.h5\" \\\n"
-        "OUT_FILE=\"data/processed/TbTi3Bi4_22K_mmm_delta_pdf.h5\" \\\n"
+        "PROC_FILE=\"data/processed/condition_a_backfilled.h5\" \\\n"
+        "OUT_FILE=\"data/processed/condition_a_delta_pdf.h5\" \\\n"
         "SUBTRACT_BG=\"0,1.5,1.5\" CROP_H=4 CROP_K=8 CROP_L=15 \\\n"
         "APODIZE=gaussian GAUSSIAN_SIGMA=0.4 \\\n"
         "python examples/delta_pdf.py"
@@ -1590,21 +1588,20 @@ def build_manual(output_path: str) -> None:
     ))
     story.append(code_block(
         "PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \\\n"
-        "  PDF_FILE=data/processed/TbTi3Bi4_22K_mmm_delta_pdf.h5 RMAX=50 \\\n"
+        "  PDF_FILE=data/processed/condition_a_delta_pdf.h5 RMAX=50 \\\n"
         "  python examples/explore_delta_pdf_ortho.py"
     ))
 
-    story.append(H3("Multi-Temperature Comparison Grid"))
+    story.append(H3("Multi-Volume Comparison Grid"))
     story.append(P(
-        "A 3×3 grid (rows = 22 K/45 K/100 K, columns = three orthogonal cuts) "
-        "with shared cut sliders and a single global colour scale so intensities "
-        "are directly comparable across temperatures:"
+        "A 3×3 grid (rows = three related volumes, columns = three orthogonal "
+        "cuts) with shared cut sliders and a single global colour scale so "
+        "intensities are directly comparable:"
     ))
     story.append(code_block(
         "PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \\\n"
-        "  PDF_22K=data/processed/TbTi3Bi4_22K_mmm_delta_pdf.h5 \\\n"
-        "  PDF_45K=data/processed/TbTi3Bi4_45K_delta_pdf.h5 \\\n"
-        "  PDF_100K=data/processed/TbTi3Bi4_100K_delta_pdf.h5 \\\n"
+        "  PDF_FILES=data/processed/condition_a_delta_pdf.h5,data/processed/condition_b_delta_pdf.h5,data/processed/condition_c_delta_pdf.h5 \\\n"
+        "  PDF_LABELS=\"condition A,condition B,condition C\" \\\n"
         "  python examples/explore_delta_pdf_multi.py"
     ))
 

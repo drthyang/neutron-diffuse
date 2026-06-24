@@ -1,7 +1,7 @@
 # Web UI
 
 `nebula3d` ships **one** browser console — a React + TypeScript SPA (Vite)
-that unifies the cleanup, 3D-ΔPDF, multi-temperature, and consistency views and
+that unifies the cleanup, 3D-ΔPDF, multi-volume, and consistency views and
 drives the whole reduction pipeline. It has two interchangeable run modes that
 share the same UI and the same `nebula3d` reduction code:
 
@@ -64,7 +64,7 @@ replace the standalone `examples/explore_*.py` viewers:
 | **Configure / Run pipeline** | `run_pipeline.py` | Pick a dataset and tune the key parameters per stage — ring removal (azimuthal **patches**, texture **Fourier order**), punch (HKL ↔ Q-space frame), backfill, flatten, ΔPDF, consistency — then run all stages with a live stepper and log. Existing outputs are skipped unless *force* is on. Default landing view. |
 | **Reciprocal cleanup** | `explore_slice.py` | One panel per HKLVolume stage (raw / ring-removed / punched / backfilled / flattened) sharing an H/K/L plane selector, cut, contrast, log, and colormap. All panels share **one fixed global colour scale** (pooled from the centre cut). The cut readout is an **editable box** — type `0.3333` and it snaps to the nearest plane. |
 | **3D-ΔPDF** | `explore_delta_pdf_ortho.py` | Three linked real-space orthoslices (x_H–y_K, x_H–z_L, y_K–z_L) as square **windows** (adjustable, default 80 Å), each with its own cut slider, plus contrast and a gray dashed unit-cell overlay. |
-| **Multi-temperature** | `explore_delta_pdf_multi.py` | 22 / 45 / 100 K × the three planes as a square grid, sharing cut, window, and contrast; a per-plane colour scale pooled across temperatures. |
+| **Multi-volume** | `explore_delta_pdf_multi.py` | Related DeltaPDF files × the three planes as a square grid, sharing cut, window, and contrast; a per-plane colour scale pooled across files. |
 | **Consistency check** | `delta_pdf_consistency.py` | Back-FFT check: inverse-transforms the ΔPDF to reciprocal space and shows **data \| back-FFT \| residual** at a shared plane/cut, with agreement metrics (Pearson r, normalised RMS, per-plane r). Adjustable **\|Q\|** and real-space **r** bands isolate which ranges support a signal. |
 
 ## Architecture
@@ -94,7 +94,7 @@ In-browser: Browser (React/TS SPA) ──RPC──►  Web Worker → Pyodide  �
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/api/datasets` | datasets grouped by temperature, with per-stage output status |
+| GET | `/api/datasets` | discovered datasets with per-stage output status |
 | GET | `/api/volumes/{id}/meta` | HKLVolume shape, axis ranges, lattice |
 | GET | `/api/volumes/{id}/slice?plane=&value=&interp=` | binary 2D slice |
 | GET | `/api/deltapdf/{id}/meta` | ΔPDF shape, ranges, lattice, \|Q\|max |
@@ -105,7 +105,7 @@ In-browser: Browser (React/TS SPA) ──RPC──►  Web Worker → Pyodide  �
 | GET | `/api/pipeline/jobs/{id}/events` | SSE progress stream |
 | POST | `/api/pipeline/jobs/{id}/cancel` | terminate a running job |
 
-Volume ids are `"<dataset_id>.<stage>"` (e.g. `…22K….backfilled`, `…22K….delta_pdf`).
+Volume ids are `"<dataset_id>.<stage>"` (e.g. `sample.backfilled`, `sample.delta_pdf`).
 
 ## Development
 
@@ -124,7 +124,7 @@ Frontend layout:
 | Path | What |
 | --- | --- |
 | `web/src/App.tsx` | sidebar shell + view routing |
-| `web/src/pages/` | one component per view (config, execution, reciprocal, ΔPDF, multi-temp, consistency) |
+| `web/src/pages/` | one component per view (config, execution, reciprocal, ΔPDF, multi-volume, consistency) |
 | `web/src/components/` | shared panels (`SliceCanvas`, `SlicePanel`, `DpdfPanel`, `UnitCellGrid`) + UI primitives (`ui.tsx`) |
 | `web/src/api/` | typed fetch client (`client.ts`), the Pyodide engine (`pyodideEngine.ts`), React Query hooks, response types |
 | `web/src/workers/` | the classic Web Worker hosting Pyodide |

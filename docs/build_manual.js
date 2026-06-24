@@ -6,13 +6,19 @@
 //
 // Design system lives at the top; content sections (sec1..sec13) below.
 
-const NODE_MODULES = "/Users/thyang/.nvm/versions/node/v24.16.0/lib/node_modules";
+const GLOBAL_NODE_MODULES = "/Users/thyang/.nvm/versions/node/v24.16.0/lib/node_modules";
+let docx;
+try {
+  docx = require("docx");
+} catch {
+  docx = require(`${GLOBAL_NODE_MODULES}/docx`);
+}
 const {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
   Header, Footer, AlignmentType, HeadingLevel, BorderStyle, WidthType,
   ShadingType, VerticalAlign, PageNumber, PageBreak, TableOfContents,
   LevelFormat, TabStopType,
-} = require(`${NODE_MODULES}/docx`);
+} = docx;
 const fs = require("fs");
 const path = require("path");
 
@@ -331,12 +337,6 @@ function stageFlow(stages) {
   return out;
 }
 
-// Chemical formula TbTi₃Bi₄ as real-subscript runs
-function tbtibi(sz = 21, color = INK) {
-  return [run("TbTi", { size: sz, color }), run("3", { size: sz, color, sub: true }),
-          run("Bi", { size: sz, color }), run("4", { size: sz, color, sub: true })];
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 //  COVER
 // ═══════════════════════════════════════════════════════════════════════════
@@ -384,7 +384,7 @@ function coverMeta() {
     metaRow("License", [run("MIT", { size: 19 })], L, R),
     metaRow("Core stack", [run("numpy · scipy · h5py · matplotlib", { size: 19 })], L, R),
     metaRow("Input format", [run("Mantid NeXus (MDHistoWorkspace)", { size: 19 })], L, R),
-    metaRow("Reference data", [...tbtibi(19), run("   (22 K / 45 K / 100 K)", { size: 19 })], L, R),
+    metaRow("Reference data", [run("Mantid NeXus HKL volumes", { size: 19 })], L, R),
   ];
   return new Table({ alignment: AlignmentType.CENTER, width: { size: W, type: WidthType.DXA },
     columnWidths: [L, R], rows });
@@ -489,7 +489,7 @@ function sec1() {
         { text: " — the 3D intensity array, per-voxel σ, a validity mask, the HKL axes, and the crystal orientation (UB) matrix travel together from raw input to ΔPDF output." }]]),
 
     h2("1.2", "Scope of This Manual"),
-    p("This manual covers the background physics and mathematics of 3D diffuse scattering analysis, the algorithms and their theoretical basis, a step-by-step workflow, the Python API, every configuration parameter, worked examples for the reference TbTi₃Bi₄ dataset at 22 K / 45 K / 100 K, interactive visualization, known limitations, and a complete reference list."),
+    p("This manual covers the background physics and mathematics of 3D diffuse scattering analysis, the algorithms and their theoretical basis, a step-by-step workflow, the Python API, every configuration parameter, generic worked examples for single-volume and multi-volume workflows, interactive visualization, known limitations, and a complete reference list."),
 
     h2("1.3", "What nebula3d Does Not Do"),
     p("The package does not perform raw detector reduction, normalization to an absolute cross-section, or Reverse Monte Carlo (RMC) structural refinement. It assumes the input is a Mantid background-subtracted MDHistoWorkspace volume."),
@@ -670,7 +670,7 @@ function sec4() {
     ...math(["I_new = I − GaussianBlur(I, σ ≈ 1.5 r.l.u.)"]),
     ...callout("tip", "Validated default",
       [[{ text: "Use " }, { text: "SUBTRACT_BG=\"0,1.5,1.5\"", font: MONO, size: 19 },
-        { text: " — per-axis Gaussian blur with σH = 0 (slice-wise, preserves H-layering) and σK = σL = 1.5 r.l.u. This is the validated setting for the TbTi₃Bi₄ dataset." }]]),
+        { text: " — per-axis Gaussian blur with σH = 0 (slice-wise, preserves H-layering) and σK = σL = 1.5 r.l.u. Tune the blur widths for the smooth background in your volume." }]]),
     h3("4.4.4  Centring Bug (fixed 2026-06-05)"),
     p("Earlier code computed fftshift(fftn(data)) without ifftshift and used one-sided zero-padding. The missing ifftshift introduces a linear phase ramp e^(−iπk) = (−1)ᵏ, flipping the sign of real-space features by pixel parity. Fixed throughout; regression test: test_delta_pdf_centring_positive_peak."),
   ];
@@ -749,17 +749,18 @@ function sec6() {
   APODIZE=gaussian GAUSSIAN_SIGMA=0.4 \\
   python examples/delta_pdf.py`, "Stage 4 · 3D-ΔPDF"),
 
-    h2("6.3", "Multi-Temperature Workflow"),
-    p([...tbtibi(21), { text: " is processed at three temperatures by pointing DATA_FILE at each raw volume:" }]),
-    ...code(`# 22 K  (auto-detected default)
-NO_VIEWER=1 python examples/run_pipeline.py
-
-# 45 K
-NO_VIEWER=1 DATA_FILE="data/raw/TbTi3Bi4_45K_..._cc_sub_bkg.nxs" \\
+    h2("6.3", "Multi-Volume Workflow"),
+    p("Run the pipeline once per input volume by pointing DATA_FILE at each raw volume:"),
+    ...code(`# condition A
+NO_VIEWER=1 DATA_FILE="data/raw/condition_a_cc_sub_bkg.nxs" \\
   python examples/run_pipeline.py
 
-# 100 K
-NO_VIEWER=1 DATA_FILE="data/raw/TbTi3Bi4_100K_..._cc_sub_bkg.nxs" \\
+# condition B
+NO_VIEWER=1 DATA_FILE="data/raw/condition_b_cc_sub_bkg.nxs" \\
+  python examples/run_pipeline.py
+
+# condition C
+NO_VIEWER=1 DATA_FILE="data/raw/condition_c_cc_sub_bkg.nxs" \\
   python examples/run_pipeline.py`, "bash"),
 
     h2("6.4", "Python API"),
@@ -893,14 +894,13 @@ plot_azimuthal_map(data, q_center=2.69)`, "python"),
     h3("3D-ΔPDF orthoslice viewer (recommended)"),
     p("All three orthogonal real-space planes (x_H–y_K, x_H–z_L, y_K–z_L) with independent cut sliders, a contrast multiplier, and a unit-cell gridline toggle:"),
     ...code(`PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \\
-  PDF_FILE=data/processed/TbTi3Bi4_22K_mmm_delta_pdf.h5 RMAX=50 \\
+  PDF_FILE=data/processed/condition_a_delta_pdf.h5 RMAX=50 \\
   python examples/explore_delta_pdf_ortho.py`, "bash"),
-    h3("Multi-temperature comparison grid"),
-    p("A 3×3 grid — rows 22 K / 45 K / 100 K, columns the three orthogonal cuts — with shared cut sliders and one global colour scale:"),
+    h3("Multi-volume comparison grid"),
+    p("A 3×3 grid — rows are three related volumes, columns are the three orthogonal cuts — with shared cut sliders and one global colour scale:"),
     ...code(`PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \\
-  PDF_22K=data/processed/TbTi3Bi4_22K_mmm_delta_pdf.h5 \\
-  PDF_45K=data/processed/TbTi3Bi4_45K_delta_pdf.h5 \\
-  PDF_100K=data/processed/TbTi3Bi4_100K_delta_pdf.h5 \\
+  PDF_FILES=data/processed/condition_a_delta_pdf.h5,data/processed/condition_b_delta_pdf.h5,data/processed/condition_c_delta_pdf.h5 \\
+  PDF_LABELS="condition A,condition B,condition C" \\
   python examples/explore_delta_pdf_multi.py`, "bash"),
   ];
 }

@@ -1,4 +1,4 @@
-"""nebula3d — neutron diffuse scattering processing toolkit.
+"""nebula3d — 3D diffuse-scattering processing toolkit.
 
 Input: symmetrized 3D HKL volume (e.g. from Mantid).
 

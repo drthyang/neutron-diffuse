@@ -30,8 +30,8 @@ Regenerate those files by rerunning the scripts below.
 | Script | Purpose |
 | --- | --- |
 | `explore_slice.py` | Reciprocal-space cleanup QA: raw, ring removed, punched, and backfilled slices. |
-| `explore_delta_pdf_ortho.py` | Single-temperature 3D-DeltaPDF orthoslice viewer. |
-| `explore_delta_pdf_multi.py` | Multi-temperature 3D-DeltaPDF comparison viewer. |
+| `explore_delta_pdf_ortho.py` | Single-volume 3D-DeltaPDF orthoslice viewer. |
+| `explore_delta_pdf_multi.py` | Multi-volume 3D-DeltaPDF comparison viewer. |
 | `explore_delta_pdf.py` | Single-plane DeltaPDF viewer with an `x_H` slider. |
 | `explore_volume.py` | Raw versus processed reciprocal-space volume viewer. |
 | `explore.py` | IPython preamble for ad hoc plotting with `nebula3d.visualization`. |
@@ -43,7 +43,7 @@ Regenerate those files by rerunning the scripts below.
 | `delta_pdf_plane.py` | 2D DeltaPDF for one reciprocal H plane. |
 | `compare_delta_pdf_methods.py` | Compare DeltaPDF background-removal methods. |
 | `ring_linecut.py` | Inspect a Bragg-free linecut and ring positions. |
-| `investigate_bragg_diffuse.py` | Separate Bragg from co-located magnetic diffuse at the q=1/3 satellites: line-cut peak-shape fits, resolution `σ(\|Q\|)`, correlation length ξ, diffuse fraction, and a temperature series. |
+| `investigate_bragg_diffuse.py` | Separate Bragg from co-located diffuse scattering: line-cut peak-shape fits, resolution `σ(\|Q\|)`, correlation length ξ, diffuse fraction, and optional series overlays. |
 | `validate_flatten.py` | Robustness QA for the step-4 flatten (non-circular): background isotropy, feature-contrast retention, over-subtraction, high-`\|Q\|` coverage. |
 
 ## Typical Commands

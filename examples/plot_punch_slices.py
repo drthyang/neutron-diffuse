@@ -11,7 +11,7 @@ so the punch *footprint* and the diffuse-plane preservation can be eyeballed.
 
 Run (no venv; see the run-environment note):
 
-    PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl DATASET=22K \
+    PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl DATASET=condition_a \
     /path/to/sci-general/python examples/plot_punch_slices.py
 """
 
@@ -30,7 +30,7 @@ from matplotlib.colors import ListedColormap  # noqa: E402
 import nebula3d  # noqa: E402
 from nebula3d.pipeline import PunchParams, punch_bragg  # noqa: E402
 
-# Proposed Q default = the current HKL footprint expressed in Å⁻¹ (≈ HKL × b*).
+# Q default resolution floor in Å⁻¹.
 Q_RADII = (0.097, 0.072, 0.115)
 
 # (label, H plane, (k0,k1,l0,l1) zoom window in r.l.u.)  — square windows so the
@@ -51,11 +51,12 @@ def _overlay(mask2d: np.ndarray) -> np.ndarray:
 
 
 def main() -> None:
-    tag = os.environ.get("DATASET", "22K")
-    paths = sorted(p for p in glob.glob(f"data/processed/*{tag}*ringremoved.h5")
-                   if "braggpunched" not in p)
+    tag = os.environ.get("DATASET", "")
+    pattern = f"data/processed/*{tag}*ringremoved.h5" if tag else "data/processed/*ringremoved.h5"
+    paths = sorted(p for p in glob.glob(pattern) if "braggpunched" not in p)
     if not paths:
-        raise SystemExit(f"no *_ringremoved.h5 for DATASET={tag}")
+        hint = f" for DATASET={tag}" if tag else ""
+        raise SystemExit(f"no *_ringremoved.h5{hint}")
     vol = nebula3d.load(paths[0])
     valid = vol.mask & np.isfinite(vol.data)
 

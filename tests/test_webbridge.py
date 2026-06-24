@@ -75,7 +75,7 @@ def test_datasets_listing_has_all_stages(ran_pipeline):
     assert len(datasets) == 1
     ds = datasets[0]
     assert ds["id"] == dataset_id
-    assert ds["temperature"] == "22K"
+    assert ds["temperature"] is None
     by_name = {s["name"]: s for s in ds["stages"]}
     for stage in ("raw", "ringremoved", "braggpunched", "backfilled",
                   "flattened", "delta_pdf"):

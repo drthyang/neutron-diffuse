@@ -34,7 +34,7 @@ Usage::
     PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
     python3 examples/delta_pdf_consistency.py
 
-Env: ``DATA_FILE`` (input volume; default = newest 22K ``*_flattened.h5``),
+Env: ``DATA_FILE`` (input volume; default = newest ``*_flattened.h5``),
 ``H_VALUES`` (comma list, default ``0,0.3333,1.0``), ``OUT_PNG``, and the
 standard ΔPDF knobs: ``CROP_H/K/L``, ``APODIZE``, ``GAUSSIAN_SIGMA``,
 ``ZERO_PAD``, ``SUBTRACT_MEAN``, ``SUBTRACT_BG``.
@@ -55,9 +55,7 @@ def _find_input() -> Path:
     if df:
         return Path(df)
     proc = Path("data/processed")
-    cands = (sorted(proc.glob("*22K*cc_sub_bkg*flattened.h5"))
-             or sorted(proc.glob("*22K*flattened.h5"))
-             or sorted(proc.glob("*flattened.h5"))
+    cands = (sorted(proc.glob("*flattened.h5"))
              or sorted(proc.glob("*backfilled.h5")))
     if not cands:
         raise FileNotFoundError(

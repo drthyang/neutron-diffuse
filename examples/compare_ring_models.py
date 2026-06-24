@@ -17,7 +17,7 @@ residual | parametric residual (shared robust colour scale per row).
 Usage::
 
     PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl \
-    python3 examples/compare_ring_models.py            # H = 0, 1/3, 1 on 22K
+    python3 examples/compare_ring_models.py            # H = 0, 1/3, 1
 
 Env: ``DATA_FILE`` (input .nxs), ``H_VALUES`` (comma list, default
 ``0,0.3333,1.0``), ``N_FOURIER`` (default 6, matched across both),
@@ -63,7 +63,7 @@ def _find_input() -> Path:
     if df:
         return Path(df)
     raw = Path("data/raw")
-    cands = sorted(raw.glob("*22K*cc_sub_bkg.nxs"))
+    cands = sorted(raw.glob("*cc_sub_bkg.nxs"))
     if not cands:
         cands = sorted(raw.glob("*.nxs"))
     if not cands:
@@ -183,7 +183,7 @@ def main() -> None:
 
     # ---- figure: rows = H, cols = data | patched resid | parametric resid ----
     out_png = Path(os.environ.get(
-        "OUT_PNG", "data/processed/compare_ring_models_22K.png"))
+        "OUT_PNG", "data/processed/compare_ring_models.png"))
     n = len(rows)
     fig, axes = plt.subplots(n, 3, figsize=(12, 4 * n), squeeze=False)
     col_titles = ["data", "patched (data − ring)", "parametric (data − ring)"]
@@ -207,7 +207,7 @@ def main() -> None:
     # scale centred at 0.  red arc = ring leftover (under-subtract); blue trough =
     # over-subtraction; white = clean.  Same baseline B(|Q|) for both methods.
     dev_png = Path(os.environ.get(
-        "DEV_PNG", "data/processed/compare_ring_deviation_22K.png"))
+        "DEV_PNG", "data/processed/compare_ring_deviation.png"))
     fig2, axes2 = plt.subplots(n, 3, figsize=(12, 4 * n), squeeze=False)
     dcol_titles = ["data", "patched: after − baseline",
                    "parametric: after − baseline"]
@@ -241,7 +241,7 @@ def main() -> None:
     # ring, a curve near 0 is perfect; a positive bump = leftover (under-subtract);
     # a negative dip = over-subtraction.  Whichever curve hugs 0 best wins.
     prof_png = Path(os.environ.get(
-        "PROF_PNG", "data/processed/compare_ring_profile_22K.png"))
+        "PROF_PNG", "data/processed/compare_ring_profile.png"))
     fig3, axes3 = plt.subplots(n, 1, figsize=(13, 3.2 * n), squeeze=False)
     for r, (hv, data2d, ip, iq, q2d) in enumerate(rows):
         _, qc, base1d, edges = _diffuse_baseline_2d(data2d, q2d, (Q_MIN, Q_MAX))

@@ -67,10 +67,7 @@ def _find_data() -> Path:
     hits = [p for p in sorted(_RAW.glob("*.nxs")) if not _is_empty_background(p)]
     if not hits:
         raise FileNotFoundError(f"No data .nxs files found in {_RAW}")
-    return next(
-        (p for p in hits if "22K_mmm" in p.stem and "cc_sub_bkg" in p.stem),
-        next((p for p in hits if "22K_mmm" in p.stem), hits[0]),
-    )
+    return next((p for p in hits if "cc_sub_bkg" in p.stem), hits[0])
 
 
 def _find_background() -> Path | None:

@@ -15,7 +15,7 @@ Run::
       examples/explore_volume.py
 
 Env overrides:
-    DATA_FILE   raw input .nxs (default: the 22K mmm validation file)
+    DATA_FILE   raw input .nxs (default: auto-detect a background-subtracted .nxs)
     PROC_FILE   processed residual .h5 (default: data/processed/<stem>_ringremoved.h5)
     H_VALUE     initial H plane (default 0.0; drag the H slider to move)
     SLIDER_MIN/SLIDER_MAX   vmin/vmax slider travel (default 0..1, tight near diffuse)
@@ -48,10 +48,7 @@ else:
         raise FileNotFoundError(
             "No input .nxs files found in data/raw. Set DATA_FILE=/path/to/input.nxs."
         )
-    in_path = next(
-        (p for p in cands if "22K_mmm" in p.stem and "cc_sub_bkg" in p.stem),
-        next((p for p in cands if "22K_mmm" in p.stem), cands[0]),
-    )
+    in_path = next((p for p in cands if "cc_sub_bkg" in p.stem), cands[0])
 
 proc_file = os.environ.get("PROC_FILE")
 proc_path = (Path(proc_file) if proc_file

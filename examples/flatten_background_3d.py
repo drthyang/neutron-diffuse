@@ -13,7 +13,7 @@ This is the explicit background-removal step and is **ON by default** in
 Gaussian ``SUBTRACT_BG`` blur (which defaults off) — use one or the other, never
 both: running both subtracts the background twice, and the per-H-plane blur
 (σ_H=0) destroys the on-axis H-direction signal the flatten preserves.
-Robustness validated across 22/45/100K by ``examples/validate_flatten.py``.
+Check robustness on your data with ``examples/validate_flatten.py``.
 
 Run::
 

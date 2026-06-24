@@ -20,7 +20,7 @@ import nebula3d
 from nebula3d.analysis.delta_pdf import compute_delta_pdf, invert_delta_pdf
 from nebula3d.pipeline import backfill, flatten, punch_bragg, remove_rings
 
-DEFAULT = "data/raw/TbTi3Bi4_22K_mmm_(0,k,l)_[h,0,0]_[-12.0,12.0]_[-30.0,30.0]_[-5.0,5.0]_401x401x301_mmm_cc_sub_bkg.nxs"
+DEFAULT = "data/raw/example_volume_cc_sub_bkg.nxs"
 
 
 def timed(label: str, fn):

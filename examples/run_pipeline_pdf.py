@@ -23,7 +23,7 @@ Run::
       python3 examples/run_pipeline_pdf.py
 
 Env:
-    DATA_FILE     raw input .nxs (default: auto-detect 22K mmm cc_sub_bkg)
+    DATA_FILE     raw input .nxs (default: auto-detect a background-subtracted .nxs)
     RING_REMOVAL  1 (default) ring-remove first; 0 → FFT the raw data directly
     FORCE         1 → recompute every stage
     FORCE_FROM    rings | pdf — recompute from this stage on
@@ -83,10 +83,7 @@ def _detect_raw() -> Path:
     cands = [p for p in sorted(RAW.glob("*.nxs")) if not is_empty_bkg(p)]
     if not cands:
         sys.exit("No input .nxs in data/raw; set DATA_FILE=/path/to/input.nxs.")
-    return next(
-        (p for p in cands if "22K_mmm" in p.stem and "cc_sub_bkg" in p.stem),
-        next((p for p in cands if "22K_mmm" in p.stem), cands[0]),
-    )
+    return next((p for p in cands if "cc_sub_bkg" in p.stem), cands[0])
 
 
 def _stage_env(stage: str, **explicit) -> dict:

@@ -13,7 +13,7 @@ Run::
       examples/punch_bragg_3d.py
 
 Env overrides:
-    DATA_FILE    ring-removed input .h5 (default: data/processed/<22K>_ringremoved.h5)
+    DATA_FILE    ring-removed input .h5 (default: first data/processed/*_ringremoved.h5)
     OUT_FILE     punched output .h5  (default: <stem>_braggpunched.h5)
     PUNCH_PRESET "cc_off" | "cc_on" | unset (cc = CORELLI correlation chopper).
                  "cc_off" saves the earlier aggressive weak-peak setup; "cc_on"
@@ -165,7 +165,7 @@ else:
             "examples/remove_rings_3d.py` first, "
             "or set DATA_FILE=/path/to/*_ringremoved.h5."
         )
-    in_path = next((p for p in cands if "22K_mmm" in p.stem), cands[0])
+    in_path = cands[0]
 
 mode = env_default("MODE", "both")
 r_hkl = tuple(float(x) for x in env_default("R_HKL", "0.12,0.12,0.45").split(","))

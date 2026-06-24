@@ -13,7 +13,7 @@ import pytest
 from nebula3d.analysis.bragg import BraggRemover
 from nebula3d.core import HKLVolume
 
-UB_DIAG = np.diag([1.07979, 0.60344, 0.25464])  # ~TbTi3Bi4 |a*|,|b*|,|c*|
+UB_DIAG = np.diag([1.07979, 0.60344, 0.25464])  # representative |a*|,|b*|,|c*|
 
 _STEPS = (0.05, 0.05, 0.05)
 _BASE = (0.001, 0.001, 0.001)   # tiny → clipping never interferes in unit tests

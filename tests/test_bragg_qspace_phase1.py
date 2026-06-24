@@ -21,8 +21,8 @@ import pytest
 
 from nebula3d.analysis.bragg import _ellipsoid_inside
 
-# Real 22 K UB (metric g = UBᵀUB diagonal to ~0.5%); see Phase 0.
-UB_22K = np.array([
+# Representative UB (metric g = UBᵀUB diagonal to ~0.5%); see Phase 0.
+UB_REFERENCE = np.array([
     [-0.73475, -0.43626,  0.03571],
     [-0.75725,  0.41688,  0.03877],
     [-0.22948, -0.00539, -0.24912],
@@ -79,7 +79,7 @@ def test_q_isotropic_shape_matrix_equals_metric_sphere():
     """The Q-space isotropic punch A = g/ρ² is exactly the metric sphere
     |δQ| ≤ ρ — the general path's headline use case.  δᵀ(g/ρ²)δ ≤ 1 ⟺ δᵀgδ ≤ ρ²."""
     dh, dk, dl = _offset_grid(41, span=0.5)
-    g = UB_22K.T @ UB_22K
+    g = UB_REFERENCE.T @ UB_REFERENCE
     rho = 0.1
     A = g / rho ** 2
     m_matrix = _ellipsoid_inside(dh, dk, dl, shape_matrix=A)

@@ -19,7 +19,7 @@ Run (headless — writes the residual volume + spot-check PNGs)::
       examples/remove_rings_3d.py
 
 Env overrides:
-    DATA_FILE   input .nxs (default: the 22K mmm validation file)
+    DATA_FILE   input .nxs (default: auto-detect a background-subtracted .nxs)
     OUT_FILE    output .h5 (default: data/processed/<stem>_ringremoved.h5)
     Q_MIN,Q_MAX radial fit range (default 1.5, 10.5 — matches the slice harness)
     SLICE_AXIS  H|K|L stack axis to process independently.  H (default) fits
@@ -70,10 +70,7 @@ else:
         raise FileNotFoundError(
             "No input .nxs files found in data/raw. Set DATA_FILE=/path/to/input.nxs."
         )
-    in_path = next(
-        (p for p in cands if "22K_mmm" in p.stem and "cc_sub_bkg" in p.stem),
-        next((p for p in cands if "22K_mmm" in p.stem), cands[0]),
-    )
+    in_path = next((p for p in cands if "cc_sub_bkg" in p.stem), cands[0])
 
 q_range = (float(os.environ.get("Q_MIN", "1.5")),
            float(os.environ.get("Q_MAX", "10.5")))

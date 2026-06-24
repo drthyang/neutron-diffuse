@@ -65,7 +65,7 @@ export function DeltaPdfViewer() {
   const center = useDpdfStore((s) => s.center);
 
   // Square real-space window (full width in Å) shown for every orthoslice;
-  // shared with the multi-temperature viewer via the store.
+  // shared with the multi-volume viewer via the store.
   const windowFull = useDpdfStore((s) => s.windowFull);
   const setWindowFull = useDpdfStore((s) => s.setWindowFull);
   const halfWindow = windowFull / 2;

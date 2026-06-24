@@ -25,8 +25,8 @@ from nebula3d.server.routers import datasets as datasets_router
 from nebula3d.visualization import extract_slice
 
 UB = 2 * np.pi * np.eye(3) / 4.0
-STEM = "TbTi3Bi4_22K_test_cc_sub_bkg"
-SLUG = "TbTi3Bi4-22K-test-cc-sub-bkg"
+STEM = "sample_300K_test_cc_sub_bkg"
+SLUG = "sample-300K-test-cc-sub-bkg"
 
 
 def _vol(shape=(7, 9, 11), seed=0):
@@ -68,7 +68,7 @@ def test_list_datasets_reflects_disk(env):
     assert len(data) == 1
     ds = data[0]
     assert ds["id"] == SLUG
-    assert ds["temperature"] == "22K"
+    assert ds["temperature"] == "300K"
     status = {s["name"]: s["exists"] for s in ds["stages"]}
     assert status["ringremoved"] is True
     assert status["backfilled"] is True
@@ -91,8 +91,8 @@ def test_data_root_can_be_switched(tmp_path):
     alt = tmp_path / "alt_data"
     (alt / "raw").mkdir(parents=True)
     (alt / "processed").mkdir()
-    alt_stem = "TbTi3Bi4_45K_alt_cc_sub_bkg"
-    alt_slug = "TbTi3Bi4-45K-alt-cc-sub-bkg"
+    alt_stem = "sample_325K_alt_cc_sub_bkg"
+    alt_slug = "sample-325K-alt-cc-sub-bkg"
     alt_paths = pipeline_paths(alt / "raw" / f"{alt_stem}.nxs",
                                proc_dir=alt / "processed")
     nebula3d.save(_vol(seed=1), alt_paths.ringremoved)
@@ -123,8 +123,8 @@ def test_data_root_browse_switches_selected_folder(tmp_path, monkeypatch):
     alt = tmp_path / "picked"
     (alt / "raw").mkdir(parents=True)
     (alt / "processed").mkdir()
-    alt_stem = "TbTi3Bi4_100K_picked_cc_sub_bkg"
-    alt_slug = "TbTi3Bi4-100K-picked-cc-sub-bkg"
+    alt_stem = "sample_350K_picked_cc_sub_bkg"
+    alt_slug = "sample-350K-picked-cc-sub-bkg"
     alt_paths = pipeline_paths(alt / "raw" / f"{alt_stem}.nxs",
                                proc_dir=alt / "processed")
     nebula3d.save(_vol(seed=2), alt_paths.ringremoved)

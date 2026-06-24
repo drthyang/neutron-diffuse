@@ -1,7 +1,7 @@
-// Multi-temperature 3D-ΔPDF comparison — replaces
-// examples/explore_delta_pdf_multi.py.  Rows = temperatures × columns = the
+// Multi-volume 3D-ΔPDF comparison — replaces
+// examples/explore_delta_pdf_multi.py.  Rows = files × columns = the
 // three orthoslice planes, with shared cut sliders and a per-plane colour scale
-// pooled across temperatures (so temperatures are comparable within a column).
+// pooled across files (so related files are comparable within a column).
 
 import { Fragment, useEffect, useMemo } from "react";
 

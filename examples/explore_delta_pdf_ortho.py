@@ -1,7 +1,7 @@
 """Interactive 3D-PDF / 3D-ΔPDF orthoslice viewer — all three real-space planes at once.
 
 The plot title labels the kind (3D-PDF when the file carries a ``kind`` attr from
-``pdf_3d.py``, else 3D-ΔPDF) and the temperature parsed from the source filename.
+``pdf_3d.py``, else 3D-ΔPDF) and the source label parsed from the filename.
 
 Shows the three orthogonal cuts through the real-space ΔPDF volume:
 
@@ -15,8 +15,8 @@ magnitudes stay readable), and the contrast slider multiplies all three.
 
 Source: a ``*_delta_pdf.h5`` in ``data/processed/`` (written by
 ``run_pipeline.py``, or by ``delta_pdf.py`` with ``OUT_FILE`` pointed there).
-With several temperatures present, set ``TEMP`` to pick one, or ``PDF_FILE`` for
-an explicit file.  (A bare ``delta_pdf.py`` run defaults to
+With several outputs present, set ``MATCH`` to pick one by filename substring, or
+``PDF_FILE`` for an explicit file.  (A bare ``delta_pdf.py`` run defaults to
 ``examples/_delta_pdf.h5``, which this viewer does NOT auto-load.)
 
 Run (interactive, on this Mac)::
@@ -33,8 +33,8 @@ Controls:
 
 Env overrides:
     PDF_FILE  explicit ΔPDF .h5 to load (overrides the data/processed glob)
-    TEMP      22K | 45K | 100K — pick one when data/processed/ holds several
-              *_delta_pdf.h5 (the viewer exits asking for this if it is ambiguous)
+    MATCH     filename substring used when data/processed/ holds several
+              *_delta_pdf.h5 files (the viewer exits asking for this if ambiguous)
     RMAX      display half-window in Å for all axes (default: 50)
     PERCENTILE per-panel colour-scale percentile at r>3 Å (default: 98)
     CONTRAST_MIN / CONTRAST_MAX  range of the contrast-× slider that scales the
@@ -61,24 +61,24 @@ import numpy as np
 from matplotlib.widgets import CheckButtons, Slider
 
 _pdf_env = os.environ.get("PDF_FILE")
-_temp    = os.environ.get("TEMP", "")
+_match = os.environ.get("MATCH", "")
 if _pdf_env:
     pdf_file = Path(_pdf_env)
     if not pdf_file.exists():
         sys.exit(f"PDF_FILE={pdf_file} not found.")
 else:
     _cands = sorted(Path("data/processed").glob("*_delta_pdf.h5"))
-    if _temp:
-        _cands = [p for p in _cands if _temp in p.name]
+    if _match:
+        _cands = [p for p in _cands if _match in p.name]
     if not _cands:
         sys.exit(
             "No matching *_delta_pdf.h5 in data/processed/.\n"
-            "Set TEMP=22K (or 45K / 100K), or PDF_FILE=/path/to/file.h5."
+            "Set MATCH=<filename-substring>, or PDF_FILE=/path/to/file.h5."
         )
     if len(_cands) > 1:
         names = "\n  ".join(p.name for p in _cands)
         sys.exit(
-            f"Multiple ΔPDF files — set TEMP=22K (or 45K / 100K) to pick one:\n  {names}"
+            f"Multiple ΔPDF files — set MATCH=<filename-substring> to pick one:\n  {names}"
         )
     pdf_file = _cands[0]
 
@@ -95,10 +95,10 @@ with h5py.File(pdf_file, "r") as fh:
 # Correct label from the file: 3D-PDF (total scattering, Bragg kept; pdf_3d.py
 # stamps a "kind" attr) vs 3D-ΔPDF (Bragg removed; delta_pdf.py, no such attr).
 KIND = "3D-PDF" if "3D-PDF" in _kind_attr else "3D-ΔPDF"
-# Temperature parsed from the source filename (…22K…/…45K…/…100K…), else "".
+# Optional condition label parsed from the source filename, else "".
 _m = re.search(r"(\d+)\s*K", _source or pdf_file.name)
-TEMP = f"{_m.group(1)} K" if _m else ""
-print(f"  {KIND}{(' — ' + TEMP) if TEMP else ''}"
+LABEL = f"{_m.group(1)} K" if _m else ""
+print(f"  {KIND}{(' — ' + LABEL) if LABEL else ''}"
       f"  shape (x_H,y_K,z_L): {data.shape}  apod={apod}", flush=True)
 
 RMAX = float(os.environ.get("RMAX", "50.0"))

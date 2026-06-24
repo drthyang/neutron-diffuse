@@ -37,7 +37,7 @@ Run::
     PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl python3 examples/validate_flatten.py
 
 Env:
-    DATA_FILE   backfilled input .h5 (default: auto-detect 22K *_backfilled.h5)
+    DATA_FILE   backfilled input .h5 (default: auto-detect *_backfilled.h5)
     ESTIMATOR FLOOR_PCT Q_STEP SMOOTH MIN_COUNT   flatten knobs (production defaults)
     Q_MIN Q_MAX   restrict the validated |Q| range
     NO_PLOT     1 -> skip the QA PNG
@@ -114,10 +114,9 @@ if data_file:
     in_path = Path(data_file)
 else:
     cands = [p for p in sorted(PROC.glob("*_backfilled.h5")) if "flattened" not in p.name]
-    pref = [p for p in cands if "22K" in p.name]
     if not cands:
         raise FileNotFoundError("No *_backfilled.h5 in data/processed; set DATA_FILE.")
-    in_path = (pref or cands)[0]
+    in_path = cands[0]
 
 estimator = os.environ.get("ESTIMATOR", "floor")
 floor_pct = float(os.environ.get("FLOOR_PCT", "25"))

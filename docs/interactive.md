@@ -13,7 +13,7 @@ IPython session, or a Jupyter notebook. Future interactive front-ends (widget
 panels, a dashboard, Mantid-side hooks) should build on these same primitives.
 
 > This page documents the **matplotlib viewers and the `nebula3d.visualization`
-> API**. For copy-paste launch commands across 22/45/100 K, see
+> API**. For copy-paste launch commands, see
 > [commands.md](commands.md); for the browser console, see [web.md](web.md).
 
 ---
@@ -56,10 +56,10 @@ preservation before running the final 3D-DeltaPDF transform.
 ## 2. ΔPDF Real-Space Viewers (standard preview)
 
 Three interactive viewers preview the **real-space 3D-ΔPDF** (the FFT of the
-cleaned diffuse volume): two single-temperature views (orthoslice and
+cleaned diffuse volume): two single-volume views (orthoslice and
 single-plane) that read the cached `examples/_delta_pdf.h5` written by
 `examples/delta_pdf.py` (run that first if it is missing), and a
-multi-temperature comparison view. **Use these as the standard preview for ΔPDF
+multi-volume comparison view. **Use these as the standard preview for ΔPDF
 results — do not build ad-hoc plotting scripts.**
 
 ### Orthoslice viewer (recommended) — `examples/explore_delta_pdf_ortho.py`
@@ -111,22 +111,22 @@ Both use the `macosx` backend and block on `plt.show()` — launch with
 static three-panel contact sheet (central cuts), `examples/delta_pdf.py` also
 writes `_delta_pdf_hk0/h0l/0kl.png`.
 
-### Multi-temperature comparison — `examples/explore_delta_pdf_multi.py`
+### Multi-volume comparison — `examples/explore_delta_pdf_multi.py`
 
-The 22 K / 45 K / 100 K comparison: three rows (one per temperature) × the three
-orthoslice planes, with shared `x_H / y_K / z_L` cut sliders, a `contrast ×`
-slider, and the unit-cell gridline toggle. Each plane (column) is scaled to its
-own level pooled across the three temperatures, so the temperatures are directly
-comparable *within* a plane. It **auto-detects** the pipeline's per-temperature
-`data/processed/*{T}*_delta_pdf.h5` outputs — no paths needed once the pipeline
-has run for all three temperatures.
+Compare related DeltaPDF files as one row per file × the three orthoslice
+planes, with shared `x_H / y_K / z_L` cut sliders, a `contrast ×` slider, and
+the unit-cell gridline toggle. Each plane (column) is scaled to its own level
+pooled across the loaded files, so files are directly comparable *within* a
+plane. It auto-detects up to three `data/processed/*_delta_pdf.h5` outputs, or
+you can pass paths explicitly.
 
 ```bash
 PYTHONPATH=src MPLCONFIGDIR=/tmp/mpl RMAX=28 \
 python3 examples/explore_delta_pdf_multi.py
 ```
 
-- `PDF_22K` / `PDF_45K` / `PDF_100K` — override the auto-detected paths.
+- `PDF_FILES` — comma-separated DeltaPDF `.h5` paths.
+- `PDF_LABELS` — optional comma-separated row labels.
 - `RMAX` — display half-window (Å) for all axes (default 50).
 - `PERCENTILE` — per-plane colour-scale percentile at r>3 Å (default 98).
 - `CONTRAST_MIN` / `CONTRAST_MAX` — `contrast ×` slider range (default 0.1 .. 20).
@@ -300,7 +300,7 @@ import matplotlib; matplotlib.use("Agg")
   - linked ΔPDF real-space views — single-plane `x_H`-slider viewer
     (`examples/explore_delta_pdf.py`) and the three-plane orthoslice viewer
     with movable cuts (`examples/explore_delta_pdf_ortho.py`);
-  - temperature-comparison grid with shared cuts and a global colour scale
+  - multi-volume comparison grid with shared cuts and a global colour scale
     (`examples/explore_delta_pdf_multi.py`).
 - **Still planned:**
   - live `|Q|`-shell scrubbing for the azimuthal/ring texture views;
