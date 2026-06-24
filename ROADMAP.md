@@ -329,6 +329,37 @@ Backward compatibility (a hard requirement): `punch_radii` keeps working forever
 pipelines, and the web Run-pipeline ring/punch controls. Defaults move only in
 Phase 4.
 
+## Phase 7 — Performance  Planned (next focus)
+
+Running the pipeline at **full ΔPDF resolution** (no downsampling of the HKL
+volume) has made the end-to-end computation heavy. The goal of this phase is to
+**find and remove wasted work without changing any numerical output** — i.e. a
+quality-preserving optimization pass, not an accuracy/speed trade-off.
+
+Approach (audit first, optimize second):
+
+- **Map the hot path.** Profile `examples/run_pipeline.py` at full resolution
+  (e.g. `cProfile` / `py-spy`) to rank the real cost centres before touching
+  code; record wall-time + peak memory per stage (ring removal, punch, backfill,
+  flatten, ΔPDF FFT, back-FFT consistency check).
+- **Hunt duplicated computation.** Suspected redundancy to confirm:
+  - the back-FFT consistency check (stage 6) re-deriving quantities the forward
+    ΔPDF (stage 5) already computed (window, padded grid, UB-derived axes);
+  - per-H-plane ring fits recomputing shared `|Q|`/shell geometry every slice;
+  - Bragg masks / `|Q|` grids / metric `g = UBᵀUB` rebuilt in multiple stages
+    instead of computed once and threaded through;
+  - the resume cache (`*_ringremoved.h5`, `*_delta_pdf.h5`) reloading or
+    recomputing intermediates that are already on disk.
+- **Cheap structural wins to evaluate:** real-input FFTs (`rfftn`/`irfftn`)
+  where the data is real and centrosymmetric; in-place / dtype-aware array ops to
+  cut peak memory; vectorizing per-slice Python loops; caching the apodization
+  window and real-space axes.
+
+Hard constraint: **byte-for-byte (or within-tolerance) identical results.** Each
+optimization must be guarded by an equivalence test against the current output
+(reuse the Phase 0 golden-master pattern and the `pdf_check` round-trip metric)
+before it is accepted. No change to defaults, masks, or transform recipe.
+
 ## Phase 5 — Release Hygiene  In Progress
 
 Before treating the pipeline as a stable release candidate:
