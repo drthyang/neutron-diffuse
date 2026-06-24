@@ -86,7 +86,7 @@ function histogramCounts(
 }
 
 function histogramBinCount(nPeaks: number): number {
-  return Math.max(8, Math.min(28, Math.ceil(Math.sqrt(nPeaks) * 1.8)));
+  return Math.max(16, Math.min(72, Math.ceil(Math.sqrt(nPeaks) * 3.5)));
 }
 
 function fitGaussianToHistogram(
@@ -416,7 +416,6 @@ function Histogram({ peaks }: { peaks: BraggPeakWidth[] }) {
       yTickFormat={(v) => Math.round(v).toLocaleString()}
     >
       {({ x, y, innerW }) => {
-        const pxBinW = Math.max(1, x(xDomain[0] + binWidth) - x(xDomain[0]));
         const startDrag = (event: PointerEvent<SVGRectElement>) => {
           event.currentTarget.setPointerCapture(event.pointerId);
           setHoveredFit(null);
@@ -453,20 +452,21 @@ function Histogram({ peaks }: { peaks: BraggPeakWidth[] }) {
               onPointerCancel={endDrag}
               onLostPointerCapture={() => setDrag(null)}
             />
-            {bins.map(({ axis, counts }, seriesIndex) => (
+            {bins.map(({ axis, counts }) => (
               <g key={axis.key}>
                 {counts.map((count, i) => {
                   const x0 = x(xDomain[0] + i * binWidth);
+                  const x1 = x(xDomain[0] + (i + 1) * binWidth);
                   const h = y(0) - y(count);
                   return (
                     <rect
                       key={i}
-                      x={x0 + seriesIndex * (pxBinW / 4)}
+                      x={x0}
                       y={y(count)}
-                      width={Math.max(1, pxBinW / 3)}
+                      width={Math.max(1, x1 - x0)}
                       height={h}
                       fill={axis.color}
-                      opacity={0.56}
+                      opacity={0.4}
                     />
                   );
                 })}
