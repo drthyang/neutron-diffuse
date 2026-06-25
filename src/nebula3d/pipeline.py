@@ -42,6 +42,7 @@ from nebula3d.analysis import (
     compute_delta_pdf,
     invert_delta_pdf,
 )
+from nebula3d.analysis.delta_pdf import _q_max_from_axes
 from nebula3d.core import HKLVolume
 from nebula3d.preprocessing import (
     ParametricRingModel,
@@ -145,6 +146,9 @@ def bragg_profile_from_records(
 ) -> dict:
     """Summarise detected Bragg peak ellipsoid widths for review charts."""
     base = remover._fit_base_radii(vol)  # noqa: SLF001 - profile mirrors punch internals
+    n_sigma = max(float(remover.integer_fit_radius_n_sigma), 0.0)
+    steps = tuple(abs(s) for s in remover._steps(vol))  # noqa: SLF001
+    pad_hkl = tuple(0.5 * s for s in steps)  # half-voxel: the punch-width pad floor
     rows = []
     for idx, peak in enumerate(peaks):
         if peak.shape_hkl is not None:
@@ -157,6 +161,30 @@ def bragg_profile_from_records(
             _principal_widths_from_shape(vol, shape)
         )
         widths_hkl, widths_q = _axis_widths_from_shape(vol, shape)
+        # Measured (pad-free, floor-free) per-axis width from a local moment fit.
+        # This is the *data* width that the width histogram should plot; the
+        # ``width_*`` above are punch radii and pile resolution-limited peaks onto
+        # the half-voxel pad / base floor.  ``None`` when the peak is unmeasurable.
+        sigmas = remover.measure_peak_sigmas(vol, tuple(peak.center_hkl))
+        if sigmas is not None:
+            measured_width_hkl = [n_sigma * s for s in sigmas]
+            measured_radii: tuple[float, float, float] = (
+                max(measured_width_hkl[0], 1e-9),
+                max(measured_width_hkl[1], 1e-9),
+                max(measured_width_hkl[2], 1e-9),
+            )
+            _, measured_width_q = _axis_widths_from_shape(
+                vol, _shape_from_radii(measured_radii))
+            # An axis is resolution-limited when its measured width falls below
+            # the half-voxel pad — i.e. the punch radius there is set by the pad,
+            # not the data.  Those are exactly the peaks that form the spike.
+            resolution_limited = [
+                bool(mw < pad) for mw, pad in zip(measured_width_hkl, pad_hkl)
+            ]
+        else:
+            measured_width_hkl = None
+            measured_width_q = None
+            resolution_limited = None
         rows.append({
             "index": idx,
             "source_node_hkl": (
@@ -173,6 +201,9 @@ def bragg_profile_from_records(
             ),
             "width_hkl": widths_hkl,
             "width_q": widths_q,
+            "measured_width_hkl": measured_width_hkl,
+            "measured_width_q": measured_width_q,
+            "resolution_limited": resolution_limited,
             "principal_width_hkl": widths_hkl_principal,
             "principal_width_q": widths_q_principal,
             "principal_directions_hkl": directions,
@@ -642,7 +673,8 @@ def delta_pdf_transform_config(p: DeltaPdfParams) -> str:
 
 
 def write_delta_pdf_h5(dpdf: DeltaPDF, vol: HKLVolume, p: DeltaPdfParams,
-                       source_name: str, out_path: Path) -> None:
+                       source_name: str, out_path: Path,
+                       r_band: tuple[float, float] | None = None) -> None:
     """Write the ΔPDF to the same HDF5 schema the viewers read.
 
     Mirrors ``examples/delta_pdf.py`` (data + x/y/z axes, provenance attrs, and
@@ -663,6 +695,7 @@ def write_delta_pdf_h5(dpdf: DeltaPDF, vol: HKLVolume, p: DeltaPdfParams,
         fh.attrs["source_file"] = source_name
         fh.attrs["crop_hkl"] = _param_string(p.crop_hkl)
         fh.attrs["q_band"] = _param_string(p.q_band)
+        fh.attrs["r_band"] = _param_string(r_band)
         fh.attrs["subtract_smooth_bg"] = _param_string(p.subtract_smooth_bg)
         fh.attrs["gaussian_sigma"] = p.gaussian_sigma
         fh.attrs["zero_pad"] = int(p.zero_pad)
@@ -796,12 +829,17 @@ def consistency_reconstruction(
     for :func:`nebula3d.visualization.extract_slice` — plus the metrics dict.
     """
     vol_c = _crop_hkl(vol, p.crop_hkl)
-    # Voxel |Q| (Å⁻¹) is purely geometric (axes + UB) and independent of the
-    # mask, so compute it once and reuse for the band limit and q_data_max.
-    q_mag_c = vol_c.q_magnitude()
     in_band = np.ones(vol_c.data.shape, dtype=bool)
+    # The full per-voxel |Q| grid is only needed to build the band mask.  When no
+    # |Q| band is requested, skip it entirely and get the q_data_max scalar from
+    # the 8 box corners (exact — |Q| is convex), avoiding a ~48M-voxel meshgrid.
     if q_band is not None:
+        q_mag_c = vol_c.q_magnitude()
         vol_c, in_band = _band_limit_q(vol_c, q_band, q_mag=q_mag_c)
+        q_data_max = float(q_mag_c.max())
+    else:
+        q_data_max = _q_max_from_axes(
+            vol_c.h_axis, vol_c.k_axis, vol_c.l_axis, vol_c.ub_matrix)
     dpdf = compute_delta_pdf(
         vol_c, apodization=p.apodization,  # type: ignore[arg-type]
         gaussian_sigma=p.gaussian_sigma, zero_pad=p.zero_pad,
@@ -830,7 +868,7 @@ def consistency_reconstruction(
     region = recon.mask & np.isfinite(data) & in_band
     metrics, _rows = _consistency_metrics(
         recon.data, data, region, recon.h_axis, h_values)
-    metrics["q_data_max"] = float(q_mag_c.max())
+    metrics["q_data_max"] = q_data_max
     metrics["q_band"] = list(q_band) if q_band else None
     metrics["r_data_max"] = r_data_max
     metrics["r_band"] = list(r_band) if r_band else None

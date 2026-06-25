@@ -10,6 +10,7 @@ from nebula3d.server.consistency import (
     consistency_meta,
     consistency_slice_envelope,
     pdf_input_path,
+    save_reconstruction,
 )
 from nebula3d.server.deps import get_config
 from nebula3d.server.volumes import PLANES
@@ -69,3 +70,23 @@ def slice_(
     body = consistency_slice_envelope(
         path, _band(q_min, q_max), _band(r_min, r_max), panel, plane, value)
     return Response(content=body, media_type="application/octet-stream")
+
+
+@router.post("/{dataset_id}/save")
+def save(
+    dataset_id: str,
+    q_min: float | None = Query(None),
+    q_max: float | None = Query(None),
+    r_min: float | None = Query(None),
+    r_max: float | None = Query(None),
+    cfg: ServerConfig = Depends(get_config),
+) -> dict:
+    """Save the current band-limited 3D-ΔPDF (final processed file) to disk."""
+    path = pdf_input_path(cfg, dataset_id)
+    if path is None:
+        raise HTTPException(
+            404, f"no flattened/backfilled volume for {dataset_id!r}; "
+                 "run the pipeline first")
+    out = save_reconstruction(
+        path, _band(q_min, q_max), _band(r_min, r_max), cfg.processed_dir)
+    return {"saved": True, "path": str(out), "filename": out.name}

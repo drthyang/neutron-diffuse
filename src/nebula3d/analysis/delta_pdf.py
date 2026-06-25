@@ -28,6 +28,12 @@ from nebula3d.core import HKLVolume
 
 Window = Literal["hann", "gaussian", "none"]
 
+#: Threads for the 3D FFTs.  ``-1`` = all cores (scipy.fft / pocketfft).  The
+#: transform is the dominant cost of the Q–R band round trip; multithreading it
+#: is bit-for-bit identical to the single-threaded result (same pocketfft plan,
+#: just split over independent 1-D transforms).
+_FFT_WORKERS = -1
+
 
 @dataclass
 class DeltaPDF:
@@ -250,7 +256,7 @@ def compute_delta_pdf(
     # phase ramp e^{-iπk} → (-1)^k, which flips the sign of real-space features
     # by pixel parity and splits each correlation peak into mixed +/- lobes.
     # The correct centred transform is fftshift(fftn(ifftshift(·))).
-    ft = fftshift(fftn(ifftshift(data)))
+    ft = fftshift(fftn(ifftshift(data), workers=_FFT_WORKERS))
     delta_pdf = np.real(ft)  # take real part (valid for centrosymmetric I(Q))
 
     # Build real-space axes (use possibly-cropped local axes)
@@ -282,10 +288,11 @@ def compute_delta_pdf(
         x_axis, y_axis, z_axis = x_frac, y_frac, z_frac
 
     if q_mag is None:
-        H, K, L = np.meshgrid(h_axis, k_axis, l_axis, indexing="ij")
-        hkl = np.stack([H, K, L], axis=-1)
-        q_mag = np.linalg.norm(hkl @ vol.ub_matrix.T, axis=-1)
-        q_max = float(np.max(q_mag))
+        # max|Q| over the (cropped) grid.  |Q| = ‖UB·hkl‖ is convex, so its
+        # maximum over the axis-aligned hkl box is attained at a corner — and the
+        # grid endpoints ARE those corners.  Evaluating 8 corners is exact and
+        # avoids materialising a full (nh,nk,nl,3) meshgrid just for one scalar.
+        q_max = _q_max_from_axes(h_axis, k_axis, l_axis, vol.ub_matrix)
     else:
         if q_band is not None:
             qmin, qmax_in = q_band
@@ -366,7 +373,7 @@ def invert_delta_pdf(
 
     # Exact inverse of fftshift(fftn(ifftshift(·))).  The stored ΔPDF is real
     # (FT of centrosymmetric I(Q)); ifftn of it is real up to round-off.
-    prep_pad = np.real(fftshift(ifftn(ifftshift(dpdf.data))))
+    prep_pad = np.real(fftshift(ifftn(ifftshift(dpdf.data), workers=_FFT_WORKERS)))
 
     # Strip the symmetric zero-padding → the windowed, mean-subtracted volume.
     sl = tuple(slice(lo, lo + n)
@@ -427,3 +434,26 @@ def _build_window(shape: tuple[int, ...], kind: Window, sigma: float) -> NDArray
 
 def _next_power_of_2(n: int) -> int:
     return 1 if n == 0 else 2 ** int(np.ceil(np.log2(n)))
+
+
+def _q_max_from_axes(
+    h_axis: NDArray[np.float64],
+    k_axis: NDArray[np.float64],
+    l_axis: NDArray[np.float64],
+    ub_matrix: NDArray[np.float64],
+) -> float:
+    """Exact max |Q| (Å⁻¹) over the hkl box spanned by the axes, from 8 corners.
+
+    ``|Q| = ‖UB·hkl‖`` is convex in ``hkl``; its maximum over the axis-aligned
+    box ``[h_axis bounds]×[k]×[l]`` is therefore at a vertex, and the axis
+    endpoints supply those vertices.  Bit-identical to ``q_magnitude().max()``
+    over the regular grid, without the full meshgrid + matmul.
+    """
+    corners = np.array(
+        [(hh, kk, ll)
+         for hh in (h_axis[0], h_axis[-1])
+         for kk in (k_axis[0], k_axis[-1])
+         for ll in (l_axis[0], l_axis[-1])],
+        dtype=np.float64,
+    )
+    return float(np.linalg.norm(corners @ np.asarray(ub_matrix).T, axis=1).max())

@@ -17,7 +17,11 @@ import threading
 from collections import OrderedDict
 from pathlib import Path
 
-from nebula3d.pipeline import DeltaPdfParams, consistency_reconstruction
+from nebula3d.pipeline import (
+    DeltaPdfParams,
+    consistency_reconstruction,
+    write_delta_pdf_h5,
+)
 from nebula3d.server.config import ServerConfig
 from nebula3d.server.datasets import find_dataset
 from nebula3d.server.volumes import PLANES, lattice_constants, load_volume, pack_slice
@@ -100,6 +104,40 @@ def consistency_meta(
         "r_data_max": res["metrics"]["r_data_max"],
         "metrics": res["metrics"],
     }
+
+
+def _band_tag(q_band: tuple[float, float] | None,
+              r_band: tuple[float, float] | None) -> str:
+    """Filename suffix encoding the selected bands (so distinct selections
+    don't overwrite each other); ``full`` when neither band is set."""
+    parts = []
+    if q_band is not None:
+        parts.append(f"q{q_band[0]:g}-{q_band[1]:g}")
+    if r_band is not None:
+        parts.append(f"r{r_band[0]:g}-{r_band[1]:g}")
+    return "_".join(parts) if parts else "full"
+
+
+def save_reconstruction(
+    path: Path, q_band: tuple[float, float] | None,
+    r_band: tuple[float, float] | None, out_dir: Path,
+) -> Path:
+    """Write the band-limited 3D-ΔPDF (the workflow's final product) to HDF5.
+
+    ``res["dpdf"]`` is the cleaned real-space ΔPDF after the selected |Q| band
+    (applied before the forward FFT) and |R| band (masked after) — i.e. exactly
+    what the viewer shows.  Reuses the cached reconstruction, so saving right
+    after viewing recomputes nothing.
+    """
+    res = reconstruction(path, q_band, r_band)
+    vol = load_volume(path)  # cached; supplies UB / lattice for provenance
+    out_dir = Path(out_dir)
+    out_path = out_dir / f"{path.stem}_delta_pdf_{_band_tag(q_band, r_band)}.h5"
+    p = DeltaPdfParams(crop_hkl=None, q_band=q_band)
+    write_delta_pdf_h5(
+        res["dpdf"], vol, p, source_name=path.name, out_path=out_path,
+        r_band=r_band)
+    return out_path
 
 
 def consistency_slice_envelope(

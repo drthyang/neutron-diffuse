@@ -64,8 +64,17 @@ function fmt(v: number): string {
   return v.toFixed(3);
 }
 
-function widthOf(peak: BraggPeakWidth, axis: number): number {
-  return peak.width_q[axis];
+// Width to plot for one axis. Prefer the pad-free *measured* width; fall back to
+// the punch width only for legacy profiles that predate the measured fields.
+// Returns NaN (skipped by every finite-filter downstream) when the peak is
+// unmeasurable, or — with `hideResLimited` — when that axis is resolution-limited
+// (its punch width is set by the half-voxel pad, the source of the width spike).
+function widthOf(peak: BraggPeakWidth, axis: number, hideResLimited = false): number {
+  const measured = peak.measured_width_q;
+  if (measured === undefined) return peak.width_q[axis]; // legacy JSON
+  if (measured === null) return NaN; // measured but unmeasurable -> drop
+  if (hideResLimited && peak.resolution_limited?.[axis]) return NaN;
+  return measured[axis];
 }
 
 function histogramCounts(
@@ -313,9 +322,9 @@ function ChartFrame({
   );
 }
 
-function WidthScatter({ peaks }: { peaks: BraggPeakWidth[] }) {
+function WidthScatter({ peaks, hideResLimited }: { peaks: BraggPeakWidth[]; hideResLimited: boolean }) {
   const xDomain = extent(peaks.map((p) => p.q_abs));
-  const yDomain = extent(peaks.flatMap((p) => AXES.map((a) => widthOf(p, a.key))));
+  const yDomain = extent(peaks.flatMap((p) => AXES.map((a) => widthOf(p, a.key, hideResLimited))));
 
   return (
     <ChartFrame
@@ -330,7 +339,7 @@ function WidthScatter({ peaks }: { peaks: BraggPeakWidth[] }) {
           {AXES.map((axis) => (
             <g key={axis.key}>
               {peaks.map((p) => {
-                const w = widthOf(p, axis.key);
+                const w = widthOf(p, axis.key, hideResLimited);
                 if (!Number.isFinite(p.q_abs) || !Number.isFinite(w)) return null;
                 return (
                   <circle
@@ -351,7 +360,7 @@ function WidthScatter({ peaks }: { peaks: BraggPeakWidth[] }) {
   );
 }
 
-function Histogram({ peaks }: { peaks: BraggPeakWidth[] }) {
+function Histogram({ peaks, hideResLimited }: { peaks: BraggPeakWidth[]; hideResLimited: boolean }) {
   const [hoveredFit, setHoveredFit] = useState<{
     axis: string;
     color: string;
@@ -365,14 +374,14 @@ function Histogram({ peaks }: { peaks: BraggPeakWidth[] }) {
     startX: number;
     currentX: number;
   } | null>(null);
-  const allWidths = peaks.flatMap((p) => AXES.map((a) => widthOf(p, a.key)));
+  const allWidths = peaks.flatMap((p) => AXES.map((a) => widthOf(p, a.key, hideResLimited)));
   const binCount = histogramBinCount(peaks.length);
   const domains = useMemo(
     () => {
       const fullDomain = extent(allWidths, 0.4);
       const fullFits = AXES.map((axis) =>
         fitGaussianToHistogram(
-          peaks.map((p) => widthOf(p, axis.key)),
+          peaks.map((p) => widthOf(p, axis.key, hideResLimited)),
           fullDomain,
           binCount,
         ),
@@ -380,7 +389,7 @@ function Histogram({ peaks }: { peaks: BraggPeakWidth[] }) {
       return initialHistogramDomain(allWidths, fullFits);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [peaks],
+    [peaks, hideResLimited],
   );
   const [xDomain, setXDomain] = useState<[number, number]>(domains.initial);
   useEffect(() => {
@@ -388,7 +397,7 @@ function Histogram({ peaks }: { peaks: BraggPeakWidth[] }) {
   }, [domains.initial]);
   const binWidth = (domains.full[1] - domains.full[0]) / binCount;
   const bins = AXES.map((axis) => {
-    const values = peaks.map((p) => widthOf(p, axis.key));
+    const values = peaks.map((p) => widthOf(p, axis.key, hideResLimited));
     const { counts } = histogramCounts(values, domains.full, binCount);
     const fit = fitGaussianToHistogram(values, domains.full, binCount);
     return { axis, counts, fit };
@@ -595,6 +604,7 @@ export function BraggProfileViewer() {
   const datasetId = useDatasetStore((s) => s.datasetId);
   const setDataset = useDatasetStore((s) => s.setDataset);
   const [integerHklOnly, setIntegerHklOnly] = useState(true);
+  const [hideResLimited, setHideResLimited] = useState(true);
 
   const profileQ = useBraggProfile(datasetId ?? undefined);
   const dataset = datasets.find((d) => d.id === datasetId);
@@ -633,6 +643,16 @@ export function BraggProfileViewer() {
               onChange={(e) => setIntegerHklOnly(e.target.checked)}
             />
             <span>Integer HKL only</span>
+          </label>
+        </Field>
+        <Field label="Width source" grow>
+          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", height: "100%", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={hideResLimited}
+              onChange={(e) => setHideResLimited(e.target.checked)}
+            />
+            <span>Hide resolution-limited</span>
           </label>
         </Field>
       </div>
@@ -679,8 +699,8 @@ export function BraggProfileViewer() {
         <>
           <SummaryRows peaks={peaks} />
           <div className="profile-chart-grid">
-            <WidthScatter peaks={peaks} />
-            <Histogram peaks={peaks} />
+            <WidthScatter peaks={peaks} hideResLimited={hideResLimited} />
+            <Histogram peaks={peaks} hideResLimited={hideResLimited} />
           </div>
           <MetaStrip
             items={[

@@ -7,7 +7,8 @@ import { useEffect, useMemo, useState } from "react";
 
 import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
 
-import { fetchConsistencyMeta, fetchConsistencySlice } from "../api/client";
+import { fetchConsistencyMeta, fetchConsistencySlice, saveConsistencyDpdf } from "../api/client";
+import { PYODIDE_MODE } from "../api/pyodideEngine";
 import { useDatasets } from "../api/hooks";
 import { COLORMAPS, SEQUENTIAL_NAMES, DIVERGING_NAMES, DIVERGING_NAME } from "../colormaps/luts";
 import { SlicePanel } from "../components/SlicePanel";
@@ -95,6 +96,11 @@ export function ConsistencyViewer() {
   const [rBand, setRBand] = useState<{ min: number; max: number } | null>(null);
   const [draftRMin, setDraftRMin] = useState(0);
   const [draftRMax, setDraftRMax] = useState(0);
+
+  // Save the final band-limited 3D-ΔPDF to disk (end of the workflow).
+  const [saveState, setSaveState] = useState<
+    { status: "idle" | "saving" } | { status: "saved"; filename: string } | { status: "error"; message: string }
+  >({ status: "idle" });
 
   const [dpdfFixedAxis, setDpdfFixedAxis] = useState<RealAxis>("Z");
   const dpdfCutIndex = dpdfCuts[dpdfFixedAxis];
@@ -228,6 +234,26 @@ export function ConsistencyViewer() {
   const canApply = draftMax > draftMin;
   const rBandApplied = rBand !== null;
   const canApplyR = draftRMax > draftRMin;
+
+  // Saving reuses the cached reconstruction for the *applied* bands (band/rBand),
+  // i.e. exactly what the panels show — pending draft edits are saved only after
+  // "Apply bounds".
+  const saveDpdf = async () => {
+    if (!datasetId) return;
+    setSaveState({ status: "saving" });
+    try {
+      const res = await saveConsistencyDpdf(
+        datasetId, band?.min, band?.max, rBand?.min, rBand?.max);
+      setSaveState({ status: "saved", filename: res.filename });
+    } catch (e) {
+      setSaveState({ status: "error", message: (e as Error).message });
+    }
+  };
+  // A saved file reflects one band selection; clear the confirmation when the
+  // applied bands (or dataset) change so the message can't go stale.
+  useEffect(() => {
+    setSaveState({ status: "idle" });
+  }, [datasetId, band?.min, band?.max, rBand?.min, rBand?.max]);
 
   return (
     <div className="page-body">
@@ -411,6 +437,36 @@ export function ConsistencyViewer() {
             >
               Full
             </button>
+          </div>
+        </Field>
+        <Field label="Final ΔPDF">
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              title={
+                PYODIDE_MODE
+                  ? "Saving to disk requires the desktop / server app"
+                  : "Save the band-limited 3D-ΔPDF (final processed file) to data/processed"
+              }
+              disabled={
+                !selectedUsable || PYODIDE_MODE ||
+                metaQ.isFetching || saveState.status === "saving"
+              }
+              onClick={saveDpdf}
+            >
+              {saveState.status === "saving" ? "Saving…" : "Save ΔPDF"}
+            </button>
+            {saveState.status === "saved" && (
+              <span className="hint" title={saveState.filename} style={{ color: "var(--ok, #58b06f)" }}>
+                ✓ saved {saveState.filename}
+              </span>
+            )}
+            {saveState.status === "error" && (
+              <span className="hint" style={{ color: "var(--danger, #e66a5c)" }}>
+                {saveState.message}
+              </span>
+            )}
           </div>
         </Field>
       </div>

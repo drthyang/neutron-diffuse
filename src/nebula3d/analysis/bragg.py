@@ -1300,6 +1300,76 @@ class BraggRemover:
         ktan, ltan = -lrad, krad
         return krad, lrad, ktan, ltan
 
+    def measure_peak_sigmas(
+        self, vol: HKLVolume, center_hkl: tuple[float, float, float],
+    ) -> tuple[float, float, float] | None:
+        """Per-axis measured RMS width (rlu) of the peak around ``center_hkl``.
+
+        A *diagnostic-only* moment measurement: it never touches the punch
+        geometry.  A local window (``detect_window_hkl``) is taken about the
+        nearest voxel, the local-median background is subtracted, the peak core
+        is isolated with the same ``integer_fit_threshold_frac`` cut used by the
+        shape fit, and the intensity-weighted second moments give one Gaussian
+        ``sigma`` per HKL axis.  Returns ``None`` when there is no measurable
+        peak (too few valid voxels, or no positive excess), so callers can mark
+        the peak as unmeasured rather than report a spurious width.
+
+        Unlike the punch radii, this carries **no half-voxel pad and no base
+        floor** — it is the raw data width, so a histogram of it shows the true
+        spread instead of piling resolution-limited peaks onto the pad constant.
+        """
+        dh, dk, dl = self._steps(vol)
+        nh, nk, nl = vol.shape
+
+        ih = int(np.argmin(np.abs(vol.h_axis - center_hkl[0])))
+        ik = int(np.argmin(np.abs(vol.k_axis - center_hkl[1])))
+        il = int(np.argmin(np.abs(vol.l_axis - center_hkl[2])))
+        wph = max(1, int(round(self.detect_window_hkl / abs(dh))))
+        wpk = max(1, int(round(self.detect_window_hkl / abs(dk))))
+        wpl = max(1, int(round(self.detect_window_hkl / abs(dl))))
+        hs, he = max(0, ih - wph), min(nh, ih + wph + 1)
+        ks, ke = max(0, ik - wpk), min(nk, ik + wpk + 1)
+        ls, le = max(0, il - wpl), min(nl, il + wpl + 1)
+
+        win = vol.data[hs:he, ks:ke, ls:le]
+        wval = vol.mask[hs:he, ks:ke, ls:le] & np.isfinite(win)
+        if int(wval.sum()) < 3:
+            return None
+        # Background/peak from the valid voxels directly (no NaN-filled copy).
+        vals = win[wval]
+        peak = float(vals.max())
+        local_bg = float(np.median(vals))
+        peak_excess = peak - local_bg
+        if not np.isfinite(peak_excess) or peak_excess <= 0:
+            return None
+
+        excess = np.where(wval, win - local_bg, 0.0)
+        threshold = max(0.0, float(self.integer_fit_threshold_frac)) * peak_excess
+        fit_mask = wval & (excess >= threshold)
+        if int(fit_mask.sum()) < 3:
+            fit_mask = wval & (excess > 0)
+        if int(fit_mask.sum()) < 3:
+            return None
+        weights = np.where(fit_mask, excess, 0.0)
+        wsum = float(weights.sum())
+        if wsum <= 0:
+            return None
+
+        # Weighted moments via separable 1-D marginals — no 3-D coordinate grids.
+        hc = vol.h_axis[hs:he]
+        kc = vol.k_axis[ks:ke]
+        lc = vol.l_axis[ls:le]
+        wh = weights.sum(axis=(1, 2))
+        wk = weights.sum(axis=(0, 2))
+        wl = weights.sum(axis=(0, 1))
+
+        def _sigma(coord: NDArray[np.float64], wmarg: NDArray[np.float64]) -> float:
+            mean = float((wmarg * coord).sum() / wsum)
+            var = float((wmarg * (coord - mean) ** 2).sum() / wsum)
+            return float(np.sqrt(max(var, 0.0)))
+
+        return (_sigma(hc, wh), _sigma(kc, wk), _sigma(lc, wl))
+
     def apply(self, vol: HKLVolume) -> HKLVolume:
         """Return a new volume with detected Bragg peaks masked out."""
         keep = self.build_mask(vol)

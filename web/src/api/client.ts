@@ -165,6 +165,25 @@ export function fetchBraggProfile(datasetId: string): Promise<BraggProfile> {
   return getJSON<BraggProfile>(`/api/bragg/${encodeURIComponent(datasetId)}/profile`);
 }
 
+export async function saveConsistencyDpdf(
+  datasetId: string,
+  qMin?: number,
+  qMax?: number,
+  rMin?: number,
+  rMax?: number,
+): Promise<{ saved: boolean; path: string; filename: string }> {
+  if (PYODIDE_MODE) {
+    throw new Error(
+      "Saving the ΔPDF to disk requires the desktop / server app (not the browser build).",
+    );
+  }
+  const qs = bandParams(qMin, qMax, rMin, rMax);
+  const url = `/api/consistency/${encodeURIComponent(datasetId)}/save${qs ? `?${qs}` : ""}`;
+  const r = await fetch(url, { method: "POST" });
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}: ${url}`);
+  return (await r.json()) as { saved: boolean; path: string; filename: string };
+}
+
 export function fetchConsistencySlice(
   datasetId: string,
   panel: string,

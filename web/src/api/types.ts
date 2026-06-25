@@ -93,6 +93,12 @@ export interface BraggPeakWidth {
   local_background: number | null;
   width_hkl: [number, number, number];
   width_q: [number, number, number];
+  // Pad-free / floor-free measured peak widths from a local moment fit.
+  // null when the peak is unmeasurable (no positive excess / too few voxels).
+  measured_width_hkl?: [number, number, number] | null;
+  measured_width_q?: [number, number, number] | null;
+  // Per-axis flag: measured width below the half-voxel pad (resolution-limited).
+  resolution_limited?: [boolean, boolean, boolean] | null;
   principal_width_hkl?: [number, number, number];
   principal_width_q?: [number, number, number];
   principal_directions_hkl: number[][];
