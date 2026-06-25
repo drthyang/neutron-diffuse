@@ -86,7 +86,7 @@ function histogramCounts(
 }
 
 function histogramBinCount(nPeaks: number): number {
-  return Math.max(16, Math.min(72, Math.ceil(Math.sqrt(nPeaks) * 3.5)));
+  return Math.max(128, Math.min(800, Math.ceil(Math.sqrt(nPeaks) * 40)));
 }
 
 function fitGaussianToHistogram(
@@ -363,7 +363,7 @@ function Histogram({ peaks }: { peaks: BraggPeakWidth[] }) {
   const [drag, setDrag] = useState<{
     pointerId: number;
     startX: number;
-    domain: [number, number];
+    currentX: number;
   } | null>(null);
   const allWidths = peaks.flatMap((p) => AXES.map((a) => widthOf(p, a.key)));
   const binCount = histogramBinCount(peaks.length);
@@ -386,11 +386,11 @@ function Histogram({ peaks }: { peaks: BraggPeakWidth[] }) {
   useEffect(() => {
     setXDomain(domains.initial);
   }, [domains.initial]);
-  const binWidth = (xDomain[1] - xDomain[0]) / binCount;
+  const binWidth = (domains.full[1] - domains.full[0]) / binCount;
   const bins = AXES.map((axis) => {
     const values = peaks.map((p) => widthOf(p, axis.key));
-    const { counts } = histogramCounts(values, xDomain, binCount);
-    const fit = fitGaussianToHistogram(values, xDomain, binCount);
+    const { counts } = histogramCounts(values, domains.full, binCount);
+    const fit = fitGaussianToHistogram(values, domains.full, binCount);
     return { axis, counts, fit };
   });
   const fitMax = Math.max(
@@ -398,8 +398,8 @@ function Histogram({ peaks }: { peaks: BraggPeakWidth[] }) {
     ...bins.flatMap((b) => {
       if (!b.fit) return [0];
       const curve = gaussianCurve(b.fit);
-      return Array.from({ length: 80 }, (_, i) =>
-        curve(xDomain[0] + (i * (xDomain[1] - xDomain[0])) / 79),
+      return Array.from({ length: 400 }, (_, i) =>
+        curve(domains.full[0] + (i * (domains.full[1] - domains.full[0])) / 399),
       );
     }),
   );
@@ -410,34 +410,43 @@ function Histogram({ peaks }: { peaks: BraggPeakWidth[] }) {
       title="Peak-width histogram"
       xLabel="width (Å⁻¹)"
       yLabel="number of peaks"
-      hint="Drag horizontally to inspect tails"
+      hint="Click and drag to select a region to zoom. Double-click to reset."
       xDomain={xDomain}
       yDomain={[0, yMax]}
       yTickFormat={(v) => Math.round(v).toLocaleString()}
     >
       {({ x, y, innerW }) => {
+        const getLocalX = (clientX: number, target: Element) => {
+          const rect = target.getBoundingClientRect();
+          return Math.max(0, Math.min(innerW, clientX - rect.left));
+        };
         const startDrag = (event: PointerEvent<SVGRectElement>) => {
           event.currentTarget.setPointerCapture(event.pointerId);
           setHoveredFit(null);
+          const localX = getLocalX(event.clientX, event.currentTarget);
           setDrag({
             pointerId: event.pointerId,
-            startX: event.clientX,
-            domain: xDomain,
+            startX: localX,
+            currentX: localX,
           });
         };
         const moveDrag = (event: PointerEvent<SVGRectElement>) => {
           if (!drag || drag.pointerId !== event.pointerId) return;
-          const domainWidth = drag.domain[1] - drag.domain[0];
-          const dx = event.clientX - drag.startX;
-          const shift = -(dx / innerW) * domainWidth;
-          setXDomain(clampDomain([
-            drag.domain[0] + shift,
-            drag.domain[1] + shift,
-          ], domains.full));
+          setDrag({ ...drag, currentX: getLocalX(event.clientX, event.currentTarget) });
         };
         const endDrag = (event: PointerEvent<SVGRectElement>) => {
-          if (drag?.pointerId === event.pointerId) setDrag(null);
+          if (!drag || drag.pointerId !== event.pointerId) return;
+          const minX = Math.min(drag.startX, drag.currentX);
+          const maxX = Math.max(drag.startX, drag.currentX);
+          if (maxX - minX > 5) {
+            const domainWidth = xDomain[1] - xDomain[0];
+            const newDomainStart = xDomain[0] + (minX / innerW) * domainWidth;
+            const newDomainEnd = xDomain[0] + (maxX / innerW) * domainWidth;
+            setXDomain(clampDomain([newDomainStart, newDomainEnd], domains.full));
+          }
+          setDrag(null);
         };
+        const resetZoom = () => setXDomain(domains.initial);
         return (
           <>
             <rect
@@ -451,12 +460,32 @@ function Histogram({ peaks }: { peaks: BraggPeakWidth[] }) {
               onPointerUp={endDrag}
               onPointerCancel={endDrag}
               onLostPointerCapture={() => setDrag(null)}
+              onDoubleClick={resetZoom}
             />
+            {drag && Math.abs(drag.currentX - drag.startX) > 2 && (
+              <rect
+                x={PAD.left + Math.min(drag.startX, drag.currentX)}
+                y={PAD.top}
+                width={Math.abs(drag.currentX - drag.startX)}
+                height={SIZE.height - PAD.top - PAD.bottom}
+                fill="var(--accent)"
+                opacity={0.15}
+                stroke="var(--accent)"
+                strokeDasharray="4 2"
+                pointerEvents="none"
+              />
+            )}
             {bins.map(({ axis, counts }) => (
               <g key={axis.key}>
                 {counts.map((count, i) => {
-                  const x0 = x(xDomain[0] + i * binWidth);
-                  const x1 = x(xDomain[0] + (i + 1) * binWidth);
+                  const val0 = domains.full[0] + i * binWidth;
+                  const val1 = domains.full[0] + (i + 1) * binWidth;
+                  if (val1 < xDomain[0] || val0 > xDomain[1]) return null;
+                  
+                  const x0 = Math.max(PAD.left, x(val0));
+                  const x1 = Math.min(PAD.left + innerW, x(val1));
+                  if (x1 <= x0) return null;
+                  
                   const h = y(0) - y(count);
                   return (
                     <rect
@@ -475,8 +504,8 @@ function Histogram({ peaks }: { peaks: BraggPeakWidth[] }) {
             {bins.map(({ axis, fit }) => {
               if (!fit) return null;
               const fitCurve = gaussianCurve(fit);
-              const points = Array.from({ length: 100 }, (_, i) => {
-                const xv = xDomain[0] + (i * (xDomain[1] - xDomain[0])) / 99;
+              const points = Array.from({ length: 500 }, (_, i) => {
+                const xv = xDomain[0] + (i * (xDomain[1] - xDomain[0])) / 499;
                 return `${x(xv).toFixed(2)},${y(fitCurve(xv)).toFixed(2)}`;
               }).join(" ");
               const showTip = (event: MouseEvent<SVGPolylineElement>) => {
@@ -565,10 +594,23 @@ export function BraggProfileViewer() {
 
   const datasetId = useDatasetStore((s) => s.datasetId);
   const setDataset = useDatasetStore((s) => s.setDataset);
+  const [integerHklOnly, setIntegerHklOnly] = useState(true);
+
   const profileQ = useBraggProfile(datasetId ?? undefined);
   const dataset = datasets.find((d) => d.id === datasetId);
   const profile = profileQ.data;
-  const peaks = profile?.peaks ?? [];
+  const rawPeaks = profile?.peaks ?? [];
+  
+  const peaks = useMemo(() => {
+    if (!integerHklOnly) return rawPeaks;
+    return rawPeaks.filter(p => {
+      const [h, k, l] = p.center_hkl;
+      return Math.abs(h - Math.round(h)) < 0.15 &&
+             Math.abs(k - Math.round(k)) < 0.15 &&
+             Math.abs(l - Math.round(l)) < 0.15;
+    });
+  }, [rawPeaks, integerHklOnly]);
+
   const tilted = peaks.filter((p) => p.fit_kind === "tilted").length;
 
   return (
@@ -583,7 +625,16 @@ export function BraggProfileViewer() {
             ))}
           </select>
         </Field>
-
+        <Field label="Peaks to show" grow>
+          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", height: "100%", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={integerHklOnly}
+              onChange={(e) => setIntegerHklOnly(e.target.checked)}
+            />
+            <span>Integer HKL only</span>
+          </label>
+        </Field>
       </div>
 
       {datasetsQ.isLoading && <EmptyState title="Loading datasets..." />}
@@ -611,10 +662,16 @@ export function BraggProfileViewer() {
           hint="Run the Bragg punch stage with peak-shape fitting enabled to create the review profile."
         />
       )}
-      {profile?.has_profile && peaks.length === 0 && (
+      {profile?.has_profile && rawPeaks.length === 0 && (
         <EmptyState
           title="No peaks recorded"
           hint="The punch stage completed, but no Bragg peaks were detected for this dataset."
+        />
+      )}
+      {profile?.has_profile && rawPeaks.length > 0 && peaks.length === 0 && (
+        <EmptyState
+          title="All peaks filtered out"
+          hint="Try disabling the Integer HKL filter to reveal peaks."
         />
       )}
 
