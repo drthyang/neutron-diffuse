@@ -99,6 +99,9 @@ def build_params(req: PipelineRunRequest) -> PipelineParams:
     if sp.punch_fit_covariance is not None:
         p.punch = dataclasses.replace(
             p.punch, integer_fit_covariance=sp.punch_fit_covariance)
+    if sp.punch_fit_unconstrained is not None:
+        p.punch = dataclasses.replace(
+            p.punch, integer_fit_unconstrained=sp.punch_fit_unconstrained)
     if sp.incident_beam_fit_covariance is not None:
         p.punch = dataclasses.replace(
             p.punch, incident_beam_fit_covariance=sp.incident_beam_fit_covariance)

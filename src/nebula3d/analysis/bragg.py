@@ -148,6 +148,10 @@ class BraggRemover:
         If True, estimate per-peak anisotropic HKL radii from weighted second
         moments in the detection window.  The fitted radii are clipped between
         the configured base radii and ``integer_fit_max_radius_hkl``.
+    integer_fit_unconstrained:
+        If True, covariance-fit radii are not clipped to the base/max bounds.
+        Useful for diagnosing the measured Bragg profile, but it can create
+        very small or very large punch ellipsoids on noisy fits.
     integer_fit_threshold_frac:
         Fraction of peak excess above local background used to select voxels for
         the centroid/shape fit.
@@ -241,6 +245,7 @@ class BraggRemover:
     # φ-tail into it as a tangential inflation.  Requires ``integer_optimize_shape``.
     # Default False keeps the diagonal-radii fit + union φ-tail (bit-identical).
     integer_fit_covariance: bool = False
+    integer_fit_unconstrained: bool = False
     integer_fit_threshold_frac: float = 0.35
     integer_fit_radius_n_sigma: float = 2.5
     integer_fit_max_radius_hkl: tuple[float, float, float] | None = None
@@ -396,6 +401,8 @@ class BraggRemover:
         base: tuple[float, ...],
         max_r: tuple[float, ...],
         n_sigma: float,
+        *,
+        constrain: bool = True,
     ) -> NDArray[np.float64]:
         """HKL shape matrix ``A`` from a weighted second-moment covariance.
 
@@ -416,9 +423,11 @@ class BraggRemover:
             v = vecs[:, k]
             pad = 0.5 * float(np.sqrt(np.sum((v * st) ** 2)))
             r = n_sigma * float(np.sqrt(lam[k])) + pad
-            r_floor = float(np.sqrt(np.sum((v * bs) ** 2)))
-            r_ceil = float(np.sqrt(np.sum((v * mx) ** 2)))
-            r = min(max(r, r_floor), r_ceil)
+            if constrain:
+                r_floor = float(np.sqrt(np.sum((v * bs) ** 2)))
+                r_ceil = float(np.sqrt(np.sum((v * mx) ** 2)))
+                r = min(max(r, r_floor), r_ceil)
+            r = max(r, np.finfo(np.float64).eps)
             inv_r2[k] = 1.0 / (r * r)
         return np.asarray(vecs @ np.diag(inv_r2) @ vecs.T, dtype=np.float64)
 
@@ -770,7 +779,14 @@ class BraggRemover:
             for i in range(3):
                 for j in range(i, 3):
                     cov[i, j] = cov[j, i] = float((weights * d[i] * d[j]).sum() / wsum)
-            shape = self._shape_from_covariance(cov, steps, base, max_r, n_sigma)
+            shape = self._shape_from_covariance(
+                cov,
+                steps,
+                base,
+                max_r,
+                n_sigma,
+                constrain=not self.integer_fit_unconstrained,
+            )
             return center, None, shape
 
         dh, dk, dl = steps

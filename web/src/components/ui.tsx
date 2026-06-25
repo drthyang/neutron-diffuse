@@ -190,17 +190,20 @@ export function RangeSlider({
 export function Switch({
   label,
   checked,
+  disabled = false,
   onChange,
 }: {
   label: ReactNode;
   checked: boolean;
+  disabled?: boolean;
   onChange: (b: boolean) => void;
 }) {
   return (
-    <label className="switch">
+    <label className={`switch${disabled ? " disabled" : ""}`}>
       <input
         type="checkbox"
         checked={checked}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
       />
       <span className="switch-track" />

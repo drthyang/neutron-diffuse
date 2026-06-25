@@ -518,10 +518,16 @@ def test_build_params_qspace_punch_overrides():
 
     # Phase 3 covariance-fit toggle
     cov = build_params(PipelineRunRequest(
-        dataset_id="x", params=StageParamsIn(punch_fit_covariance=True),
+        dataset_id="x",
+        params=StageParamsIn(
+            punch_fit_covariance=True,
+            punch_fit_unconstrained=True,
+        ),
     )).punch
     assert cov.integer_fit_covariance is True
+    assert cov.integer_fit_unconstrained is True
     assert base.integer_fit_covariance is False
+    assert base.integer_fit_unconstrained is False
 
 
 # ---------------------------------------------------------------------------

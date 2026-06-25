@@ -1004,6 +1004,7 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
       punchQB: st.punchQB,
       punchQC: st.punchQC,
       punchFitCovariance: st.punchFitCovariance,
+      punchFitUnconstrained: st.punchFitUnconstrained,
       punchMargin: st.punchMargin,
       punchPhiTail: st.punchPhiTail,
       incidentBeamQA: st.incidentBeamQA,
@@ -1601,13 +1602,31 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                   <Switch
                     label="Fit tilted ellipsoid (covariance)"
                     checked={s.punchFitCovariance}
-                    onChange={(v) => patch({ punchFitCovariance: v })}
+                    onChange={(v) =>
+                      patch({
+                        punchFitCovariance: v,
+                        punchFitUnconstrained: v ? s.punchFitUnconstrained : false,
+                      })
+                    }
                   />
                   <HelpTip>
                     Fit a tilted 3×3 ellipsoid to each Bragg peak during punching
                     and fold the φ-tail into it. The preview uses the exact UB-derived
                     Q-space floor; the per-peak covariance tilt is fitted from data
                     during the run and is best checked in the punched slices.
+                  </HelpTip>
+                </div>
+                <div className="switch-row">
+                  <Switch
+                    label="Drop fit constraints"
+                    checked={s.punchFitUnconstrained}
+                    disabled={!s.punchFitCovariance}
+                    onChange={(v) => patch({ punchFitUnconstrained: v })}
+                  />
+                  <HelpTip>
+                    Let Bragg covariance-fit radii go below the Q-space floor or
+                    above the max-radius cap. This is useful for profile diagnostics,
+                    but can create unstable punch masks on weak or noisy peaks.
                   </HelpTip>
                 </div>
               </div>

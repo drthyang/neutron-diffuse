@@ -164,6 +164,7 @@ export interface StageParamsIn {
   incident_beam_radius_l?: number;
   incident_beam_margin?: number;
   punch_fit_covariance?: boolean;
+  punch_fit_unconstrained?: boolean;
   incident_beam_fit_covariance?: boolean;
   backfill_method?: string;
   flatten_estimator?: string;

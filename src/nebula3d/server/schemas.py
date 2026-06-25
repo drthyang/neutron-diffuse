@@ -125,6 +125,8 @@ class StageParamsIn(BaseModel):
     incident_beam_margin: float | None = None
     # Phase 3: fit a tilted 3×3 resolution ellipsoid (covariance) per Bragg peak
     punch_fit_covariance: bool | None = None
+    # Experimental diagnostic: do not floor/cap Bragg covariance-fit radii.
+    punch_fit_unconstrained: bool | None = None
     # Fit a tilted covariance ellipsoid to the direct-beam remnant at the origin
     incident_beam_fit_covariance: bool | None = None
     backfill_method: str | None = None

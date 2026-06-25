@@ -536,6 +536,10 @@ input[type="range"]::-moz-range-track {
   user-select: none;
   padding-bottom: 4px;
 }
+.switch.disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
 .switch input {
   position: absolute;
   opacity: 0;

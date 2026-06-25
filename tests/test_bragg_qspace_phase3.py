@@ -42,6 +42,29 @@ def test_shape_from_covariance_diagonal_reduces_to_radii():
     np.testing.assert_allclose(a, np.diag(1.0 / r**2), atol=1e-9)
 
 
+def test_shape_from_covariance_can_drop_floor_and_cap():
+    """The diagnostic unconstrained mode reports moment-derived radii instead of
+    clipping them to the configured punch floor/cap."""
+    sig = np.array([0.01, 0.02, 0.03])
+    cov = np.diag(sig**2)
+    floor = (0.20, 0.20, 0.20)
+    cap = (0.25, 0.25, 0.25)
+    constrained = BraggRemover._shape_from_covariance(
+        cov, _STEPS, floor, cap, _NSIG)
+    unconstrained = BraggRemover._shape_from_covariance(
+        cov, _STEPS, floor, cap, _NSIG, constrain=False)
+
+    constrained_r = np.sqrt(np.diag(np.linalg.inv(constrained)))
+    unconstrained_r = np.sqrt(np.diag(np.linalg.inv(unconstrained)))
+    np.testing.assert_allclose(constrained_r, floor, atol=1e-9)
+    np.testing.assert_allclose(
+        unconstrained_r,
+        _NSIG * sig + 0.5 * np.array(_STEPS),
+        atol=1e-9,
+    )
+    assert np.all(unconstrained_r < constrained_r)
+
+
 def test_shape_from_covariance_tilted_follows_orientation():
     """An off-diagonal covariance elongated along the K=L diagonal yields a shape
     whose long axis is that diagonal (H-component ≈ 0, |k| ≈ |l|)."""
