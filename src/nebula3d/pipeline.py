@@ -24,6 +24,7 @@ and the per-stage glue (build the model/params, call it, write the output).
 
 from __future__ import annotations
 
+import concurrent.futures
 import dataclasses
 import json
 from collections.abc import Callable, Sequence
@@ -414,71 +415,87 @@ def remove_rings(vol: HKLVolume, params: RingParams | None = None, *,
               f"confirmed {ring_centers.size} ring shells across "
               f"{cfg.axis_name} (amp cap {p.ring_amp_cap}×)")
 
-    model: PatchedRadialRingModel | ParametricRingModel
-    if p.ring_model.strip().lower() == "parametric":
-        model = ParametricRingModel(
-            plane=cfg.plane,
-            q_step=p.q_step,
-            n_fourier=p.n_fourier,
-            profile_method=p.profile_method,
-            texture_ridge=p.texture_ridge,
-            ring_width=p.ring_width,
-            eta0=p.ring_eta0,
-            radial_mode=p.ring_radial_mode,
-            roll_step=p.ring_roll_step,
-            allowed_ring_centers=ring_centers,
-            allowed_ring_halfwidths=ring_halfwidths,
-            allowed_ring_ceilings=ring_ceilings,
-        )
-    else:
-        model = PatchedRadialRingModel(
-            plane=cfg.plane,
-            q_step=p.q_step,
-            n_patches=p.n_patches,
-            n_fourier=p.n_fourier,
-            profile_method=p.profile_method,
-            texture_q_smooth=p.texture_q_smooth,
-            texture_ridge=p.texture_ridge,
-            allowed_ring_centers=ring_centers,
-            allowed_ring_halfwidths=ring_halfwidths,
-            allowed_ring_ceilings=ring_ceilings,
-        )
+    def make_model() -> PatchedRadialRingModel | ParametricRingModel:
+        if p.ring_model.strip().lower() == "parametric":
+            return ParametricRingModel(
+                plane=cfg.plane,
+                q_step=p.q_step,
+                n_fourier=p.n_fourier,
+                profile_method=p.profile_method,
+                texture_ridge=p.texture_ridge,
+                ring_width=p.ring_width,
+                eta0=p.ring_eta0,
+                radial_mode=p.ring_radial_mode,
+                roll_step=p.ring_roll_step,
+                allowed_ring_centers=ring_centers,
+                allowed_ring_halfwidths=ring_halfwidths,
+                allowed_ring_ceilings=ring_ceilings,
+            )
+        else:
+            return PatchedRadialRingModel(
+                plane=cfg.plane,
+                q_step=p.q_step,
+                n_patches=p.n_patches,
+                n_fourier=p.n_fourier,
+                profile_method=p.profile_method,
+                texture_q_smooth=p.texture_q_smooth,
+                texture_ridge=p.texture_ridge,
+                allowed_ring_centers=ring_centers,
+                allowed_ring_halfwidths=ring_halfwidths,
+                allowed_ring_ceilings=ring_ceilings,
+            )
+
+    dummy_model = make_model()
+    min_voxels = dummy_model.min_voxels_per_patch
 
     res_data = np.empty_like(vol.data)
     out_mask = vol.mask.copy()
-    n_skipped = 0
     n = int(axis_values.size)
 
-    for ip in range(n):
+    def process_slice(ip: int) -> tuple[int, np.ndarray, np.ndarray | None, bool, str | None]:
         sl = _slice_volume(vol, cfg, ip)
         valid = sl.mask & np.isfinite(sl.data)
-        if int(valid.sum()) < model.min_voxels_per_patch:
-            _assign_plane(res_data, cfg, ip, _take_plane(sl.data, cfg, 0))
-            n_skipped += 1
-            continue
+        if int(valid.sum()) < min_voxels:
+            return ip, _take_plane(sl.data, cfg, 0), None, True, None
 
         keep = azimuthal_sampling_mask(sl, plane=cfg.plane, min_count_frac=0.25,
                                        q_range=q_range)
         src = dataclasses.replace(sl, mask=keep)
-        _assign_plane(out_mask, cfg, ip, _take_plane(keep, cfg, 0))
+        out_mask_2d = _take_plane(keep, cfg, 0)
 
+        local_model = make_model()
         try:
-            model.fit(src, q_range=q_range)        # caches the per-plane fit
-            _, I_ring = model.subtract(src)         # uses the cached fit
-        except Exception as exc:  # numerical edge case on a plane — leave as-is
-            _assign_plane(res_data, cfg, ip, _take_plane(sl.data, cfg, 0))
-            n_skipped += 1
-            _emit(progress, "rings", "progress", (ip + 1) / n,
-                  f"{cfg.axis_name}[{ip}] fit failed ({exc}); left as-is")
-            continue
+            local_model.fit(src, q_range=q_range)
+            _, I_ring = local_model.subtract(src)
+        except Exception as exc:
+            return ip, _take_plane(sl.data, cfg, 0), out_mask_2d, True, str(exc)
 
         I_ring2d = _take_plane(I_ring, cfg, 0)
         sl_data2d = _take_plane(sl.data, cfg, 0)
-        _assign_plane(res_data, cfg, ip, sl_data2d - I_ring2d)
+        return ip, sl_data2d - I_ring2d, out_mask_2d, False, None
 
-        if ip % 30 == 0 or ip == n - 1:
-            _emit(progress, "rings", "progress", (ip + 1) / n,
-                  f"{cfg.axis_name}[{ip + 1}/{n}]")
+    n_skipped = 0
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = {executor.submit(process_slice, ip): ip for ip in range(n)}
+        
+        done_count = 0
+        for future in concurrent.futures.as_completed(futures):
+            ip, data_2d, mask_2d, skipped, err_msg = future.result()
+            
+            _assign_plane(res_data, cfg, ip, data_2d)
+            if mask_2d is not None:
+                _assign_plane(out_mask, cfg, ip, mask_2d)
+                
+            if skipped:
+                n_skipped += 1
+            if err_msg:
+                _emit(progress, "rings", "progress", (done_count + 1) / n,
+                      f"{cfg.axis_name}[{ip}] fit failed ({err_msg}); left as-is")
+
+            done_count += 1
+            if done_count % 30 == 0 or done_count == n:
+                _emit(progress, "rings", "progress", done_count / n,
+                      f"{cfg.axis_name}[{done_count}/{n}] (parallel)")
 
     out_vol = dataclasses.replace(vol, data=res_data, mask=out_mask)
     _emit(progress, "rings", "done", 1.0,
