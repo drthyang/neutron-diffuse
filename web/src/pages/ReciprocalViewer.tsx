@@ -48,11 +48,13 @@ export function ReciprocalViewer() {
   const fixedAxis = useViewerStore((s) => s.fixedAxis);
   const cutIndex = useViewerStore((s) => s.cutIndex);
   const contrast = useViewerStore((s) => s.contrast);
+  const zoom = useViewerStore((s) => s.zoom);
   const log = useViewerStore((s) => s.log);
   const colormap = useViewerStore((s) => s.colormap);
   const setFixedAxis = useViewerStore((s) => s.setFixedAxis);
   const setCutIndex = useViewerStore((s) => s.setCutIndex);
   const setContrast = useViewerStore((s) => s.setContrast);
+  const setZoom = useViewerStore((s) => s.setZoom);
   const setLog = useViewerStore((s) => s.setLog);
   const setColormap = useViewerStore((s) => s.setColormap);
 
@@ -220,6 +222,16 @@ export function ReciprocalViewer() {
           onChange={setContrast}
         />
 
+        <Slider
+          label="Zoom"
+          readout={`× ${zoom.toFixed(1)}`}
+          min={1}
+          max={10}
+          step={0.5}
+          value={zoom}
+          onChange={setZoom}
+        />
+
         <Switch label="Log scale" checked={log} onChange={setLog} />
 
         <Field label="Colormap">
@@ -269,6 +281,7 @@ export function ReciprocalViewer() {
             latX={latX}
             latY={latY}
             latCut={latCut}
+            zoom={zoom}
           />
         ))}
       </div>

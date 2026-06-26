@@ -3,7 +3,7 @@
 // adjustable |Q| band so you can see which signals come from low- vs high-|Q|
 // data.  data | back-FFT | residual share plane / cut / contrast.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
 
@@ -11,13 +11,14 @@ import { fetchConsistencyMeta, fetchConsistencySlice, saveConsistencyDpdf } from
 import { PYODIDE_MODE } from "../api/pyodideEngine";
 import { useDatasets } from "../api/hooks";
 import { COLORMAPS, SEQUENTIAL_NAMES, DIVERGING_NAMES, DIVERGING_NAME } from "../colormaps/luts";
-import { SlicePanel } from "../components/SlicePanel";
+import { FogConnector } from "../components/FogConnector";
+import { SliceCanvas } from "../components/SliceCanvas";
+import { UnitCellGrid } from "../components/UnitCellGrid";
 import {
   ColormapBar,
   EmptyState,
   Field,
   IconAlert,
-  MetaStrip,
   RangeSlider,
   Segmented,
   Slider,
@@ -60,11 +61,13 @@ export function ConsistencyViewer() {
   const fixedAxis = useViewerStore((s) => s.fixedAxis);
   const cutIndex = useViewerStore((s) => s.cutIndex);
   const contrast = useViewerStore((s) => s.contrast);
+  const zoom = useViewerStore((s) => s.zoom);
   const log = useViewerStore((s) => s.log);
   const colormap = useViewerStore((s) => s.colormap);
   const setFixedAxis = useViewerStore((s) => s.setFixedAxis);
   const setCutIndex = useViewerStore((s) => s.setCutIndex);
   const setContrast = useViewerStore((s) => s.setContrast);
+  const setZoom = useViewerStore((s) => s.setZoom);
   const setLog = useViewerStore((s) => s.setLog);
   const setColormap = useViewerStore((s) => s.setColormap);
 
@@ -103,6 +106,10 @@ export function ConsistencyViewer() {
   >({ status: "idle" });
 
   const [dpdfFixedAxis, setDpdfFixedAxis] = useState<RealAxis>("Z");
+
+  // Back-FFT panel swaps between the reconstruction and the residual (data − recon).
+  const [backView, setBackView] = useState<"recon" | "residual">("recon");
+
   const dpdfCutIndex = dpdfCuts[dpdfFixedAxis];
   const setDpdfCutIndex = (i: number) =>
     setDpdfCuts((c) => ({ ...c, [dpdfFixedAxis]: i }));
@@ -120,14 +127,27 @@ export function ConsistencyViewer() {
   const spanMax = meta ? Math.ceil(meta.q_data_max) : 0;
   const rSpanMax = meta ? Math.ceil(meta.r_data_max) : 0;
 
-  // Initialise the band drafts to the full |Q| span once it is known.
+  // Initialise the draft |Q| / |R| bands to the full span once it is known, and
+  // re-initialise (clearing any applied band) when the dataset changes.  A single
+  // effect keyed on (dataset, spans) — rather than separate "init to full" and
+  // "reset to 0" effects — avoids a race where the two clobber each other and
+  // leave both range-slider knobs stuck at 0: with meta cached the span is known
+  // on mount, so both effects ran in one commit (worsened by StrictMode's
+  // double-invocation) and the reset won.  The ref makes this idempotent, and it
+  // does not depend on the drafts, so the user's own band edits are preserved.
+  const bandInitKey = useRef("");
   useEffect(() => {
-    if (spanMax > 0 && draftMax === 0) setDraftMax(spanMax);
-  }, [spanMax, draftMax]);
-
-  useEffect(() => {
-    if (rSpanMax > 0 && draftRMax === 0) setDraftRMax(rSpanMax);
-  }, [rSpanMax, draftRMax]);
+    if (spanMax <= 0 || rSpanMax <= 0) return;
+    const key = `${datasetId}|${spanMax}|${rSpanMax}`;
+    if (bandInitKey.current === key) return;
+    bandInitKey.current = key;
+    setBand(null);
+    setDraftMin(0);
+    setDraftMax(spanMax);
+    setRBand(null);
+    setDraftRMin(0);
+    setDraftRMax(rSpanMax);
+  }, [datasetId, spanMax, rSpanMax]);
 
   const axisInfo = useMemo(() => {
     if (!meta) return null;
@@ -181,17 +201,6 @@ export function ConsistencyViewer() {
   const dpdfPlane = REAL_AXIS_TO_PLANE[dpdfFixedAxis];
   const seqLut = COLORMAPS[colormap] ?? COLORMAPS.inferno;
   const divLut = COLORMAPS[dpdfColormap] ?? COLORMAPS[DIVERGING_NAME];
-
-  useEffect(() => {
-    // When the global dataset changes (e.g. from Reciprocal Viewer),
-    // we need to reset the bands so they re-calculate limits.
-    setBand(null);
-    setDraftMin(0);
-    setDraftMax(0);
-    setRBand(null);
-    setDraftRMin(0);
-    setDraftRMax(0);
-  }, [datasetId]);
 
   const commitCut = (v: number) => {
     if (!axisInfo || axisInfo.step === 0) return;
@@ -255,10 +264,39 @@ export function ConsistencyViewer() {
     setSaveState({ status: "idle" });
   }, [datasetId, band?.min, band?.max, rBand?.min, rBand?.max]);
 
+  const backResult = backView === "recon" ? sliceResults[1] : sliceResults[2];
+  const consistent = m && Number.isFinite(m.pearson_r) && m.pearson_r >= 0.95;
+
+  // The image area shared by every flow panel: error → message, data → canvas,
+  // otherwise a loading skeleton, with a fetch spinner overlaid.
+  const flowImage = (
+    result: { data?: import("../api/types").Slice; isError?: boolean; error?: unknown; isFetching?: boolean } | undefined,
+    canvas: React.ReactNode,
+    overlay?: React.ReactNode,
+  ) => (
+    <div className="qr-img">
+      {result?.isError ? (
+        <div className="panel-err">{(result.error as Error)?.message}</div>
+      ) : result?.data ? (
+        <>
+          {canvas}
+          {overlay}
+        </>
+      ) : (
+        <div className="skeleton" style={{ width: "100%", height: "100%" }} />
+      )}
+      {(result?.isFetching || metaQ.isFetching) && result?.data && (
+        <span className="spin qr-img-spin" />
+      )}
+    </div>
+  );
+
   return (
-    <div className="page-body">
-      <div className="toolbar">
-        <Field label="Dataset">
+    <div className="page-body qr-page">
+      {/* ── Header: dataset · round-trip · description · apply/full ───────── */}
+      <div className="qr-header">
+        <div className="qr-header-dataset">
+          <span className="qr-eyebrow">Dataset</span>
           <select
             value={datasetId ?? ""}
             onChange={(e) => setDatasetId(e.target.value)}
@@ -269,206 +307,156 @@ export function ConsistencyViewer() {
               </option>
             ))}
           </select>
-        </Field>
+        </div>
 
-        <Field label="Fixed axis">
-          <Segmented
-            options={AXES}
-            value={fixedAxis}
-            onChange={(a) => setFixedAxis(a as FixedAxis)}
-          />
-        </Field>
+        <div className="qr-divider" />
 
-        <Slider
-          grow
-          label={`Cut along ${fixedAxis}`}
-          readout={axisInfo ? undefined : "—"}
-          valueInput={
-            axisInfo
-              ? { value, prefix: `${fixedAxis} =`, suffix: "r.l.u.", onCommit: commitCut }
-              : undefined
-          }
-          min={0}
-          max={axisInfo ? axisInfo.n - 1 : 0}
-          value={idx}
-          disabled={!axisInfo}
-          onChange={setCutIndex}
-        />
+        <div className="qr-roundtrip">
+          <span className="qr-rt qr-rt--q">Q</span>
+          <span className="qr-rt-arrow">→</span>
+          <span className="qr-rt qr-rt--r">R</span>
+          <span className="qr-rt-arrow">→</span>
+          <span className="qr-rt qr-rt--qp">Q′</span>
+        </div>
 
-        <Slider
-          label="Contrast"
-          readout={`× ${contrast.toFixed(1)}`}
-          min={0.1}
-          max={20}
-          step={0.1}
-          value={contrast}
-          onChange={setContrast}
-        />
+        <span className="qr-desc">
+          Band-limited round-trip · reconstruction compared to the input
+        </span>
 
-        <Switch label="Log scale" checked={log} onChange={setLog} />
-
-        <Field label="Colormap">
-          <select value={colormap} onChange={(e) => setColormap(e.target.value)}>
-            {SEQUENTIAL_NAMES.map((name) => (
-              <option key={name} value={name}>{name}</option>
-            ))}
-          </select>
-          <ColormapBar lut={seqLut} />
-        </Field>
+        <div className="qr-header-actions">
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={(!canApply && !canApplyR) || metaQ.isFetching}
+            onClick={() => {
+              setBand({ min: draftMin, max: draftMax });
+              setRBand({ min: draftRMin, max: draftRMax });
+            }}
+          >
+            {metaQ.isFetching ? "Computing…" : "Apply bounds"}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={
+              !bandApplied && draftMin === 0 && draftMax === spanMax &&
+              !rBandApplied && draftRMin === 0 && draftRMax === rSpanMax
+            }
+            onClick={() => {
+              setBand(null);
+              setDraftMin(0);
+              setDraftMax(spanMax);
+              setRBand(null);
+              setDraftRMin(0);
+              setDraftRMax(rSpanMax);
+            }}
+          >
+            Full
+          </button>
+        </div>
       </div>
 
-      <div className="toolbar">
-        <Field label="Fixed axis">
-          <Segmented
-            options={REAL_AXES}
-            value={dpdfFixedAxis}
-            onChange={(a) => setDpdfFixedAxis(a as RealAxis)}
-          />
-        </Field>
-        <Slider
-          grow
-          label={`Cut along ${dpdfFixedAxis}`}
-          readout={dpdfAxisInfo ? undefined : "—"}
-          valueInput={
-            dpdfAxisInfo
-              ? {
-                  value: dpdfValue,
-                  prefix: `${dpdfFixedAxis} =`,
-                  suffix: "Å",
-                  onCommit: (v) => {
-                    if (!dpdfAxisInfo || dpdfAxisInfo.step === 0) return;
-                    const i = Math.round((v - dpdfAxisInfo.min) / dpdfAxisInfo.step);
-                    setDpdfCutIndex(Math.max(0, Math.min(dpdfAxisInfo.n - 1, i)));
-                  },
-                }
-              : undefined
-          }
-          min={0}
-          max={dpdfAxisInfo ? dpdfAxisInfo.n - 1 : 0}
-          value={dpdfIdx}
-          disabled={!dpdfAxisInfo}
-          onChange={setDpdfCutIndex}
-        />
-        <Slider
-          label="Contrast"
-          readout={`× ${dpdfContrast.toFixed(1)}`}
-          min={0.1}
-          max={20}
-          step={0.1}
-          value={dpdfContrast}
-          onChange={setDpdfContrast}
-        />
-        <Switch label="Unit cells" checked={dpdfGridlines} onChange={setDpdfGridlines} />
-        <Slider
-          label="Window"
-          readout={`${windowFull.toFixed(0)} Å`}
-          min={10}
-          max={160}
-          step={2}
-          value={windowFull}
-          onChange={setWindowFull}
-        />
-        <Field label="Colormap">
-          <select value={dpdfColormap} onChange={(e) => setDpdfColormap(e.target.value)}>
-            {DIVERGING_NAMES.map((name) => (
-              <option key={name} value={name}>{name}</option>
-            ))}
-          </select>
-          <ColormapBar lut={divLut} />
-        </Field>
-      </div>
-      
-      <div className="toolbar">
-        <RangeSlider
-          grow
-          label="|Q| band (band-limit the data)"
-          readout={`${draftMin.toFixed(2)} … ${draftMax.toFixed(2)} Å⁻¹`}
-          min={0}
-          max={spanMax || 1}
-          step={0.05}
-          valueMin={draftMin}
-          valueMax={draftMax}
-          disabled={!spanMax}
-          onChange={(lo, hi) => {
-            setDraftMin(lo);
-            setDraftMax(hi);
-          }}
-        />
-        <RangeSlider
-          grow
-          label="|R| band (band-limit back-FFT)"
-          readout={`${draftRMin.toFixed(2)} … ${draftRMax.toFixed(2)} Å`}
-          min={0}
-          max={rSpanMax || 1}
-          step={1}
-          valueMin={draftRMin}
-          valueMax={draftRMax}
-          disabled={!rSpanMax}
-          onChange={(lo, hi) => {
-            setDraftRMin(lo);
-            setDraftRMax(hi);
-          }}
-        />
-        <Field label="Recompute">
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={(!canApply && !canApplyR) || metaQ.isFetching}
-              onClick={() => {
-                setBand({ min: draftMin, max: draftMax });
-                setRBand({ min: draftRMin, max: draftRMax });
-              }}
-            >
-              {metaQ.isFetching ? "Computing…" : "Apply bounds"}
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              disabled={(!bandApplied && draftMin === 0 && draftMax === spanMax) && (!rBandApplied && draftRMin === 0 && draftRMax === rSpanMax)}
-              onClick={() => {
-                setBand(null);
-                setDraftMin(0);
-                setDraftMax(spanMax);
-                setRBand(null);
-                setDraftRMin(0);
-                setDraftRMax(rSpanMax);
-              }}
-            >
-              Full
-            </button>
+      {/* ── Display-control clusters: reciprocal | real-space ────────────── */}
+      <div className="qr-clusters">
+        <div className="qr-cluster">
+          <div className="qr-cluster-head">
+            <span className="qr-cluster-title">
+              Reciprocal display · Data · Back-FFT · Residual
+            </span>
+            <div className="qr-cluster-toggle">
+              <Switch label="Log scale" checked={log} onChange={setLog} />
+            </div>
           </div>
-        </Field>
-        <Field label="Final ΔPDF">
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button
-              type="button"
-              className="btn btn-primary"
-              title={
-                PYODIDE_MODE
-                  ? "Saving to disk requires the desktop / server app"
-                  : "Save the band-limited 3D-ΔPDF (final processed file) to data/processed"
-              }
-              disabled={
-                !selectedUsable || PYODIDE_MODE ||
-                metaQ.isFetching || saveState.status === "saving"
-              }
-              onClick={saveDpdf}
-            >
-              {saveState.status === "saving" ? "Saving…" : "Save ΔPDF"}
-            </button>
-            {saveState.status === "saved" && (
-              <span className="hint" title={saveState.filename} style={{ color: "var(--ok, #58b06f)" }}>
-                ✓ saved {saveState.filename}
-              </span>
-            )}
-            {saveState.status === "error" && (
-              <span className="hint" style={{ color: "var(--danger, #e66a5c)" }}>
-                {saveState.message}
-              </span>
-            )}
+          <div className="qr-cluster-controls">
+            <Field label="Axis">
+              <Segmented
+                options={AXES}
+                value={fixedAxis}
+                onChange={(a) => setFixedAxis(a as FixedAxis)}
+              />
+            </Field>
+            <div className="qr-cluster-slider">
+              <Slider
+                label="Contrast"
+                readout={`× ${contrast.toFixed(1)}`}
+                min={0.1}
+                max={20}
+                step={0.1}
+                value={contrast}
+                onChange={setContrast}
+              />
+            </div>
+            <div className="qr-cluster-slider">
+              <Slider
+                label="Zoom"
+                readout={`× ${zoom.toFixed(1)}`}
+                min={1}
+                max={10}
+                step={0.5}
+                value={zoom}
+                onChange={setZoom}
+              />
+            </div>
           </div>
-        </Field>
+          <div className="qr-cluster-cmap">
+            <span className="field-label">Colormap</span>
+            <select value={colormap} onChange={(e) => setColormap(e.target.value)}>
+              {SEQUENTIAL_NAMES.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+            <ColormapBar lut={seqLut} />
+          </div>
+        </div>
+
+        <div className="qr-cluster">
+          <div className="qr-cluster-head">
+            <span className="qr-cluster-title">Real-space display · 3D-ΔPDF</span>
+            <div className="qr-cluster-toggle">
+              <Switch label="Unit cells" checked={dpdfGridlines} onChange={setDpdfGridlines} />
+            </div>
+          </div>
+          <div className="qr-cluster-controls">
+            <Field label="Axis">
+              <Segmented
+                options={REAL_AXES}
+                value={dpdfFixedAxis}
+                onChange={(a) => setDpdfFixedAxis(a as RealAxis)}
+              />
+            </Field>
+            <div className="qr-cluster-slider">
+              <Slider
+                label="Contrast"
+                readout={`× ${dpdfContrast.toFixed(1)}`}
+                min={0.1}
+                max={20}
+                step={0.1}
+                value={dpdfContrast}
+                onChange={setDpdfContrast}
+              />
+            </div>
+            <div className="qr-cluster-slider">
+              <Slider
+                label="Window"
+                readout={`${windowFull.toFixed(0)} Å`}
+                min={10}
+                max={160}
+                step={2}
+                value={windowFull}
+                onChange={setWindowFull}
+              />
+            </div>
+          </div>
+          <div className="qr-cluster-cmap">
+            <span className="field-label">Colormap</span>
+            <select value={dpdfColormap} onChange={(e) => setDpdfColormap(e.target.value)}>
+              {DIVERGING_NAMES.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+            <ColormapBar lut={divLut} />
+          </div>
+        </div>
       </div>
 
       {datasetsQ.isError && (
@@ -500,82 +488,243 @@ export function ConsistencyViewer() {
         />
       )}
 
+      {/* ── Slice flow row: Data → fwd FFT → ΔPDF → back FFT → Back-FFT ──── */}
       {selectedUsable && (
-      <div className="panel-grid">
-        {PANELS.map((p, i) => {
-          const isData = p.key === "data";
-          return (
-            <SlicePanel
-              key={p.key}
-              title={p.title}
-              data={sliceResults[i]?.data}
-              isFetching={sliceResults[i]?.isFetching || metaQ.isFetching}
-              isError={sliceResults[i]?.isError}
-              error={sliceResults[i]?.error as Error | null}
-              lut={seqLut}
-              vmax={p.key === "residual" ? residScale : seqVmax}
-              vmin={0}
-              log={p.key === "residual" ? false : log}
-              bands={isData ? [draftMin, draftMax] : undefined}
-              cutDistance={isData ? value : undefined}
-              reciprocalAxes
-              latX={latX}
-              latY={latY}
-              latCut={latCut}
-            />
-          );
-        })}
-        <SlicePanel
-          title="3D-ΔPDF (Real Space)"
-          data={dpdfSliceResult.data}
-          isFetching={dpdfSliceResult.isFetching || metaQ.isFetching}
-          isError={dpdfSliceResult.isError}
-          error={dpdfSliceResult.error as Error | null}
-          lut={divLut}
-          vmax={dpdfVmax}
-          vmin={0}
-          log={false}
-          diverging={true}
-          bands={[draftRMin, draftRMax]}
-          cutDistance={dpdfValue}
-          latX={dpdfLatX}
-          latY={dpdfLatY}
-          windowA={windowFull / 2}
-          gridlines={dpdfGridlines}
-        />
-      </div>
-      )}
+        <div className="qr-flow-row">
+          {/* Stage 1 — Data D(Q) */}
+          <div className="qr-panel">
+            <div className="qr-panel-head">
+              <span className="qr-panel-titlegroup">
+                <span className="qr-rt-badge qr-rt--q">Q</span>
+                <span className="qr-panel-title">Data</span>
+              </span>
+              <span className="qr-panel-tag">recip</span>
+            </div>
+            {flowImage(
+              sliceResults[0],
+              <SliceCanvas
+                slice={sliceResults[0]!.data!}
+                lut={seqLut}
+                vmax={seqVmax}
+                vmin={0}
+                log={log}
+                fit
+                zoom={zoom}
+                bands={[draftMin, draftMax]}
+                cutDistance={value}
+                reciprocalAxes
+                latX={latX}
+                latY={latY}
+                latCut={latCut}
+              />,
+            )}
+            <div className="qr-foot">
+              <div className="qr-foot-cut">
+                <Slider
+                  label={`Cut ${fixedAxis}`}
+                  readout={axisInfo ? undefined : "—"}
+                  valueInput={
+                    axisInfo
+                      ? { value, prefix: `${fixedAxis} =`, suffix: "r.l.u.", onCommit: commitCut }
+                      : undefined
+                  }
+                  min={0}
+                  max={axisInfo ? axisInfo.n - 1 : 0}
+                  value={idx}
+                  disabled={!axisInfo}
+                  onChange={setCutIndex}
+                />
+              </div>
+              <div className="qr-foot-band">
+                <RangeSlider
+                  label="|Q| band"
+                  readout={`${draftMin.toFixed(2)} … ${draftMax.toFixed(2)} Å⁻¹`}
+                  min={0}
+                  max={spanMax || 1}
+                  step={0.05}
+                  valueMin={draftMin}
+                  valueMax={draftMax}
+                  disabled={!spanMax}
+                  onChange={(lo, hi) => {
+                    setDraftMin(lo);
+                    setDraftMax(hi);
+                  }}
+                />
+              </div>
+            </div>
+          </div>
 
-      {selectedUsable && m && (
-        <MetaStrip
-          items={[
-            {
-              key: "Pearson r",
-              value: Number.isFinite(m.pearson_r) ? m.pearson_r.toFixed(5) : "—",
-            },
-            { key: "Normalised RMS", value: m.normalized_rms.toExponential(2) },
-            {
-              key: "|Q| band",
-              value: m.q_band
-                ? `${m.q_band[0].toFixed(2)} … ${m.q_band[1].toFixed(2)} Å⁻¹`
-                : `full (0 … ${spanMax.toFixed(2)})`,
-            },
-            {
-              key: "|R| band",
-              value: m.r_band
-                ? `${m.r_band[0].toFixed(2)} … ${m.r_band[1].toFixed(2)} Å`
-                : `full (0 … ${rSpanMax.toFixed(2)})`,
-            },
-            {
-              key: "per-plane r",
-              value: Object.entries(m.per_plane_r)
-                .map(([h, r]) => `H${h}: ${Number(r).toFixed(3)}`)
-                .join("   "),
-            },
-            { key: "Voxels", value: m.n_voxels.toLocaleString() },
-            { key: "Plane", value: plane },
-          ]}
-        />
+          {/* Forward-FFT connector — drifting nebula fog conveys Q → R */}
+          <FogConnector />
+
+          {/* Stage 2 — ΔPDF g(R) */}
+          <div className="qr-panel qr-panel--hi">
+            <div className="qr-panel-head">
+              <span className="qr-panel-titlegroup">
+                <span className="qr-rt-badge qr-rt--r">R</span>
+                <span className="qr-panel-title">
+                  3D-ΔPDF <span className="qr-panel-tag">· real</span>
+                </span>
+              </span>
+              <div className="qr-panel-head-actions">
+                {saveState.status === "saved" && (
+                  <span className="qr-saved" title={saveState.filename}>
+                    <span className="qr-dot" /> saved
+                  </span>
+                )}
+                {saveState.status === "error" && (
+                  <span className="qr-saved qr-saved--err" title={saveState.message}>
+                    save failed
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-primary qr-save-btn"
+                  title={
+                    PYODIDE_MODE
+                      ? "Saving to disk requires the desktop / server app"
+                      : "Save the band-limited 3D-ΔPDF (final processed file) to data/processed"
+                  }
+                  disabled={
+                    !selectedUsable || PYODIDE_MODE ||
+                    metaQ.isFetching || saveState.status === "saving"
+                  }
+                  onClick={saveDpdf}
+                >
+                  ↓ {saveState.status === "saving" ? "Saving…" : "Save ΔPDF"}
+                </button>
+              </div>
+            </div>
+            {flowImage(
+              dpdfSliceResult,
+              <SliceCanvas
+                slice={dpdfSliceResult.data!}
+                lut={divLut}
+                vmax={dpdfVmax}
+                vmin={0}
+                log={false}
+                diverging
+                bands={[draftRMin, draftRMax]}
+                cutDistance={dpdfValue}
+                latX={dpdfLatX}
+                latY={dpdfLatY}
+                windowA={windowFull / 2}
+              />,
+              dpdfGridlines ? (
+                <UnitCellGrid half={windowFull / 2} latX={dpdfLatX ?? null} latY={dpdfLatY ?? null} />
+              ) : undefined,
+            )}
+            <div className="qr-foot">
+              <div className="qr-foot-cut">
+                <Slider
+                  label={`Cut ${dpdfFixedAxis}`}
+                  readout={dpdfAxisInfo ? undefined : "—"}
+                  valueInput={
+                    dpdfAxisInfo
+                      ? {
+                          value: dpdfValue,
+                          prefix: `${dpdfFixedAxis} =`,
+                          suffix: "Å",
+                          onCommit: (v) => {
+                            if (!dpdfAxisInfo || dpdfAxisInfo.step === 0) return;
+                            const i = Math.round((v - dpdfAxisInfo.min) / dpdfAxisInfo.step);
+                            setDpdfCutIndex(Math.max(0, Math.min(dpdfAxisInfo.n - 1, i)));
+                          },
+                        }
+                      : undefined
+                  }
+                  min={0}
+                  max={dpdfAxisInfo ? dpdfAxisInfo.n - 1 : 0}
+                  value={dpdfIdx}
+                  disabled={!dpdfAxisInfo}
+                  onChange={setDpdfCutIndex}
+                />
+              </div>
+              <div className="qr-foot-band">
+                <RangeSlider
+                  label="|R| band"
+                  readout={`${draftRMin.toFixed(2)} … ${draftRMax.toFixed(2)} Å`}
+                  min={0}
+                  max={rSpanMax || 1}
+                  step={1}
+                  valueMin={draftRMin}
+                  valueMax={draftRMax}
+                  disabled={!rSpanMax}
+                  onChange={(lo, hi) => {
+                    setDraftRMin(lo);
+                    setDraftRMax(hi);
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Back-FFT connector — drifting nebula fog conveys R → Q′ */}
+          <FogConnector />
+
+          {/* Stage 3 — Back-FFT reconstruction / residual */}
+          <div className="qr-panel">
+            <div className="qr-panel-head">
+              <span className="qr-panel-titlegroup">
+                <span className="qr-rt-badge qr-rt--qp">Q′</span>
+                <span className="qr-panel-title">Back-FFT</span>
+              </span>
+              <Segmented
+                options={["Recon", "Residual"]}
+                value={backView === "recon" ? "Recon" : "Residual"}
+                onChange={(v) => setBackView(v === "Recon" ? "recon" : "residual")}
+              />
+            </div>
+            {flowImage(
+              backResult,
+              <SliceCanvas
+                slice={backResult!.data!}
+                lut={seqLut}
+                vmax={backView === "recon" ? seqVmax : residScale}
+                vmin={0}
+                log={backView === "recon" ? log : false}
+                fit
+                zoom={zoom}
+                reciprocalAxes
+                latX={latX}
+                latY={latY}
+                latCut={latCut}
+              />,
+            )}
+            <div className="qr-foot qr-foot--metrics">
+              {backView === "recon" ? (
+                <>
+                  <div className="qr-metric-row">
+                    {consistent && (
+                      <span className="qr-verdict">
+                        <span className="qr-dot" /> CONSISTENT
+                      </span>
+                    )}
+                    <span className="qr-metric-r">
+                      r = {m && Number.isFinite(m.pearson_r) ? m.pearson_r.toFixed(5) : "—"}
+                    </span>
+                    <span className="qr-metric-rms">
+                      RMS {m ? m.normalized_rms.toExponential(2) : "—"}
+                    </span>
+                  </div>
+                  <span className="qr-foot-caption">
+                    shares the {fixedAxis} cut &amp; display of the Data panel
+                  </span>
+                </>
+              ) : (
+                <>
+                  <div className="qr-metric-row">
+                    <span className="qr-metric-r">D − D′</span>
+                    <span className="qr-metric-rms">log scale off</span>
+                  </div>
+                  <span className="qr-foot-caption">
+                    data minus reconstruction · same {fixedAxis} cut
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

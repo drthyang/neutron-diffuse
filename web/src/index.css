@@ -13,6 +13,7 @@
   /* hairlines */
   --border: #252c36;
   --border-strong: #333d4a;
+  --border-subtle: #1c2230;
 
   /* text */
   --text: #e8ebf0;
@@ -2632,4 +2633,401 @@ input[type="range"]::-moz-range-track {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 460px;
+}
+
+/* ---------------------------------------------------------------------------
+   Q–R Band Transform — round-trip flow (ConsistencyViewer)
+   --------------------------------------------------------------------------- */
+
+.qr-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* — header bar — */
+.qr-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 18px;
+  background: linear-gradient(180deg, var(--surface), var(--bg-raised));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.qr-header-dataset {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.qr-eyebrow {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.qr-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--border);
+  flex: none;
+}
+/* round-trip flow: plain colored monospace letters, thin muted arrows */
+.qr-roundtrip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 600;
+}
+.qr-rt-arrow {
+  font-size: 13px;
+  font-weight: 300;
+  color: #56627a;
+}
+.qr-rt--q {
+  color: #f1a73a;
+}
+.qr-rt--r {
+  color: var(--accent-hi);
+}
+.qr-rt--qp {
+  color: var(--green);
+}
+/* the same Q/R/Q′ identity as a boxed badge in each panel header */
+.qr-rt-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  flex: none;
+}
+.qr-rt-badge.qr-rt--q {
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.42);
+}
+.qr-rt-badge.qr-rt--r {
+  background: rgba(79, 143, 247, 0.16);
+  border-color: rgba(79, 143, 247, 0.42);
+}
+.qr-rt-badge.qr-rt--qp {
+  background: rgba(52, 201, 142, 0.15);
+  border-color: rgba(52, 201, 142, 0.42);
+}
+.qr-desc {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: #7a8494;
+}
+.qr-header-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* — display-control clusters — */
+.qr-clusters {
+  display: flex;
+  gap: 14px;
+}
+.qr-cluster {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 13px 15px;
+}
+.qr-cluster-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 13px;
+}
+.qr-cluster-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+/* toggle in the cluster head: label sits to the left of the switch */
+.qr-cluster-toggle .switch {
+  flex-direction: row-reverse;
+  padding-bottom: 0;
+}
+.qr-cluster-toggle .switch-label {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.qr-cluster-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px 22px;
+  margin-bottom: 13px;
+}
+.qr-cluster-slider {
+  width: 140px;
+}
+.qr-cluster-cmap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.qr-cluster-cmap select {
+  padding: 5px 26px 5px 10px;
+  font-size: 12.5px;
+}
+.qr-cluster-cmap .cmap-bar {
+  flex: 1 1 0;
+  min-width: 0; /* let the canvas shrink to fit instead of forcing overflow */
+  max-width: none;
+  height: 8px;
+}
+
+/* — slice flow row — */
+.qr-flow-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.qr-panel {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.qr-panel--hi {
+  border-color: var(--border-strong);
+  box-shadow: 0 0 0 1px rgba(79, 143, 247, 0.15);
+}
+.qr-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 38px;
+  padding: 6px 11px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.qr-panel-titlegroup {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.qr-panel-title {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--text);
+}
+.qr-panel-tag {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.qr-panel-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.qr-save-btn {
+  padding: 5px 11px;
+  font-size: 11px;
+  border-radius: 6px;
+}
+.qr-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--green);
+  white-space: nowrap;
+}
+.qr-saved--err {
+  color: var(--red);
+}
+.qr-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px rgba(52, 201, 142, 0.6);
+}
+
+/* image area — square, holds the plotted canvas (letterboxed) */
+.qr-img {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.qr-img > div[style] {
+  max-width: 100%;
+  max-height: 100%;
+}
+.qr-img .panel-err {
+  padding: 12px;
+}
+.qr-img-spin {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+/* per-panel footer holding the cut + band sliders */
+.qr-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 11px;
+  margin-top: auto;
+  background: var(--bg-raised);
+  border-top: 1px solid var(--border);
+}
+.qr-foot .field-label {
+  font-size: 10px;
+}
+.qr-foot-band {
+  padding-top: 7px;
+  border-top: 1px solid var(--border-subtle);
+}
+.qr-foot-band .field-label {
+  color: var(--accent-hi);
+}
+
+/* Back-FFT metrics footer */
+.qr-foot--metrics {
+  gap: 7px;
+}
+.qr-metric-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.qr-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--green-soft);
+  border: 1px solid rgba(52, 201, 142, 0.4);
+  color: var(--green);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.qr-metric-r {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+.qr-metric-rms {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.qr-foot-caption {
+  padding-top: 6px;
+  border-top: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  line-height: 1.4;
+  color: var(--text-3);
+}
+
+/* — flow arrows — */
+/* drifting "nebula" connector between the flow panels (see FogConnector.tsx) */
+.qr-fog {
+  flex: 0 0 50px;
+  align-self: stretch;
+  position: relative;
+  overflow: hidden;
+}
+.qr-fog-puff,
+.qr-fog-spark {
+  position: absolute;
+  left: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  animation-name: dustFlow;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+.qr-fog-spark {
+  box-shadow: 0 0 3px rgba(160, 190, 255, 0.55);
+}
+@keyframes dustFlow {
+  0% {
+    transform: translateX(-14px);
+    opacity: 0;
+  }
+  14% {
+    opacity: 1;
+  }
+  82% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(64px);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .qr-fog * {
+    display: none; /* the connector stays as a quiet gap when motion is reduced */
+  }
+}
+
+/* Back-FFT Recon/Residual segmented sits a touch smaller in the head */
+.qr-panel-head .segmented button {
+  padding: 3px 10px;
+  font-size: 10px;
+}
+
+@media (max-width: 980px) {
+  .qr-clusters,
+  .qr-flow-row {
+    flex-wrap: wrap;
+  }
+  .qr-fog {
+    flex-basis: 100%;
+    height: 34px;
+    align-self: auto;
+  }
 }

@@ -30,6 +30,9 @@ interface Props {
   windowA?: number; // half-extent in Å — crop to a square physical window
   windowX?: number; // half-extent along x in the slice's coordinate units
   windowY?: number; // half-extent along y in the slice's coordinate units
+  zoom?: number; // ≥1 — crop symmetrically about the origin by this factor,
+  //              keeping the slice's physical aspect (no square box).  Ignored
+  //              when an explicit window* is given.
   size?: number; // square display size in px (used with windowA)
   bands?: [number, number]; // [min, max] band for circle overlays
   cutDistance?: number; // distance from origin for intersection
@@ -51,6 +54,7 @@ export function SliceCanvas({
   windowA,
   windowX,
   windowY,
+  zoom,
   size,
   bands,
   cutDistance,
@@ -66,15 +70,23 @@ export function SliceCanvas({
   let ix1 = nx - 1;
   let iy0 = 0;
   let iy1 = ny - 1;
+  // Explicit windows drive the square ΔPDF display path below; `zoom` only crops
+  // (symmetrically about the origin) and leaves the physical aspect untouched, so
+  // it derives a crop window but is excluded from `xWindow`/`yWindow`.
   const xWindow = windowX ?? windowA;
   const yWindow = windowY ?? windowA;
-  if (xWindow != null) {
-    while (ix0 < ix1 && xs[ix0] < -xWindow) ix0++;
-    while (ix1 > ix0 && xs[ix1] > xWindow) ix1--;
+  const zoomFactor = zoom != null && zoom > 1 ? zoom : 1;
+  const xFull = Math.max(Math.abs(xs[0]), Math.abs(xs[nx - 1]));
+  const yFull = Math.max(Math.abs(ys[0]), Math.abs(ys[ny - 1]));
+  const xCrop = xWindow ?? (zoomFactor > 1 ? xFull / zoomFactor : null);
+  const yCrop = yWindow ?? (zoomFactor > 1 ? yFull / zoomFactor : null);
+  if (xCrop != null) {
+    while (ix0 < ix1 && xs[ix0] < -xCrop) ix0++;
+    while (ix1 > ix0 && xs[ix1] > xCrop) ix1--;
   }
-  if (yWindow != null) {
-    while (iy0 < iy1 && ys[iy0] < -yWindow) iy0++;
-    while (iy1 > iy0 && ys[iy1] > yWindow) iy1--;
+  if (yCrop != null) {
+    while (iy0 < iy1 && ys[iy0] < -yCrop) iy0++;
+    while (iy1 > iy0 && ys[iy1] > yCrop) iy1--;
   }
   const cw = ix1 - ix0 + 1;
   const ch_raw = iy1 - iy0 + 1;
@@ -133,7 +145,7 @@ export function SliceCanvas({
       }
     }
     ctx.putImageData(img, 0, 0);
-  }, [slice, lut, vmax, vmin, log, diverging, nx, ny, xWindow, yWindow, cw, ch, ch_raw, ix0, ix1, iy0, iy1, xs, ys]);
+  }, [slice, lut, vmax, vmin, log, diverging, nx, ny, xCrop, yCrop, cw, ch, ch_raw, ix0, ix1, iy0, iy1, xs, ys]);
 
   // A windowed crop is always shown as a physical square: either at a fixed
   // `size` (single ΔPDF viewer) or filling its square parent cell (multi-temp
@@ -145,7 +157,11 @@ export function SliceCanvas({
         ? { width: size, height: size, position: "relative" }
         : { width: "100%", aspectRatio: "1 / 1", display: "block", position: "relative" };
   } else if (fit) {
-    wrapperStyle = { maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", position: "relative", display: "inline-block" };
+    // Fill the parent's width and let the height follow the slice's physical
+    // aspect (the parent box clips any vertical overflow).  Scales both up and
+    // down, so a zoom-cropped slice still fills the panel instead of shrinking
+    // to its (now small) intrinsic pixel size.
+    wrapperStyle = { width: "100%", height: "auto", position: "relative", display: "block" };
   } else {
     wrapperStyle = { width, height: "auto", position: "relative", display: "inline-block" };
   }
@@ -172,7 +188,7 @@ export function SliceCanvas({
 
   return (
     <div style={wrapperStyle}>
-      <canvas ref={ref} className="slice-canvas" style={{ width: "100%", height: "100%", display: "block", imageRendering: "auto" }} />
+      <canvas ref={ref} className="slice-canvas" style={{ width: "100%", height: fit ? "auto" : "100%", display: "block", imageRendering: "auto" }} />
       {circles.length > 0 && (
         <svg
           style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none" }}

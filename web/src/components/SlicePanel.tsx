@@ -24,6 +24,7 @@ interface Props {
   latY?: number;
   latCut?: number;
   windowA?: number;
+  zoom?: number;
   diverging?: boolean;
   gridlines?: boolean;
 }
@@ -46,6 +47,7 @@ export function SlicePanel({
   latY,
   latCut,
   windowA,
+  zoom,
   diverging = false,
   gridlines = false,
 }: Props) {
@@ -76,6 +78,7 @@ export function SlicePanel({
               latY={latY}
               latCut={latCut}
               windowA={windowA}
+              zoom={zoom}
               size={width}
               diverging={diverging}
             />
