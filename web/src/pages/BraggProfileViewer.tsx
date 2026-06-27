@@ -277,11 +277,26 @@ function Histograms({ peaks, showMeasured }: { peaks: BraggPeakWidth[]; showMeas
   all.sort((x, y) => x - y);
   const q = (f: number) =>
     all.length ? all[Math.max(0, Math.min(all.length - 1, Math.round(f * (all.length - 1))))] : 0;
-  // Trim only the extreme outliers so the bulk + Gaussian fill the axis.
-  const lo = Math.max(0, q(0.005));
-  const hi = Math.max(q(0.98), lo + 1e-6);
+
+  // Per-axis values + a first Gaussian fit over a robust data range, used only to
+  // locate where each bell sits so we can widen the displayed range to show the
+  // *full* curve (both wings) — not just the right half where data happens to be.
+  const perAxisVals = AXES.map((a) =>
+    peaks.map((p) => displayQ(p, a.i)).filter((v): v is number => v != null),
+  );
+  const fitDomain: [number, number] = [Math.max(0, q(0.005)), Math.max(q(0.98), q(0.005) + 1e-6)];
+  const preFits = perAxisVals.map((v) => fitGaussian(v, fitDomain, 30));
+  let lo = q(0.01);
+  let hi = q(0.9);
+  for (const f of preFits) {
+    if (!f) continue;
+    lo = Math.min(lo, f.mean - 4 * f.sigma);
+    hi = Math.max(hi, f.mean + 4 * f.sigma);
+  }
+  lo = Math.max(0, lo);
+  hi = Math.max(hi, lo + 1e-6);
   const domain: [number, number] = [lo, hi];
-  const N = 30;
+  const N = 40;
   return (
     <div className="bragg-panel bragg-hist">
       <div className="bragg-panel-head">
@@ -291,8 +306,8 @@ function Histograms({ peaks, showMeasured }: { peaks: BraggPeakWidth[]; showMeas
           {showMeasured && <span className="bragg-leg"><i className="bragg-tick-dash" />measured</span>}
         </div>
       </div>
-      {AXES.map((a) => {
-        const values = peaks.map((p) => displayQ(p, a.i)).filter((v): v is number => v != null);
+      {AXES.map((a, ai) => {
+        const values = perAxisVals[ai];
         const { counts } = histCounts(values, domain, N);
         const fit = fitGaussian(values, domain, N);
         const measMed = median(peaks.map((p) => measuredQ(p, a.i)));
