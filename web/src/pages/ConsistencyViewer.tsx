@@ -507,6 +507,7 @@ export function ConsistencyViewer() {
                 vmin={0}
                 log={log}
                 fit
+                contain
                 zoom={zoom}
                 bands={[draftMin, draftMax]}
                 cutDistance={value}
@@ -676,6 +677,7 @@ export function ConsistencyViewer() {
                 vmin={0}
                 log={backView === "recon" ? log : false}
                 fit
+                contain
                 zoom={zoom}
                 reciprocalAxes
                 latX={latX}

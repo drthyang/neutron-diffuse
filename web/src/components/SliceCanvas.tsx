@@ -27,6 +27,9 @@ interface Props {
   diverging?: boolean; // signed data centred at 0 (ΔPDF)
   width?: number; // fixed display width in CSS px
   fit?: boolean; // letterbox to fill the parent box (preserves aspect)
+  contain?: boolean; // with `fit`: scale to fit *within* the box (both dims),
+  //                    so a non-square slice is letterboxed instead of clipped
+  //                    by the square parent — keeps mixed-aspect panels aligned
   windowA?: number; // half-extent in Å — crop to a square physical window
   windowX?: number; // half-extent along x in the slice's coordinate units
   windowY?: number; // half-extent along y in the slice's coordinate units
@@ -51,6 +54,7 @@ export function SliceCanvas({
   diverging = false,
   width = 340,
   fit = false,
+  contain = false,
   windowA,
   windowX,
   windowY,
@@ -156,6 +160,23 @@ export function SliceCanvas({
       size != null
         ? { width: size, height: size, position: "relative" }
         : { width: "100%", aspectRatio: "1 / 1", display: "block", position: "relative" };
+  } else if (fit && contain) {
+    // Letterbox: scale to fit *within* the (square) parent box on both axes so a
+    // non-square slice is never clipped — keeps mixed-aspect panels aligned.  A
+    // tall slice (pixel aspect < 1) is given a <100% width and the aspect-ratio
+    // derives its height; width percentages resolve against the box's definite
+    // width (unlike max-height, which can't see the aspect-derived box height).
+    // The wrapper tracks the rendered canvas, so the band-circle overlay aligns.
+    const ar = cw / ch; // displayed pixel aspect: >1 wide, <1 tall
+    wrapperStyle = {
+      width: ar >= 1 ? "100%" : `${ar * 100}%`,
+      aspectRatio: `${cw} / ${ch}`,
+      maxWidth: "100%",
+      maxHeight: "100%",
+      margin: "0 auto",
+      position: "relative",
+      display: "block",
+    };
   } else if (fit) {
     // Fill the parent's width and let the height follow the slice's physical
     // aspect (the parent box clips any vertical overflow).  Scales both up and
@@ -188,7 +209,7 @@ export function SliceCanvas({
 
   return (
     <div style={wrapperStyle}>
-      <canvas ref={ref} className="slice-canvas" style={{ width: "100%", height: fit ? "auto" : "100%", display: "block", imageRendering: "auto" }} />
+      <canvas ref={ref} className="slice-canvas" style={{ width: "100%", height: fit && !contain ? "auto" : "100%", display: "block", imageRendering: "auto" }} />
       {circles.length > 0 && (
         <svg
           style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none" }}
