@@ -441,7 +441,7 @@ function SelectedPeak({
 
   const maxW = Math.max(...peak.width_hkl.map(Math.abs), 0.02);
   const baseHalf = Math.min(0.6, Math.max(0.08, maxW * 3.5));
-  const half = baseHalf / zoom; // higher zoom → smaller window → more zoomed in
+  const half = baseHalf * zoom; // higher zoom → larger window → zoom out (more context)
 
   const floorHkl = AXES.map((a) => deriveFloor(peaks, a.i, true));
   const ell = (xa: number, ya: number, src: (p: BraggPeakWidth, a: number) => number | null): Ellipse | null => {
