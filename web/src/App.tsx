@@ -21,7 +21,7 @@ import { PipelineExecution } from "./pages/PipelineExecution";
 import { ReciprocalViewer } from "./pages/ReciprocalViewer";
 import { usePipelineStore } from "./state/pipelineStore";
 
-type Tab = "config" | "execution" | "reciprocal" | "bragg" | "dpdf" | "multi" | "consistency";
+export type Tab = "config" | "execution" | "reciprocal" | "bragg" | "dpdf" | "multi" | "consistency";
 
 const NAV: { id: Tab; label: string; desc: string; icon: ReactNode }[] = [
   {
@@ -33,7 +33,7 @@ const NAV: { id: Tab; label: string; desc: string; icon: ReactNode }[] = [
   {
     id: "execution",
     label: "Execution",
-    desc: "Track stage-by-stage progress and the live log for the current pipeline run.",
+    desc: "Live progress for the running reduction — per-stage status and the streaming event log.",
     icon: <IconRun />,
   },
   {
@@ -73,7 +73,7 @@ function renderPage(tab: Tab, setTab: (t: Tab) => void): ReactNode {
     case "config":
       return <PipelineConfig onStarted={() => setTab("execution")} />;
     case "execution":
-      return <PipelineExecution />;
+      return <PipelineExecution onNavigate={setTab} />;
     case "reciprocal":
       return <ReciprocalViewer />;
     case "bragg":
