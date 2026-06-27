@@ -486,8 +486,8 @@ def test_build_params_punch_overrides():
     assert defaults.mode == base.mode
     assert defaults.punch_radii == base.punch_radii
     assert defaults.phi_tail_hkl == base.phi_tail_hkl
-    # the Q-space frame is the default (since Phase 4)
-    assert defaults.punch_frame == "q"
+    # the per-peak spherical frame is the default (since 2026-06-27)
+    assert defaults.punch_frame == "spherical"
 
 
 def test_build_params_qspace_punch_overrides():
@@ -512,9 +512,21 @@ def test_build_params_qspace_punch_overrides():
     )).punch
     assert anis.punch_q_radii == (0.08, base.punch_q_radii[1], 0.2)
 
-    # the Q frame is the default since Phase 4
-    assert base.punch_frame == "q"
+    # spherical is the default frame; the q radii remain available for frame="q"
+    assert base.punch_frame == "spherical"
     assert base.punch_q_radii == (0.097, 0.072, 0.115)
+    assert base.punch_spherical_radii == (0.097, 0.072, 0.115)
+
+    # spherical-frame radii overrides reach PunchParams (rρ, rθ overridden;
+    # rφ falls back to the default spherical radii)
+    sph = build_params(PipelineRunRequest(
+        dataset_id="x",
+        params=StageParamsIn(punch_frame="spherical",
+                             punch_spherical_radius_rho=0.13,
+                             punch_spherical_radius_theta=0.05),
+    )).punch
+    assert sph.punch_frame == "spherical"
+    assert sph.punch_spherical_radii == (0.13, 0.05, base.punch_spherical_radii[2])
 
     # Phase 3 covariance-fit toggle
     cov = build_params(PipelineRunRequest(

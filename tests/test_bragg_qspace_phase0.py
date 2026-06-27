@@ -71,11 +71,13 @@ def _synthetic_vol() -> HKLVolume:
 
 # Captured on 2026-06-13; regenerated 2026-06-14 when the production default
 # flipped to the Q-anisotropic-adaptive punch (ROADMAP Phase 6 / Phase 4, after
-# the ΔPDF A/B validated it, r=0.9998).  If a future change is *intended* to
-# alter the default punch geometry, regenerate these deliberately.
-_GOLDEN_DEFAULT_PUNCHED = 874
+# the ΔPDF A/B validated it, r=0.9998); regenerated 2026-06-27 when the default
+# frame flipped to the per-peak spherical (rρ, rθ, rφ) ellipsoid (radii unchanged
+# at (0.097, 0.072, 0.115) Å⁻¹).  If a future change is *intended* to alter the
+# default punch geometry, regenerate these deliberately.
+_GOLDEN_DEFAULT_PUNCHED = 726
 _GOLDEN_DEFAULT_KEEP_SHA256 = (
-    "ba6a5d1aa3673b1f4b7d5700e941ef854afd21713a8a0c239516f764b1c4ad7b"
+    "56987d1352e0dab265453de27fa5a31cce7cb057bce0bfb68656d0a9ccef7082"
 )
 _GOLDEN_INTEGER_ONLY_PUNCHED = 57
 _GOLDEN_SEARCH_ONLY_PUNCHED = 76

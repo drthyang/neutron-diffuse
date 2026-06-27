@@ -163,6 +163,16 @@ def bragg_profile_from_records(
         if peak.shape_hkl is not None:
             shape = np.asarray(peak.shape_hkl, dtype=float)
             fit_kind = "tilted"
+        elif peak.radii_hkl is None and str(remover.punch_frame).lower() == "spherical":
+            # Fixed spherical punch: report the *real* per-peak ellipsoid so the
+            # principal widths/directions follow Q̂ (ρ) and the two transverse axes.
+            sm = remover._spherical_shape_matrix(vol, tuple(peak.center_hkl))  # noqa: SLF001
+            if sm is not None:
+                shape = sm
+                fit_kind = "spherical"
+            else:
+                shape = _shape_from_radii(base)
+                fit_kind = "axis_aligned"
         else:
             shape = _shape_from_radii(peak.radii_hkl or base)
             fit_kind = "axis_aligned"
@@ -312,14 +322,18 @@ class PunchParams:
     )
     incident_beam_sphere_radius_hkl: float | None = None
     incident_beam_fit_covariance: bool = False
-    # Q-space punch (ROADMAP Phase 6, default since Phase 4).  The punch footprint
-    # is the reciprocal-Å⁻¹ resolution floor (per a*,b*,c*); the per-peak fit +
-    # φ-tail still modulate it (adaptive), so this reproduces the legacy HKL punch
-    # while being lattice/condition-portable. Set punch_frame="hkl" + punch_radii
-    # to restore the legacy rlu footprint.
-    punch_frame: str = "q"
+    # Spherical-frame punch (default): the ellipsoid axes follow the *local*
+    # spherical frame at each peak — (rρ, rθ, rφ) in Å⁻¹ with rρ radial (along Q̂),
+    # rφ azimuthal (a*–b* ring tangent), rθ polar (c* pole).  This orients every
+    # peak's footprint by construction (no tilt angle).  Set punch_frame="q" to use
+    # the fixed a*/b*/c* radii (``punch_q_radii``), or "hkl" + ``punch_radii`` for
+    # the legacy rlu footprint.
+    punch_frame: str = "spherical"
     punch_q_radius: float | None = None
     punch_q_radii: tuple[float, float, float] | None = (0.097, 0.072, 0.115)
+    # (rρ, rθ, rφ) Å⁻¹ — seeded from the q radii so the default punch volume is
+    # comparable to the previous a*/b*/c* default.
+    punch_spherical_radii: tuple[float, float, float] | None = (0.097, 0.072, 0.115)
 
 
 @dataclass
@@ -584,6 +598,7 @@ def punch_bragg(vol: HKLVolume, params: PunchParams | None = None, *,
         search_exclude_h_fractions=p.search_exclude_h_fractions,
         punch_frame=p.punch_frame, punch_q_radius=p.punch_q_radius,
         punch_q_radii=p.punch_q_radii,
+        punch_spherical_radii=p.punch_spherical_radii,
     )
     peak_records = remover._detect_peak_records(vol)  # noqa: SLF001 - avoid refitting
     keep = remover._punch_centers(

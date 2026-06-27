@@ -116,12 +116,17 @@ class StageParamsIn(BaseModel):
     punch_radius_l: float | None = None
     punch_margin: float | None = None
     punch_phi_tail_hkl: float | None = None
-    # Q-space punch (opt-in): frame "q" + isotropic or per-a*,b*,c* radius (Å^-1)
+    # Q-space punch: frame "spherical" (default) = (rρ, rθ, rφ) in the local
+    # spherical frame; frame "q" = isotropic or per-a*,b*,c* radius (Å^-1).
     punch_frame: str | None = None
     punch_q_radius: float | None = None
     punch_q_radius_a: float | None = None
     punch_q_radius_b: float | None = None
     punch_q_radius_c: float | None = None
+    # Spherical-frame radii (Å^-1): rρ radial, rθ polar, rφ azimuth.
+    punch_spherical_radius_rho: float | None = None
+    punch_spherical_radius_theta: float | None = None
+    punch_spherical_radius_phi: float | None = None
     incident_beam_q_radius_a: float | None = None
     incident_beam_q_radius_b: float | None = None
     incident_beam_q_radius_c: float | None = None

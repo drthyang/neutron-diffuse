@@ -402,6 +402,10 @@ interface PunchGeom {
   r0: number;
   r1: number;
   r2: number;
+  // Punch ellipsoid frame: "spherical" (rρ,rθ,rφ, default) | "q" (a*,b*,c*).
+  frame: string;
+  // Spherical-frame radii (Å⁻¹): rρ radial, rθ polar, rφ azimuth.
+  sphRadii: [number, number, number];
   margin: number;
   phiTail: number;
   mode: string;
@@ -545,6 +549,107 @@ function qEllipseForPlane(
     shape[ix][iy] / (qScaleX * qScaleY),
     shape[iy][iy] / (qScaleY * qScaleY),
     fallback,
+  );
+}
+
+// --- spherical frame (rρ, rθ, rφ) -----------------------------------------
+// The punch ellipsoid axes follow the *local* spherical frame at each peak, so
+// the shape matrix is rebuilt per Bragg node from its Q direction (unlike the
+// global a*/b*/c* q-frame).  Mirrors `BraggRemover._spherical_shape_matrix`.
+
+function nodeFullHkl(plane: PunchPlane, x: number, y: number, cut: number): [number, number, number] {
+  if (plane === "hk") return [x, y, cut];
+  if (plane === "hl") return [x, cut, y];
+  return [cut, x, y]; // kl
+}
+
+const cross = (a: number[], b: number[]): number[] => [
+  a[1] * b[2] - a[2] * b[1],
+  a[2] * b[0] - a[0] * b[2],
+  a[0] * b[1] - a[1] * b[0],
+];
+const norm3 = (v: number[]) => Math.hypot(v[0], v[1], v[2]);
+
+// HKL shape matrix A (δhklᵀAδhkl ≤ 1) for the spherical punch at one node.
+function sphShapeMatrixHkl(
+  radii: [number, number, number],
+  hkl: [number, number, number],
+  ub: Matrix3,
+): Matrix3 | null {
+  if (radii.some((r) => !(r > 0))) return null;
+  const col = (j: number) => [ub[0][j], ub[1][j], ub[2][j]];
+  const q = [
+    ub[0][0] * hkl[0] + ub[0][1] * hkl[1] + ub[0][2] * hkl[2],
+    ub[1][0] * hkl[0] + ub[1][1] * hkl[1] + ub[1][2] * hkl[2],
+    ub[2][0] * hkl[0] + ub[2][1] * hkl[1] + ub[2][2] * hkl[2],
+  ];
+  const nq = norm3(q);
+  if (!(nq > 0)) return null;
+  const rho = q.map((v) => v / nq);
+  const zc = col(2);
+  const zn = norm3(zc);
+  const zhat = zn > 0 ? zc.map((v) => v / zn) : [0, 0, 1];
+  let phi = cross(zhat, rho);
+  if (norm3(phi) < 1e-8) {
+    const a = col(0);
+    const an = norm3(a) || 1;
+    phi = cross(a.map((v) => v / an), rho);
+  }
+  const pn = norm3(phi) || 1;
+  const phiHat = phi.map((v) => v / pn);
+  const theta = cross(phiHat, rho);
+  // A_Q = R diag(1/r²) Rᵀ, R columns ρ̂, θ̂, φ̂
+  const R = [rho, theta, phiHat]; // R[axis] = column vector
+  const inv = radii.map((r) => 1 / (r * r));
+  const aQ: Matrix3 = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (let i = 0; i < 3; i++)
+    for (let j = 0; j < 3; j++)
+      aQ[i][j] = inv[0] * R[0][i] * R[0][j] + inv[1] * R[1][i] * R[1][j] + inv[2] * R[2][i] * R[2][j];
+  // A_hkl = UBᵀ A_Q UB
+  const tmp: Matrix3 = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (let i = 0; i < 3; i++)
+    for (let j = 0; j < 3; j++)
+      tmp[i][j] = aQ[i][0] * ub[0][j] + aQ[i][1] * ub[1][j] + aQ[i][2] * ub[2][j];
+  const aHkl: Matrix3 = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (let i = 0; i < 3; i++)
+    for (let j = 0; j < 3; j++)
+      aHkl[i][j] = ub[0][i] * tmp[0][j] + ub[1][i] * tmp[1][j] + ub[2][i] * tmp[2][j];
+  return aHkl;
+}
+
+// Per-node punch ellipse: spherical → rebuilt from the node's Q; otherwise the
+// shared global q-frame ellipse.
+function ellipseForNode(
+  plane: PunchPlane,
+  geom: PunchGeom,
+  globalEllipse: { rx: number; ry: number; angle: number },
+  lattice: LatticeLike,
+  ubRaw: number[][] | undefined,
+  x: number,
+  y: number,
+  cut: number,
+): { rx: number; ry: number; angle: number } {
+  if (geom.frame !== "spherical") return globalEllipse;
+  const ub = asMatrix3(ubRaw);
+  if (!ub) return globalEllipse;
+  const m = Math.max(0, geom.margin);
+  const radii: [number, number, number] = [
+    geom.sphRadii[0] + m,
+    geom.sphRadii[1] + m,
+    geom.sphRadii[2] + m,
+  ];
+  const a = sphShapeMatrixHkl(radii, nodeFullHkl(plane, x, y, cut), ub);
+  if (!a) return globalEllipse;
+  const [axisX, axisY] = planeHklAxes(plane);
+  const ix = axisIndex(axisX);
+  const iy = axisIndex(axisY);
+  const qScaleX = (2 * Math.PI) / (axisLattice(axisX, lattice) ?? 1);
+  const qScaleY = (2 * Math.PI) / (axisLattice(axisY, lattice) ?? 1);
+  return ellipseFromQuadratic(
+    a[ix][ix] / (qScaleX * qScaleX),
+    a[ix][iy] / (qScaleX * qScaleY),
+    a[iy][iy] / (qScaleY * qScaleY),
+    globalEllipse,
   );
 }
 
@@ -728,19 +833,23 @@ function PunchDataOverlay({
                 vectorEffect="non-scaling-stroke"
               />
             )}
-            {showSat && (
-              <g>
-                <ellipse
-                  cx={1.5 * qScaleX}
-                  cy={-0.5 * qScaleY}
-                  rx={braggEllipse.rx}
-                  ry={braggEllipse.ry}
-                  transform={`rotate(${braggEllipse.angle.toFixed(2)} ${1.5 * qScaleX} ${-0.5 * qScaleY})`}
-                  className="punch-sat"
-                  vectorEffect="non-scaling-stroke"
-                />
-              </g>
-            )}
+            {showSat && (() => {
+              const sat = ellipseForNode(
+                plane, geom, braggEllipse, lattice, ubMatrix, 1.5, -0.5, cutValue ?? 0);
+              return (
+                <g>
+                  <ellipse
+                    cx={1.5 * qScaleX}
+                    cy={-0.5 * qScaleY}
+                    rx={sat.rx}
+                    ry={sat.ry}
+                    transform={`rotate(${sat.angle.toFixed(2)} ${1.5 * qScaleX} ${-0.5 * qScaleY})`}
+                    className="punch-sat"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </g>
+              );
+            })()}
             {nodes.map(({ x, y }) => {
               const key = `${x},${y}`;
               const cx = x * qScaleX;
@@ -761,14 +870,18 @@ function PunchDataOverlay({
                 );
               }
               const ang = (Math.atan2(cy, cx) * 180) / Math.PI + 90;
+              // Spherical frame: the ellipse is rebuilt from this node's Q so it
+              // tilts to follow Q̂; q-frame uses the shared global ellipse.
+              const e = ellipseForNode(
+                plane, geom, braggEllipse, lattice, ubMatrix, x, y, cutValue ?? 0);
               return (
                 <g key={key}>
                   {showTail && (
                     <ellipse
                       cx={cx}
                       cy={cy}
-                      rx={braggEllipse.rx}
-                      ry={braggEllipse.ry}
+                      rx={e.rx}
+                      ry={e.ry}
                       transform={`rotate(${ang.toFixed(1)} ${cx} ${cy})`}
                       className="punch-tail"
                     />
@@ -777,9 +890,9 @@ function PunchDataOverlay({
                     <ellipse
                       cx={cx}
                       cy={cy}
-                      rx={braggEllipse.rx + geom.margin * qScaleX}
-                      ry={braggEllipse.ry + geom.margin * qScaleY}
-                      transform={`rotate(${braggEllipse.angle.toFixed(2)} ${cx} ${cy})`}
+                      rx={e.rx + geom.margin * qScaleX}
+                      ry={e.ry + geom.margin * qScaleY}
+                      transform={`rotate(${e.angle.toFixed(2)} ${cx} ${cy})`}
                       className="punch-margin"
                       vectorEffect="non-scaling-stroke"
                     />
@@ -787,9 +900,9 @@ function PunchDataOverlay({
                   <ellipse
                     cx={cx}
                     cy={cy}
-                    rx={braggEllipse.rx}
-                    ry={braggEllipse.ry}
-                    transform={`rotate(${braggEllipse.angle.toFixed(2)} ${cx} ${cy})`}
+                    rx={e.rx}
+                    ry={e.ry}
+                    transform={`rotate(${e.angle.toFixed(2)} ${cx} ${cy})`}
                     className="punch-fp"
                     vectorEffect="non-scaling-stroke"
                   />
@@ -1031,6 +1144,10 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
       punchMinI: st.punchMinI,
       punchMethod: st.punchMethod,
       punchMode: st.punchMode,
+      punchFrame: st.punchFrame,
+      punchRho: st.punchRho,
+      punchTheta: st.punchTheta,
+      punchPhi: st.punchPhi,
       punchQA: st.punchQA,
       punchQB: st.punchQB,
       punchQC: st.punchQC,
@@ -1062,16 +1179,24 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
   const vizPatches = clampInt(s.ringNPatches, 36, 4, 96);
   const vizFourier = clampInt(s.ringNFourier, 8, 0, 40);
   const vizRingWidth = clampFloat(s.ringWidth, 0.24, 0.02, 1.0);
+  const punchFrame = s.punchFrame === "q" ? "q" : "spherical";
+  const sphRadii: [number, number, number] = [
+    clampFloat(s.punchRho, 0.097, 0.005, 0.6),
+    clampFloat(s.punchTheta, 0.072, 0.005, 0.6),
+    clampFloat(s.punchPhi, 0.115, 0.005, 0.6),
+  ];
   const punchGeom: PunchGeom = {
     r0: clampFloat(s.punchQA, 0.097, 0.005, 0.6),
     r1: clampFloat(s.punchQB, 0.072, 0.005, 0.6),
     r2: clampFloat(s.punchQC, 0.115, 0.005, 0.6),
+    frame: punchFrame,
+    sphRadii,
     margin: clampFloat(s.punchMargin, 0.02, 0, 0.5),
     phiTail: clampFloat(s.punchPhiTail, 0.12, 0, 1.0),
     mode: s.punchMode || "both",
     isQ: true,
     unit: "Å⁻¹",
-    ax: ["a*", "b*", "c*"],
+    ax: punchFrame === "spherical" ? ["ρ", "θ", "φ"] : ["a*", "b*", "c*"],
     directBeamRadiiQ: [
       clampFloat(s.incidentBeamQA, 0.16, 0.005, 2.0),
       clampFloat(s.incidentBeamQB, 0.30, 0.005, 2.0),
@@ -1569,11 +1694,64 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                       <span className="cfg-box-eyebrow cfg-box-eyebrow--sub">Bragg footprint</span>
                       <span className="punch-group-unit">Å⁻¹</span>
                       <HelpTip>
-                        Punch half-radii along a*, b*, c* in Q-space. The run request
-                        always uses Q-space; blank fields use the validated defaults
+                        Punch ellipsoid radii in Q-space. <b>Spherical</b> (default)
+                        sets axes in the local spherical frame at each peak —
+                        r<sub>ρ</sub> radial (along Q̂), r<sub>θ</sub> polar,
+                        r<sub>φ</sub> azimuth (c* pole) — so every peak is oriented
+                        correctly with no tilt angle. <b>Reciprocal</b> uses fixed
+                        a*, b*, c* axes. Blank fields use the validated defaults
                         (0.097, 0.072, 0.115).
                       </HelpTip>
                     </div>
+                <div className="config-grid">
+                  <Field label="Frame">
+                    <select
+                      value={s.punchFrame || "spherical"}
+                      title="Punch ellipsoid axis frame"
+                      onChange={(e) => patch({ punchFrame: e.target.value })}
+                    >
+                      <option value="spherical">spherical (ρ, θ, φ)</option>
+                      <option value="q">reciprocal (a*, b*, c*)</option>
+                    </select>
+                  </Field>
+                </div>
+                {(s.punchFrame || "spherical") === "spherical" ? (
+                <div className="config-grid-3">
+                  <Field label={<>r<sub>ρ</sub></>}>
+                    <input
+                      type="number"
+                      step="0.005"
+                      min="0"
+                      placeholder="0.097"
+                      value={s.punchRho}
+                      title="Punch half-radius along the radial direction Q̂ (Å⁻¹)"
+                      onChange={(e) => patch({ punchRho: e.target.value })}
+                    />
+                  </Field>
+                  <Field label={<>r<sub>θ</sub></>}>
+                    <input
+                      type="number"
+                      step="0.005"
+                      min="0"
+                      placeholder="0.072"
+                      value={s.punchTheta}
+                      title="Punch half-radius along the polar tangent (Å⁻¹)"
+                      onChange={(e) => patch({ punchTheta: e.target.value })}
+                    />
+                  </Field>
+                  <Field label={<>r<sub>φ</sub></>}>
+                    <input
+                      type="number"
+                      step="0.005"
+                      min="0"
+                      placeholder="0.115"
+                      value={s.punchPhi}
+                      title="Punch half-radius along the azimuthal (a*–b* ring) tangent (Å⁻¹)"
+                      onChange={(e) => patch({ punchPhi: e.target.value })}
+                    />
+                  </Field>
+                </div>
+                ) : (
                 <div className="config-grid-3">
                   <Field label={<>r<sub>a*</sub></>}>
                     <input
@@ -1609,6 +1787,7 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                     />
                   </Field>
                 </div>
+                )}
                 <div className="config-grid">
                   <Field label="Margin">
                     <input

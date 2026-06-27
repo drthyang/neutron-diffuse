@@ -56,6 +56,12 @@ interface PipelineConfig {
   punchMinI: string;
   punchMethod: string;
   punchMode: string;
+  // Punch ellipsoid frame: "spherical" (rρ,rθ,rφ, default) | "q" (a*,b*,c*)
+  punchFrame: string;
+  // Spherical-frame radii (Å⁻¹): rρ radial, rθ polar, rφ azimuth; blank = default
+  punchRho: string;
+  punchTheta: string;
+  punchPhi: string;
   // Q-space resolution floor along a*, b*, c* (Å⁻¹); blank = backend default
   punchQA: string;
   punchQB: string;
@@ -118,6 +124,10 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
   punchMinI: "",
   punchMethod: "ellipsoid",
   punchMode: "",
+  punchFrame: "spherical",
+  punchRho: "",
+  punchTheta: "",
+  punchPhi: "",
   punchQA: "",
   punchQB: "",
   punchQC: "",
@@ -238,11 +248,18 @@ function formToParams(s: PipelineConfig): StageParamsIn {
   if (s.punchMode) params.punch_mode = s.punchMode;
   if (s.punchMargin) params.punch_margin = Number(s.punchMargin);
   if (s.punchPhiTail) params.punch_phi_tail_hkl = Number(s.punchPhiTail);
-  // Q-space is the web UI's punch frame.
-  params.punch_frame = "q";
-  if (s.punchQA) params.punch_q_radius_a = Number(s.punchQA);
-  if (s.punchQB) params.punch_q_radius_b = Number(s.punchQB);
-  if (s.punchQC) params.punch_q_radius_c = Number(s.punchQC);
+  // Punch frame: spherical (rρ,rθ,rφ) by default, or the legacy a*/b*/c* q-frame.
+  const frame = s.punchFrame === "q" ? "q" : "spherical";
+  params.punch_frame = frame;
+  if (frame === "spherical") {
+    if (s.punchRho) params.punch_spherical_radius_rho = Number(s.punchRho);
+    if (s.punchTheta) params.punch_spherical_radius_theta = Number(s.punchTheta);
+    if (s.punchPhi) params.punch_spherical_radius_phi = Number(s.punchPhi);
+  } else {
+    if (s.punchQA) params.punch_q_radius_a = Number(s.punchQA);
+    if (s.punchQB) params.punch_q_radius_b = Number(s.punchQB);
+    if (s.punchQC) params.punch_q_radius_c = Number(s.punchQC);
+  }
   if (s.incidentBeamQA) params.incident_beam_q_radius_a = Number(s.incidentBeamQA);
   if (s.incidentBeamQB) params.incident_beam_q_radius_b = Number(s.incidentBeamQB);
   if (s.incidentBeamQC) params.incident_beam_q_radius_c = Number(s.incidentBeamQC);

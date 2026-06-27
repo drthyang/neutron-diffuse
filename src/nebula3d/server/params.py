@@ -74,6 +74,18 @@ def build_params(req: PipelineRunRequest) -> PipelineParams:
             sp.punch_q_radius_c if sp.punch_q_radius_c is not None else cur[2],
         ))
     if any(v is not None for v in
+           (sp.punch_spherical_radius_rho, sp.punch_spherical_radius_theta,
+            sp.punch_spherical_radius_phi)):
+        cur = p.punch.punch_spherical_radii or (0.097, 0.072, 0.115)
+        p.punch = dataclasses.replace(p.punch, punch_spherical_radii=(
+            sp.punch_spherical_radius_rho
+            if sp.punch_spherical_radius_rho is not None else cur[0],
+            sp.punch_spherical_radius_theta
+            if sp.punch_spherical_radius_theta is not None else cur[1],
+            sp.punch_spherical_radius_phi
+            if sp.punch_spherical_radius_phi is not None else cur[2],
+        ))
+    if any(v is not None for v in
            (sp.incident_beam_q_radius_a, sp.incident_beam_q_radius_b,
             sp.incident_beam_q_radius_c)):
         cur = p.punch.incident_beam_q_radii or (0.16, 0.30, 0.25)

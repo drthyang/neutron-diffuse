@@ -281,9 +281,16 @@ class BraggRemover:
     # ``_q_shape_matrix``).  Default ``"hkl"`` keeps the legacy radii path
     # untouched.  In Q-mode the per-peak HKL shape-fit and the φ-tail are not
     # applied (that unification is Phase 3); intensity scaling still applies.
+    # ``punch_frame="spherical"`` describes the punch in the *local* spherical
+    # frame at each peak: (rρ, rθ, rφ) in Å^-1 with rρ along the radial direction
+    # Q̂, rφ along the azimuthal (a*–b* plane) tangent ẑ×Q̂ (ẑ = c*), and rθ along
+    # the polar tangent Q̂×φ̂.  Because the frame is rebuilt per peak from its Q
+    # direction, the ellipsoid is correctly oriented for every reflection with no
+    # tilt angle — the same three radii apply everywhere.  See ``_spherical_frame``.
     punch_frame: str = "hkl"
     punch_q_radius: float | None = None  # isotropic, Å^-1  (A = g / ρ²)
     punch_q_radii: tuple[float, float, float] | None = None  # per a*,b*,c*, Å^-1
+    punch_spherical_radii: tuple[float, float, float] | None = None  # (rρ, rθ, rφ) Å^-1
     # --- search mode (|Q|-shell outlier detection) ---
     search_q_step: float = 0.05
     search_n_mad: float = 8.0
@@ -364,6 +371,107 @@ class BraggRemover:
         raise ValueError('punch_frame="q" requires punch_q_radius or punch_q_radii')
 
     @staticmethod
+    def _spherical_frame(
+        vol: HKLVolume,
+        center_hkl: tuple[float, float, float],
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]] | None:
+        """Orthonormal Cartesian-Q spherical frame ``(ρ̂, θ̂, φ̂)`` at a peak.
+
+        With ``UB`` mapping hkl→Q (Å⁻¹) and the **polar axis = c\\*** (Qz):
+
+        - ``ρ̂ = Q/|Q|`` — radial (longitudinal, the |Q| / Δd-d direction).
+        - ``φ̂ = (ẑ × ρ̂)/|ẑ × ρ̂|`` — azimuthal tangent in the a\\*–b\\* plane
+          (the powder-ring tangent; ``ẑ`` = unit c\\*).
+        - ``θ̂ = φ̂ × ρ̂`` — polar tangent (completes a right-handed frame,
+          ``ρ̂ × θ̂ = φ̂``; the ellipsoid is invariant to the axis sign anyway).
+
+        Returns ``None`` if the peak is at the origin (no radial direction).  When
+        ``Q̂ ∥ ẑ`` the azimuth is degenerate, so ``φ̂`` is built from a\\* instead;
+        the two transverse axes are then an arbitrary (but orthonormal) basis of
+        the plane ⊥ Q̂, which is the physically correct behaviour (a peak on the
+        pole has no distinguished azimuth).
+        """
+        ub = vol.ub_matrix
+        q = ub @ np.asarray(center_hkl, dtype=float)
+        nq = float(np.linalg.norm(q))
+        if nq <= 0 or not np.isfinite(nq):
+            return None
+        rho_hat = q / nq
+        z = ub[:, 2] / max(float(np.linalg.norm(ub[:, 2])), 1e-300)  # unit c*
+        phi = np.cross(z, rho_hat)
+        if float(np.linalg.norm(phi)) < 1e-8:  # Q̂ ∥ c* → azimuth degenerate
+            a = ub[:, 0] / max(float(np.linalg.norm(ub[:, 0])), 1e-300)  # unit a*
+            phi = np.cross(a, rho_hat)
+        npn = float(np.linalg.norm(phi))
+        if npn < 1e-12:  # pathological: pick any perpendicular
+            phi = np.cross(np.array([1.0, 0.0, 0.0]), rho_hat)
+            npn = float(np.linalg.norm(phi))
+            if npn < 1e-12:
+                phi = np.cross(np.array([0.0, 1.0, 0.0]), rho_hat)
+                npn = float(np.linalg.norm(phi))
+        phi_hat = phi / npn
+        theta_hat = np.cross(phi_hat, rho_hat)
+        return rho_hat, theta_hat, phi_hat
+
+    def _spherical_shape_matrix(
+        self,
+        vol: HKLVolume,
+        center_hkl: tuple[float, float, float],
+        *,
+        scale: float = 1.0,
+        margin_q: float = 0.0,
+    ) -> NDArray[np.float64] | None:
+        """HKL shape matrix ``A`` (``δhklᵀAδhkl ≤ 1``) for the spherical punch.
+
+        Builds ``A_Q = R diag(1/rρ², 1/rθ², 1/rφ²) Rᵀ`` with ``R = [ρ̂ θ̂ φ̂]`` at
+        this peak, then ``A = UBᵀ A_Q UB``.  ``scale`` multiplies the radii;
+        ``margin_q`` (Å⁻¹) is added to each radius after scaling — same contract as
+        :meth:`_q_shape_matrix`.  Returns ``None`` at the origin (frame undefined).
+
+        Isotropic ``rρ=rθ=rφ=ρ`` reduces to ``A = (UBᵀUB)/ρ²`` (a true Q-sphere),
+        identical to the q-frame isotropic punch.
+        """
+        if self.punch_spherical_radii is None:
+            raise ValueError(
+                'punch_frame="spherical" requires punch_spherical_radii'
+            )
+        scale = max(0.0, float(scale))
+        margin_q = max(0.0, float(margin_q))
+        radii = tuple(float(r) * scale + margin_q for r in self.punch_spherical_radii)
+        if min(radii) <= 0:
+            raise ValueError("spherical radii must be positive")
+        frame = self._spherical_frame(vol, center_hkl)
+        if frame is None:
+            return None
+        r_mat = np.column_stack(frame)  # columns ρ̂, θ̂, φ̂
+        d = np.diag([1.0 / r**2 for r in radii])
+        a_q = r_mat @ d @ r_mat.T
+        ub = vol.ub_matrix
+        return np.asarray(ub.T @ a_q @ ub, dtype=np.float64)
+
+    def _active_shape_matrix(
+        self,
+        vol: HKLVolume,
+        center_hkl: tuple[float, float, float],
+        *,
+        scale: float = 1.0,
+        margin_q: float = 0.0,
+    ) -> NDArray[np.float64] | None:
+        """Per-peak punch shape matrix for the active frame, or ``None``.
+
+        Dispatches on ``punch_frame``: ``"q"`` → the global a\\*/b\\*/c\\* ellipsoid
+        (``center_hkl`` ignored); ``"spherical"`` → the per-peak spherical frame;
+        otherwise ``None`` (legacy hkl-radii path).
+        """
+        frame = str(self.punch_frame).lower()
+        if frame == "spherical":
+            return self._spherical_shape_matrix(
+                vol, center_hkl, scale=scale, margin_q=margin_q)
+        if frame == "q":
+            return self._q_shape_matrix(vol, scale=scale, margin_q=margin_q)
+        return None
+
+    @staticmethod
     def _ellipsoid_bounding_radii(
         shape_matrix: NDArray[np.float64],
     ) -> tuple[float, float, float]:
@@ -389,9 +497,19 @@ class BraggRemover:
 
         In Q-mode the floor is the Q base ellipsoid's HKL bounding box (so the
         fitted punch is never smaller than the Å⁻¹ resolution and the floor is
-        lattice-portable); in HKL mode it is the plain ``punch_radii`` — so the
-        legacy fit is unchanged.
+        lattice-portable); in spherical mode it is the HKL bounding box of the
+        spherical ellipsoid at a representative on-axis point (same resolution
+        scale, orientation-independent enough for a clip floor); in HKL mode it is
+        the plain ``punch_radii`` — so the legacy fit is unchanged.
         """
+        if str(self.punch_frame).lower() == "spherical":
+            # Evaluate at a representative off-pole direction (along a*); the
+            # bounding-box scale depends only on the radii + orientation, not on
+            # |Q|, so any off-pole point gives the same resolution floor.
+            a = self._spherical_shape_matrix(vol, (1.0, 0.0, 0.0))
+            if a is not None:
+                return self._ellipsoid_bounding_radii(a)
+            return self._radii()
         a = self._q_shape_matrix(vol)
         if a is not None:
             return self._ellipsoid_bounding_radii(a)
@@ -967,7 +1085,10 @@ class BraggRemover:
         # in Q-mode it punches via the radii path below (identical mechanism to
         # HKL, incl. the union φ-tail) — the frame only relocates the floor.
         r_base = self._fit_base_radii(vol)
-        q_shape = self._q_shape_matrix(vol)  # None in legacy (hkl) mode
+        # A general (non-axis-aligned) frame builds a per-peak shape matrix below.
+        # ``"q"`` is global; ``"spherical"`` is rebuilt per peak from its Q
+        # direction.  ``"hkl"`` (legacy) stays on the axis-aligned radii path.
+        general_frame = str(self.punch_frame).lower() in {"q", "spherical"}
 
         ref = self.intensity_ref
         if self.intensity_scale and ref is None:
@@ -993,26 +1114,28 @@ class BraggRemover:
                     h_guard=self._h_guard_for(peak_rec), shape_matrix=a)
                 continue
 
-            # (2) Q-mode with no per-peak fit (search peaks / shape-fit off): the
-            #     fixed Q base ellipsoid + Q-space margin + folded φ-tail.
-            if q_shape is not None and peak_rec.radii_hkl is None:
-                _a = self._q_shape_matrix(vol, scale=s, margin_q=self.margin)
-                assert _a is not None
-                a = self._fold_phi_tail(
-                    vol, _a, peak_rec.center_hkl,
-                    max(0.0, float(self.phi_tail_hkl)) * s)
-                self._punch_one(
-                    vol, keep, center, self._ellipsoid_bounding_radii(a), 0.0,
-                    center_hkl=peak_rec.center_hkl,
-                    h_guard=self._h_guard_for(peak_rec), shape_matrix=a)
-                continue
+            # (2) General frame (q / spherical) with no per-peak fit (search peaks
+            #     / shape-fit off): the base ellipsoid + Q-space margin + folded
+            #     φ-tail.  ``_active_shape_matrix`` is per-peak in spherical mode.
+            if general_frame and peak_rec.radii_hkl is None:
+                _a = self._active_shape_matrix(
+                    vol, peak_rec.center_hkl, scale=s, margin_q=self.margin)
+                if _a is not None:  # None only when the frame is undefined (origin)
+                    a = self._fold_phi_tail(
+                        vol, _a, peak_rec.center_hkl,
+                        max(0.0, float(self.phi_tail_hkl)) * s)
+                    self._punch_one(
+                        vol, keep, center, self._ellipsoid_bounding_radii(a), 0.0,
+                        center_hkl=peak_rec.center_hkl,
+                        h_guard=self._h_guard_for(peak_rec), shape_matrix=a)
+                    continue
 
-            # (3) Radii path: HKL adaptive, or Q-mode diagonal fit floored by the Q
-            #     base — axis-aligned ellipsoid with the union φ-tail.
+            # (3) Radii path: HKL adaptive, or general-frame diagonal fit floored
+            #     by the base — axis-aligned ellipsoid with the union φ-tail.
             rh_base, rk_base, rl_base = peak_rec.radii_hkl or r_base
             mh, mk, ml = (
                 self._axis_hkl_margins_from_q_margin(vol, self.margin)
-                if q_shape is not None
+                if general_frame
                 else (float(self.margin), float(self.margin), float(self.margin))
             )
             radii = (
