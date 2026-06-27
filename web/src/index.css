@@ -832,7 +832,8 @@ input[type="range"]::-moz-range-track {
 
 /* title row → just the chips (the page header carries the title) */
 .bragg-title-row { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
-.bragg-chips { display: flex; align-items: center; gap: 9px; flex: none; }
+.bragg-chips { display: flex; align-items: center; gap: 10px; flex: none; }
+.bragg-toggle { display: inline-flex; align-items: center; font-size: 12px; }
 .bragg-chip {
   display: inline-flex;
   align-items: center;
@@ -867,7 +868,8 @@ input[type="range"]::-moz-range-track {
 .bragg-stat + .bragg-stat { border-left: 1px solid #232a33; }
 .bragg-stat-eyebrow { font: 600 9px/1 system-ui; letter-spacing: 0.07em; text-transform: uppercase; color: #6c7686; white-space: nowrap; }
 .bragg-stat-row { height: 24px; display: flex; align-items: flex-end; gap: 8px; }
-.bragg-stat-v { font: 700 21px/1 ui-monospace, monospace; color: #e8ebf0; letter-spacing: -0.01em; }
+.bragg-stat-v { font: 700 21px/1 ui-monospace, monospace; color: #e8ebf0; letter-spacing: -0.01em; white-space: nowrap; }
+.bragg-stat-row { min-width: 0; }
 .bragg-stat-fit { font-size: 19px; }
 .bragg-stat-desc { font: 500 10px/1 ui-monospace, monospace; color: #7e8a9c; padding-bottom: 2px; }
 .bragg-stat-medrow { gap: 15px; }

@@ -9,7 +9,7 @@ import { useMemo, useState } from "react";
 import { useBraggProfile, useDatasets, useMeta } from "../api/hooks";
 import type { BraggPeakWidth } from "../api/types";
 import { BraggPeakSlice, type Ellipse } from "../components/BraggPeakSlice";
-import { ColormapBar, EmptyState, IconAlert, IconLattice, Slider } from "../components/ui";
+import { ColormapBar, EmptyState, IconAlert, IconLattice, Slider, Switch } from "../components/ui";
 import { COLORMAPS, SEQUENTIAL_NAMES } from "../colormaps/luts";
 import { useDatasetStore, useInitializeDataset } from "../state/datasetStore";
 import { useViewerStore } from "../state/viewerStore";
@@ -539,10 +539,21 @@ export function BraggProfileViewer() {
   const profileQ = useBraggProfile(datasetId ?? undefined);
   const dataset = datasets.find((d) => d.id === datasetId);
   const profile = profileQ.data;
-  const peaks = useMemo(() => profile?.peaks ?? [], [profile]);
 
   const [selected, setSelected] = useState(0);
   const [sortKey, setSortKey] = useState<SortKey>("q");
+  const [integerHklOnly, setIntegerHklOnly] = useState(true);
+
+  // Optionally keep only near-integer-hkl peaks (the actual Bragg reflections),
+  // hiding fractional satellite / diffuse entries.
+  const rawPeaks = useMemo(() => profile?.peaks ?? [], [profile]);
+  const peaks = useMemo(
+    () =>
+      integerHklOnly
+        ? rawPeaks.filter((p) => p.center_hkl.every((x) => Math.abs(x - Math.round(x)) < 0.15))
+        : rawPeaks,
+    [rawPeaks, integerHklOnly],
+  );
 
   // pre-punch volume so the peak is visible (ring-removed preferred, raw fallback)
   const sliceVolumeId =
@@ -583,7 +594,8 @@ export function BraggProfileViewer() {
     if (profileQ.isLoading || !profile) return <EmptyState title="Loading Bragg profile…" />;
     if (profileQ.isError) return <EmptyState error icon={<IconAlert />} title="Could not load Bragg profile" hint={(profileQ.error as Error).message} />;
     if (profile && !profile.has_profile) return <EmptyState icon={<IconLattice />} title="No Bragg profile for this dataset" hint="Run the pipeline with Bragg-punch peak-shape fitting enabled to create the review profile." />;
-    if (profile?.has_profile && peaks.length === 0) return <EmptyState title="No peaks recorded" hint="The punch stage completed, but no Bragg peaks were detected." />;
+    if (profile?.has_profile && rawPeaks.length === 0) return <EmptyState title="No peaks recorded" hint="The punch stage completed, but no Bragg peaks were detected." />;
+    if (profile?.has_profile && peaks.length === 0) return <EmptyState title="All peaks filtered out" hint="Turn off “Integer HKL only” to show fractional-hkl peaks." />;
     return null;
   })();
 
@@ -592,6 +604,15 @@ export function BraggProfileViewer() {
       <div className="bragg-card">
         <div className="bragg-title-row">
           <div className="bragg-chips">
+            {profile?.has_profile && (
+              <span className="bragg-toggle">
+                <Switch
+                  label="Integer HKL only"
+                  checked={integerHklOnly}
+                  onChange={(v) => { setIntegerHklOnly(v); setSelected(0); }}
+                />
+              </span>
+            )}
             <label className="bragg-chip bragg-chip-select">
               <span className="bragg-chip-key">Dataset</span>
               <select value={datasetId ?? ""} onChange={(e) => { setDataset(e.target.value); setSelected(0); }}>
