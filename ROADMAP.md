@@ -378,3 +378,34 @@ Before treating the pipeline as a stable release candidate:
   aligned.
 - Still open: add CI coverage that specifically exercises the Bragg
   guard/exclusion behavior, not just import/type checks.
+
+## In-Browser Engine — Large-Volume Ceiling  Blocked (needs new architecture)
+
+The GitHub Pages / Pyodide build runs the real pipeline in the browser, but the
+**32-bit WASM heap (~2 GB practical ceiling)** caps how large a volume it can
+reduce. Two prototypes on branch **`feat/in-browser-parallel-float32`** improve it
+without changing native behaviour:
+
+- **Parallel ring removal** — shards the ~70% ring stage across a pool of Web
+  Workers (each its own Pyodide), bit-identical to serial.
+- **float32 build** — computes in float32 in-browser (native stays float64),
+  ~halving peak memory and roughly doubling the voxel cap (~23 M → ~56 M).
+
+**Still blocked:** a real full-resolution file (301×401×401 = **48.4 M voxels**,
+~1.55 GB float32 peak) OOMs near the WASM ceiling once Pyodide runtime overhead is
+added. float32 is necessary but not sufficient at this size.
+
+Options to revisit (a **different architecture** is likely needed):
+
+- **memory64 (wasm64) Pyodide build** — a 64-bit heap removes the ~2 GB ceiling;
+  experimental, larger download, Chrome/Firefox only (Safari lags).
+- **Out-of-core / chunked reduction** — stream the volume in slabs so peak memory
+  is bounded by the slab, not the whole grid (the parallel slab driver in
+  `nebula3d.webparallel` is a starting point).
+- **Server/serverless compute** — offload the reduction to a backend with the
+  Pages site as a thin client (trades the privacy / no-upload property).
+- **Optional downsampling** — a coarser in-browser preview mode for oversized
+  inputs, full resolution via the native install.
+
+Until then the in-browser engine targets modest volumes; full-resolution data
+goes through the native build (`pip install "nebula3d[web]" && nebula3d-web`).
