@@ -1015,6 +1015,37 @@ def run_pipeline(
                            flatten_enabled=p.flatten_enabled)
     paths.delta_pdf.parent.mkdir(parents=True, exist_ok=True)
 
+    # Pass-through chaining: a disabled cleanup stage is skipped and its input
+    # flows to the next enabled stage.  Each stage reads the output of the most
+    # recent *enabled* stage before it (raw input if none upstream are enabled).
+    _stage_output = {
+        "rings": paths.ringremoved,
+        "punch": paths.braggpunched,
+        "backfill": paths.backfilled,
+        "flatten": paths.flattened,
+    }
+    _cleanup_chain = ("rings", "punch", "backfill", "flatten")
+
+    def _produces(stage: str) -> bool:
+        if stage == "flatten":
+            return "flatten" in selected and p.flatten_enabled
+        return stage in selected
+
+    def stage_input(stage: str) -> Path:
+        # Walk back from the immediate predecessor: take the most recent stage
+        # that is enabled this run (its output is produced), or — for a partial
+        # re-run where an upstream output already exists on disk — that file;
+        # otherwise keep passing through, falling back to the raw input.
+        upto = (_cleanup_chain.index(stage)
+                if stage in _cleanup_chain else len(_cleanup_chain))
+        for prev in reversed(_cleanup_chain[:upto]):
+            out = _stage_output[prev]
+            if _produces(prev) or out.exists():
+                return out
+        return paths.input
+
+    pdf_input = stage_input("pdf")
+
     def forced(stage: str) -> bool:
         if force:
             return True
@@ -1041,7 +1072,7 @@ def run_pipeline(
             _emit(progress, "punch", "skip", None,
                   f"{paths.braggpunched.name} exists")
         else:
-            vol = nebula3d.load(paths.ringremoved)
+            vol = nebula3d.load(stage_input("punch"))
             out = punch_bragg(vol, p.punch, progress=progress)
             nebula3d.save(out, paths.braggpunched)
             profile = getattr(out, "_bragg_profile", None)
@@ -1054,7 +1085,7 @@ def run_pipeline(
             _emit(progress, "backfill", "skip", None,
                   f"{paths.backfilled.name} exists")
         else:
-            vol = nebula3d.load(paths.braggpunched)
+            vol = nebula3d.load(stage_input("backfill"))
             out = backfill(vol, p.backfill, progress=progress)
             nebula3d.save(out, paths.backfilled)
 
@@ -1064,7 +1095,7 @@ def run_pipeline(
             _emit(progress, "flatten", "skip", None,
                   f"{paths.flattened.name} exists")
         else:
-            vol = nebula3d.load(paths.backfilled)
+            vol = nebula3d.load(stage_input("flatten"))
             out = flatten(vol, p.flatten, progress=progress)
             nebula3d.save(out, paths.flattened)
     elif want("flatten"):
@@ -1076,7 +1107,7 @@ def run_pipeline(
     pdf_vol: HKLVolume | None = None     # its input volume, for the check stage
     if want("pdf"):
         expected_config = delta_pdf_transform_config(p.delta_pdf)
-        is_current = _pdf_is_current(paths.delta_pdf, paths.pdf_input.name,
+        is_current = _pdf_is_current(paths.delta_pdf, pdf_input.name,
                                      expected_config)
         if is_current and not forced("pdf"):
             _emit(progress, "pdf", "skip", None,
@@ -1085,10 +1116,10 @@ def run_pipeline(
             if paths.delta_pdf.exists() and not is_current:
                 _emit(progress, "pdf", "progress", None,
                       f"{paths.delta_pdf.name} stale — recomputing")
-            pdf_vol = nebula3d.load(paths.pdf_input)
+            pdf_vol = nebula3d.load(pdf_input)
             dpdf_obj = delta_pdf(pdf_vol, p.delta_pdf, progress=progress)
             write_delta_pdf_h5(dpdf_obj, pdf_vol, p.delta_pdf,
-                               paths.pdf_input.name, paths.delta_pdf)
+                               pdf_input.name, paths.delta_pdf)
 
     # --- stage 6: back-FFT round-trip consistency check ---------------------
     if want("pdf_check") and p.pdf_check_enabled:
@@ -1103,7 +1134,7 @@ def run_pipeline(
             _emit(progress, "pdf_check", "start", None,
                   "back-FFT round-trip consistency check")
             if pdf_vol is None:
-                pdf_vol = nebula3d.load(paths.pdf_input)
+                pdf_vol = nebula3d.load(pdf_input)
             if dpdf_obj is None:
                 dpdf_obj = delta_pdf(pdf_vol, p.delta_pdf)
             metrics = pdf_consistency_check(

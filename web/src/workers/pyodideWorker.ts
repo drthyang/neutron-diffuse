@@ -60,6 +60,7 @@ type WorkerRequest =
       flattenEnabled: boolean;
       force: boolean;
       forceFrom: string | null;
+      stages: string[] | null;
     }
   | { id: number; type: "json_call"; method: string; args: unknown[] }
   | { id: number; type: "slice_call"; method: string; args: unknown[] };
@@ -146,7 +147,7 @@ async function dispatch(req: WorkerRequest): Promise<void> {
       }
 
       case "run_pipeline": {
-        const { paramsJson, flattenEnabled, force, forceFrom } = req;
+        const { paramsJson, flattenEnabled, force, forceFrom, stages } = req;
         const progress = (
           stage: string,
           status: string,
@@ -155,16 +156,19 @@ async function dispatch(req: WorkerRequest): Promise<void> {
         ): void => {
           post({ id: null, type: "progress", stage, status, fraction, message });
         };
-        for (const stage of STAGES) {
-          (bridge!.run as (...a: unknown[]) => string)(
-            stage,
-            paramsJson,
-            flattenEnabled,
-            force,
-            forceFrom ?? null,
-            progress,
-          );
-        }
+        // Run the enabled stages in one call (canonical order) so the pipeline
+        // can resolve pass-through inputs across the whole selection; a disabled
+        // stage is skipped and its input flows to the next enabled stage.
+        const selected = stages ?? STAGES;
+        const stagesCsv = STAGES.filter((st) => selected.includes(st)).join(",");
+        (bridge!.run as (...a: unknown[]) => string)(
+          stagesCsv,
+          paramsJson,
+          flattenEnabled,
+          force,
+          forceFrom ?? null,
+          progress,
+        );
         reply((bridge!.datasets_json as () => string)());
         break;
       }

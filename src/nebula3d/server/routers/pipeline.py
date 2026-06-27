@@ -40,12 +40,17 @@ def run(req: PipelineRunRequest, request: Request,
                                  "cannot run the pipeline")
     if req.force_from is not None and req.force_from not in STAGES:
         raise HTTPException(400, f"force_from must be one of {STAGES}")
+    if req.stages is not None:
+        bad = [s for s in req.stages if s not in STAGES]
+        if bad:
+            raise HTTPException(400, f"unknown stages {bad}; choose from {STAGES}")
     try:
         params = build_params(req)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     job = _jobs(request).start(
         ds.raw_path, params, proc_dir=cfg.processed_dir,
+        stages=tuple(req.stages) if req.stages is not None else STAGES,
         force=req.force, force_from=req.force_from)
     return JobOut(**job.snapshot())
 

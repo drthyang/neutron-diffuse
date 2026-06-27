@@ -246,10 +246,11 @@ export const engine = {
     flattenEnabled: boolean;
     force: boolean;
     forceFrom?: string | null;
+    stages?: string[];
     onProgress?: (ev: PipelineProgressEvent) => void;
   }): Promise<Dataset[]> {
     await ensureBooted();
-    const { paramsJson, flattenEnabled, force, forceFrom, onProgress } = opts;
+    const { paramsJson, flattenEnabled, force, forceFrom, stages, onProgress } = opts;
     const unsub = onProgress ? subscribeProgress(onProgress) : (): void => {};
     try {
       const json = (await rpc("run_pipeline", {
@@ -257,6 +258,7 @@ export const engine = {
         flattenEnabled,
         force,
         forceFrom: forceFrom ?? null,
+        stages: stages ?? null,
       })) as string;
       return JSON.parse(json) as Dataset[];
     } finally {

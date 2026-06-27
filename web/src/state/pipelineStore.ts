@@ -39,7 +39,13 @@ export type PunchPlane = "hk" | "hl" | "kl";
 // All editable configuration form values.  Strings mirror the raw <input>
 // values (empty = "use the backend default"); the run action converts them.
 interface PipelineConfig {
+  // per-stage enable toggles; a disabled stage is skipped and its input passes
+  // straight through to the next enabled stage (stage 4 = `flatten`).
+  ringsEnabled: boolean;
+  punchEnabled: boolean;
+  backfillEnabled: boolean;
   flatten: boolean;
+  pdfEnabled: boolean;
   force: boolean;
   ringModel: string; // "patched" | "parametric"
   ringRadialMode: string; // parametric: "rolling" | "peaks"
@@ -97,7 +103,11 @@ function closeStream() {
 }
 
 export const usePipelineStore = create<PipelineState>((set, get) => ({
+  ringsEnabled: true,
+  punchEnabled: true,
+  backfillEnabled: true,
   flatten: true,
+  pdfEnabled: true,
   force: false,
   ringModel: "parametric",
   ringRadialMode: "rolling",
@@ -145,9 +155,10 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
     set({ events: [], terminal: null, running: true, jobId: null });
 
     const params = formToParams(s);
+    const stages = enabledStages(s);
 
     if (PYODIDE_MODE) {
-      await runInBrowser(params, s.flatten, s.force, set, get);
+      await runInBrowser(params, s.flatten, s.force, stages, set, get);
       return;
     }
 
@@ -156,6 +167,7 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
         dataset_id: datasetId,
         flatten_enabled: s.flatten,
         force: s.force,
+        stages,
         params,
       });
       set({ jobId: job.id });
@@ -195,6 +207,20 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
     if (jobId) await cancelJob(jobId).catch(() => undefined);
   },
 }));
+
+// The subset of STAGES to run, from the per-stage enable toggles.  A disabled
+// stage is omitted; the backend passes its input straight through to the next
+// enabled stage.  The consistency check rides along with the ΔPDF transform.
+function enabledStages(s: PipelineConfig): string[] {
+  return [
+    s.ringsEnabled && "rings",
+    s.punchEnabled && "punch",
+    s.backfillEnabled && "backfill",
+    s.flatten && "flatten",
+    s.pdfEnabled && "pdf",
+    s.pdfEnabled && "pdf_check",
+  ].filter((x): x is string => Boolean(x));
+}
 
 // Convert the editable form values into the curated StageParamsIn the pipeline
 // accepts (empty fields stay unset → the backend/bridge default is used).
@@ -247,6 +273,7 @@ async function runInBrowser(
   params: StageParamsIn,
   flatten: boolean,
   force: boolean,
+  stages: string[],
   set: Setter,
   get: Getter,
 ): Promise<void> {
@@ -256,6 +283,7 @@ async function runInBrowser(
       paramsJson: JSON.stringify(params),
       flattenEnabled: flatten,
       force,
+      stages,
       onProgress: (ev) =>
         log({
           type: "progress",

@@ -1060,6 +1060,48 @@ input[type="range"]::-moz-range-track {
   font-weight: 700;
   letter-spacing: 0;
 }
+
+/* Card title row: 15px/700 title followed by a thin rule spanning the width —
+   shared by the Data and 3D-ΔPDF Workflow cards. */
+.card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.card-title-row h3 {
+  margin: 0;
+  flex: none;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0;
+}
+.card-title-rule {
+  flex: 1 1 0;
+  height: 1px;
+  background: var(--border-subtle);
+}
+.stage-card > .card-title-row {
+  padding: 14px 16px 0;
+}
+
+/* Floating per-stage number chip (1–5) in the workflow group heads. */
+.punch-group-no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  color: var(--accent-hi);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  flex: none;
+}
 .config-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1256,6 +1298,21 @@ input[type="range"]::-moz-range-track {
   opacity: 1;
   visibility: visible;
 }
+/* Configure help icons sit at the right edge of stage heads and control rows;
+   open their bubbles leftward (anchored to the icon's right edge) so they stay
+   inside the card instead of spilling past the page edge — a hidden,
+   viewport-overflowing bubble otherwise forces a persistent horizontal
+   scrollbar (the page then can't shrink to the window). */
+.config-page .helptip-bubble {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+.config-page .helptip-bubble::after {
+  left: auto;
+  right: 7px;
+  transform: none;
+}
 
 /* Bragg-punch footprint illustration (pie analogue for the punch stage) */
 :root {
@@ -1350,55 +1407,107 @@ input[type="range"]::-moz-range-track {
   gap: 16px;
   min-width: 0;
 }
+/* Workflow stages: each stage is a floating header on the card background
+   followed by its box(es).  Boxes are the #15191f panels; the head floats. */
 .punch-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+.cfg-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.cfg-stage--off .cfg-box {
+  opacity: 0.45;
+}
+/* floating stage header (number chip + title + help + enable toggle) */
+.cfg-stage-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cfg-stage-head .helptip {
+  margin-left: auto;
+}
+.cfg-stage-toggle {
+  margin-left: auto;
+}
+.cfg-stage-head .helptip ~ .cfg-stage-toggle {
+  margin-left: 0;
+}
+.cfg-stage-toggle .switch {
+  flex-direction: row-reverse;
+  gap: 8px;
+  padding-bottom: 0;
+}
+.cfg-stage-toggle .switch-label {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+/* a stage's boxes share a 3-column grid; stages 3–5 sit one-per-column */
+.cfg-stage-grid,
+.cfg-stage-row {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   align-items: stretch;
-  min-width: 0;
 }
-.punch-controls .config-grid,
-.punch-controls .config-grid-3 {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-.punch-controls .config-grid-3 {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-/* grouped parameter sub-panels inside the Bragg-punch controls */
-.punch-group {
+.cfg-box {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 13px 13px 14px;
+  min-width: 0;
+  padding: 14px 15px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
 }
-/* Ring removal (stage 1) spans the full params band.  Internally it mirrors the
-   3-column params grid: the controls sit in a single 1/3-width column (same
-   width as the Punch group below), and the schematic charts + closed-form
-   equation fill the remaining 2/3. */
-.ring-removal-group {
-  grid-column: 1 / -1;
+.cfg-box .config-grid,
+.cfg-box .config-grid-3 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-.ring-removal-body {
-  display: grid;
+.cfg-box .config-grid-3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  align-items: stretch;
+}
+/* placeholder box (radial-PV fit) — striped to read as a pending plot */
+.cfg-box--plot {
+  align-items: center;
+  justify-content: center;
+  min-height: 130px;
+  border-style: dashed;
+  background:
+    repeating-linear-gradient(135deg, #12161c, #12161c 6px, #0e1217 6px, #0e1217 12px);
+}
+/* per-box sub-eyebrow (e.g. Detection / Bragg footprint / Direct beam) */
+.cfg-box-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cfg-box-head .helptip {
+  margin-left: auto;
+}
+.cfg-box-eyebrow {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.cfg-box-eyebrow--sub {
+  color: var(--accent-hi);
 }
 .ring-removal-controls {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-/* middle 1/3 reserved for the upcoming radial-PV ring-width fit */
-.ring-removal-spacer {
-  display: grid;
-  place-items: center;
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-sm);
-  min-height: 120px;
 }
 .ring-removal-spacer-hint {
   color: var(--text-3);
@@ -1462,6 +1571,11 @@ input[type="range"]::-moz-range-track {
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--text-2);
+}
+/* Bragg footprint / Direct beam are sub-sections of the Punch (2) stage —
+   tinted blue like a sub-eyebrow rather than a top-level stage title. */
+.punch-group-title--sub {
+  color: var(--accent-hi);
 }
 .punch-group-unit {
   padding: 1px 6px;
@@ -1654,22 +1768,6 @@ input[type="range"]::-moz-range-track {
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-}
-.data-card-title {
-  flex: none;
-}
-.data-card-head h3 {
-  margin: 0;
-  color: var(--text);
-  font-size: 13px;
-  line-height: 1.1;
-  letter-spacing: 0.06em;
-}
-.data-card-subtitle {
-  display: block;
-  margin-top: 4px;
-  color: var(--text-3);
-  font-size: 12px;
 }
 .data-actions {
   display: flex;
@@ -1956,6 +2054,7 @@ input[type="range"]::-moz-range-track {
 .punch-stage-card .card-body {
   display: flex;
   flex-direction: column;
+  align-items: stretch; /* fill the card width (overrides .stage-card start) */
   gap: 12px;
 }
 .punch-stage-card .card-body > .config-grid,

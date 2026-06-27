@@ -59,14 +59,41 @@ function StageCard({
 }) {
   return (
     <section className={`card stage-card ${className}`}>
-      <div className="card-head">
-        <h3>
-          {step != null && <span className="config-step-no">{step}</span>}
-          {title}
-        </h3>
+      <div className="card-title-row">
+        {step != null && <span className="config-step-no">{step}</span>}
+        <h3>{title}</h3>
+        <span className="card-title-rule" />
       </div>
       <div className="card-body">{children}</div>
     </section>
+  );
+}
+
+// Floating header for one workflow stage: number chip + title, an optional help
+// bubble, and the per-stage "Enable stage" toggle on the right.  Disabling a
+// stage skips it — its input passes through to the next enabled stage.
+function StageHead({
+  no,
+  title,
+  enabled,
+  onToggle,
+  children,
+}: {
+  no: number | string;
+  title: string;
+  enabled: boolean;
+  onToggle: (b: boolean) => void;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="cfg-stage-head">
+      <span className="punch-group-no">{no}</span>
+      <span className="punch-group-title">{title}</span>
+      {children}
+      <div className="cfg-stage-toggle">
+        <Switch label="Enable stage" checked={enabled} onChange={onToggle} />
+      </div>
+    </div>
   );
 }
 
@@ -989,7 +1016,11 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
 
   const s = usePipelineStore(
     useShallow((st) => ({
+      ringsEnabled: st.ringsEnabled,
+      punchEnabled: st.punchEnabled,
+      backfillEnabled: st.backfillEnabled,
       flatten: st.flatten,
+      pdfEnabled: st.pdfEnabled,
       force: st.force,
       ringModel: st.ringModel,
       ringRadialMode: st.ringRadialMode,
@@ -1172,29 +1203,22 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
     ...stage,
     exists: selectedDataset?.stages.some((s) => s.name === stage.key && s.exists) ?? false,
   }));
-  const availableStageCount = stageStatus.filter((stage) => stage.exists).length;
-  const missingStageCount = stageStatus.length - availableStageCount;
   const rootStatus = rootError
     ? rootError
     : rootNote ??
       (dataRootQ.data
         ? `${dataRootQ.data.raw_exists ? "raw" : "no raw"} · ${dataRootQ.data.processed_exists ? "processed" : "no processed"} · ${dataRootQ.data.n_datasets} datasets`
         : " ");
-  const readinessLabel = selectedDataset
-    ? missingStageCount === 0
-      ? "All expected files available"
-      : `${availableStageCount}/${stageStatus.length} files available`
-    : "No dataset selected";
 
   return (
     <div className="config-page">
       {/* ----------------------------------------------------------- data card */}
       <section className="card data-card">
+        <div className="card-title-row">
+          <h3>Data</h3>
+          <span className="card-title-rule" />
+        </div>
         <div className="data-card-head">
-          <div className="data-card-title">
-            <h3>DATA</h3>
-            <span className="data-card-subtitle">{readinessLabel}</span>
-          </div>
           <div className="dataset-stage-board" aria-label="Available dataset files">
             {stageStatus.map((stage) => (
               <div
@@ -1356,21 +1380,25 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
       <div className="config-cards">
         <StageCard
           title="3D-ΔPDF Workflow"
-          step={`${STAGE_NO.rings}–${STAGE_NO.pdf}`}
           className="stage-card-wide punch-stage-card"
         >
           <div className="punch-workspace">
             <div className="punch-controls">
-              <div className="punch-group ring-removal-group">
-                <div className="punch-group-head">
-                  <span className="punch-group-title">Ring removal</span>
+              <div className={`cfg-stage${s.ringsEnabled ? "" : " cfg-stage--off"}`}>
+                <StageHead
+                  no={STAGE_NO.rings}
+                  title="Ring removal"
+                  enabled={s.ringsEnabled}
+                  onToggle={(v) => patch({ ringsEnabled: v })}
+                >
                   <HelpTip>
                     Powder-ring subtraction before punching. Patched removes a
                     per-azimuthal-patch radial background; parametric fits a
                     separable Ring(|Q|) × Fourier-texture model.
                   </HelpTip>
-                </div>
-                <div className="ring-removal-body">
+                </StageHead>
+                <div className="cfg-stage-grid">
+                  <div className="cfg-box">
                   <div className="ring-removal-controls">
                     <Field label="Model">
                       <select
@@ -1449,12 +1477,13 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                       />
                     </Field>
                   </div>
-                  <div className="ring-removal-spacer" aria-hidden="true">
+                  </div>
+                  <div className="cfg-box cfg-box--plot" aria-hidden="true">
                     <span className="ring-removal-spacer-hint">
                       radial PV fit · ring-width estimate
                     </span>
                   </div>
-                  <div className="ring-removal-figure">
+                  <div className="cfg-box ring-removal-figure">
                     <div className="ring-removal-viz">
                       {s.ringModel === "parametric" ? (
                         <ParametricRingViz
@@ -1487,14 +1516,21 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                 </div>
               </div>
 
-              <div className="punch-group">
-                <div className="punch-group-head">
-                  <span className="punch-group-title">Punch</span>
+              <div className={`cfg-stage${s.punchEnabled ? "" : " cfg-stage--off"}`}>
+                <StageHead
+                  no={STAGE_NO.punch}
+                  title="Punch"
+                  enabled={s.punchEnabled}
+                  onToggle={(v) => patch({ punchEnabled: v })}
+                >
                   <HelpTip>
                     Detection method, the intensity floor above background, and
                     which peaks to punch — integer nodes, |Q|-shell search, or both.
                   </HelpTip>
-                </div>
+                </StageHead>
+                <div className="cfg-stage-grid">
+                  <div className="cfg-box">
+                    <span className="cfg-box-eyebrow">Detection</span>
                 <div className="config-grid-3 punch-basis">
                   <Field label="Method">
                   <select
@@ -1527,18 +1563,17 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                   </select>
                 </Field>
                 </div>
-              </div>
-
-              <div className="punch-group">
-                <div className="punch-group-head">
-                  <span className="punch-group-title">Bragg footprint</span>
-                  <span className="punch-group-unit">Å⁻¹</span>
-                  <HelpTip>
-                    Punch half-radii along a*, b*, c* in Q-space. The run request
-                    always uses Q-space; blank fields use the validated defaults
-                    (0.097, 0.072, 0.115).
-                  </HelpTip>
-                </div>
+                  </div>
+                  <div className="cfg-box">
+                    <div className="cfg-box-head">
+                      <span className="cfg-box-eyebrow cfg-box-eyebrow--sub">Bragg footprint</span>
+                      <span className="punch-group-unit">Å⁻¹</span>
+                      <HelpTip>
+                        Punch half-radii along a*, b*, c* in Q-space. The run request
+                        always uses Q-space; blank fields use the validated defaults
+                        (0.097, 0.072, 0.115).
+                      </HelpTip>
+                    </div>
                 <div className="config-grid-3">
                   <Field label={<>r<sub>a*</sub></>}>
                     <input
@@ -1629,18 +1664,17 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                     but can create unstable punch masks on weak or noisy peaks.
                   </HelpTip>
                 </div>
-              </div>
-
-              <div className="punch-group">
-                <div className="punch-group-head">
-                  <span className="punch-group-title">Direct beam</span>
-                  <span className="punch-group-unit">Å⁻¹</span>
-                  <HelpTip>
-                    Origin-centered incident/direct-beam ellipsoid in Q-space,
-                    using half-radii along a*, b*, c*. The backend converts these
-                    through UB, matching the Bragg footprint geometry.
-                  </HelpTip>
-                </div>
+                  </div>
+                  <div className="cfg-box">
+                    <div className="cfg-box-head">
+                      <span className="cfg-box-eyebrow cfg-box-eyebrow--sub">Direct beam</span>
+                      <span className="punch-group-unit">Å⁻¹</span>
+                      <HelpTip>
+                        Origin-centered incident/direct-beam ellipsoid in Q-space,
+                        using half-radii along a*, b*, c*. The backend converts these
+                        through UB, matching the Bragg footprint geometry.
+                      </HelpTip>
+                    </div>
                 <div className="config-grid-3">
                   <Field label={<>r<sub>a*</sub></>}>
                     <input
@@ -1703,17 +1737,25 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                     checked in the punched slices.
                   </HelpTip>
                 </div>
+                  </div>
+                </div>
               </div>
 
-              <div className="punch-group">
-                <div className="punch-group-head">
-                  <span className="punch-group-title">Backfill</span>
-                  <HelpTip>
-                    How punched Bragg / direct-beam holes are filled before the
-                    transform. q_shell (default) interpolates each voxel from its
-                    |Q| shell.
-                  </HelpTip>
-                </div>
+              <div className="cfg-stage-row">
+                <div className={`cfg-stage${s.backfillEnabled ? "" : " cfg-stage--off"}`}>
+                  <StageHead
+                    no={STAGE_NO.backfill}
+                    title="Backfill"
+                    enabled={s.backfillEnabled}
+                    onToggle={(v) => patch({ backfillEnabled: v })}
+                  >
+                    <HelpTip>
+                      How punched Bragg / direct-beam holes are filled before the
+                      transform. q_shell (default) interpolates each voxel from its
+                      |Q| shell.
+                    </HelpTip>
+                  </StageHead>
+                  <div className="cfg-box">
                 <Field label="Method">
                   <select
                     value={s.backfillMethod}
@@ -1725,21 +1767,22 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                     <option value="symmetry+tv">symmetry+tv</option>
                   </select>
                 </Field>
-              </div>
-
-              <div className="punch-group">
-                <div className="punch-group-head">
-                  <span className="punch-group-title">Flatten</span>
-                  <HelpTip>
-                    Optional background flattening of the backfilled volume before
-                    the transform, using the selected baseline estimator.
-                  </HelpTip>
+                  </div>
                 </div>
-                <Switch
-                  label="Enable stage"
-                  checked={s.flatten}
-                  onChange={(v) => patch({ flatten: v })}
-                />
+
+                <div className={`cfg-stage${s.flatten ? "" : " cfg-stage--off"}`}>
+                  <StageHead
+                    no={STAGE_NO.flatten}
+                    title="Flatten"
+                    enabled={s.flatten}
+                    onToggle={(v) => patch({ flatten: v })}
+                  >
+                    <HelpTip>
+                      Optional background flattening of the backfilled volume before
+                      the transform, using the selected baseline estimator.
+                    </HelpTip>
+                  </StageHead>
+                  <div className="cfg-box">
                 <Field label="Estimator">
                   <select
                     value={s.flattenEstimator}
@@ -1752,18 +1795,24 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                     <option value="snip">snip</option>
                   </select>
                 </Field>
-              </div>
-
-              <div className="punch-group">
-                <div className="punch-group-head">
-                  <span className="punch-group-title">Transform (3D-ΔPDF)</span>
-                  <HelpTip>
-                    3D-FFT of the cleaned, backfilled diffuse volume. The
-                    apodization window tapers Q-space before the transform to
-                    suppress real-space termination ripples; the |Q| band (shown
-                    on the slices) sets the radial window the transform keeps.
-                  </HelpTip>
+                  </div>
                 </div>
+
+                <div className={`cfg-stage${s.pdfEnabled ? "" : " cfg-stage--off"}`}>
+                  <StageHead
+                    no={STAGE_NO.pdf}
+                    title="Transform (3D-ΔPDF)"
+                    enabled={s.pdfEnabled}
+                    onToggle={(v) => patch({ pdfEnabled: v })}
+                  >
+                    <HelpTip>
+                      3D-FFT of the cleaned, backfilled diffuse volume. The
+                      apodization window tapers Q-space before the transform to
+                      suppress real-space termination ripples; the |Q| band (shown
+                      on the slices) sets the radial window the transform keeps.
+                    </HelpTip>
+                  </StageHead>
+                  <div className="cfg-box">
                 <Field label="Apodization">
                   <select
                     value={s.pdfApod}
@@ -1775,6 +1824,8 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                     <option value="none">none</option>
                   </select>
                 </Field>
+                  </div>
+                </div>
               </div>
             </div>
             <div className="stage-visual punch-preview-pane">

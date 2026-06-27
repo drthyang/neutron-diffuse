@@ -189,6 +189,7 @@ export interface PipelineRunRequest {
   flatten_enabled: boolean;
   force: boolean;
   force_from?: string | null;
+  stages?: string[]; // enabled-stage subset; omitted → all stages run
   params: StageParamsIn;
 }
 

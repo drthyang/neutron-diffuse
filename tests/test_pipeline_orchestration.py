@@ -220,6 +220,23 @@ def test_stage_subset_runs_only_requested(tmp_path, stubbed):
     assert stubbed.calls == ["backfill"]
 
 
+def test_disabled_stage_passes_input_through(tmp_path, stubbed):
+    """A disabled cleanup stage is skipped and its input flows to the next
+    enabled stage: with rings off, punch runs on the raw input and the
+    ring-removed output is never written."""
+    inp = _seed_input(tmp_path)
+    paths = pipeline.pipeline_paths(inp, proc_dir=tmp_path)
+    pipeline.run_pipeline(
+        inp, proc_dir=tmp_path,
+        stages=("punch", "backfill", "flatten", "pdf", "pdf_check"),
+    )
+    assert "rings" not in stubbed.calls          # disabled stage skipped
+    assert stubbed.calls[0] == "punch"           # punch ran first (on the raw input)
+    assert not paths.ringremoved.exists()        # disabled → no output written
+    assert paths.braggpunched.exists()           # downstream still produced
+    assert paths.delta_pdf.exists()
+
+
 def test_flatten_disabled_routes_backfilled_into_pdf(tmp_path, stubbed):
     import h5py
 

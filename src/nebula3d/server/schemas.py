@@ -149,6 +149,7 @@ class PipelineRunRequest(BaseModel):
     flatten_enabled: bool = True
     force: bool = False
     force_from: str | None = None
+    stages: list[str] | None = None  # enabled-stage subset; None → all stages
     params: StageParamsIn = StageParamsIn()
 
 
