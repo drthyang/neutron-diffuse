@@ -427,7 +427,7 @@ class BraggRemover:
                 r_floor = float(np.sqrt(np.sum((v * bs) ** 2)))
                 r_ceil = float(np.sqrt(np.sum((v * mx) ** 2)))
                 r = min(max(r, r_floor), r_ceil)
-            r = float(max(r, np.finfo(np.float64).eps))
+            r = max(r, float(np.finfo(np.float64).eps))
             inv_r2[k] = 1.0 / (r * r)
         return np.asarray(vecs @ np.diag(inv_r2) @ vecs.T, dtype=np.float64)
 
