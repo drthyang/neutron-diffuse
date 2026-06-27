@@ -1,718 +1,544 @@
-import {
-  useEffect,
-  useMemo,
-  useState,
-  type MouseEvent,
-  type PointerEvent,
-  type ReactNode,
-} from "react";
+// Bragg profile · width diagnostics — a single-screen QC dashboard for the punch
+// peak widths of one dataset (see design_handoff_bragg_profile_Bragg/).  Reads the
+// BraggProfile and presents a stat strip, a width-vs-|Q| scatter, per-axis width
+// histograms, a sortable peak table, and a selected-peak detail with the real
+// intensity around the peak in three orthogonal slices + fit ellipses.
 
+import { useMemo, useState } from "react";
+
+import { useBraggProfile, useDatasets, useMeta } from "../api/hooks";
 import type { BraggPeakWidth } from "../api/types";
-import { useBraggProfile, useDatasets } from "../api/hooks";
-import {
-  EmptyState,
-  Field,
-  IconAlert,
-  IconLattice,
-  MetaStrip,
-} from "../components/ui";
+import { BraggPeakSlice, type Ellipse } from "../components/BraggPeakSlice";
+import { ColormapBar, EmptyState, IconAlert, IconLattice } from "../components/ui";
+import { COLORMAPS, SEQUENTIAL_NAMES } from "../colormaps/luts";
 import { useDatasetStore, useInitializeDataset } from "../state/datasetStore";
+import { useViewerStore } from "../state/viewerStore";
 
+// Axis colour-coding shared across the whole page (matches Configure / Reciprocal).
 const AXES = [
-  { key: 0, label: "Qx", color: "#e66a5c" },
-  { key: 1, label: "Qy", color: "#4f9edc" },
-  { key: 2, label: "Qz", color: "#58b06f" },
-] as const;
+  { i: 0 as const, label: "a*", color: "#f1a73a" },
+  { i: 1 as const, label: "b*", color: "#74a8ff" },
+  { i: 2 as const, label: "c*", color: "#34c98e" },
+];
+const CMAPS = ["inferno", "magma", "viridis", "plasma", "turbo", "cividis"].filter(
+  (c) => c in COLORMAPS || SEQUENTIAL_NAMES.includes(c),
+);
 
-const PAD = { left: 54, right: 18, top: 18, bottom: 42 };
-const SIZE = { width: 760, height: 330 };
+type SortKey = "q" | "width" | "intensity";
+const MAX_ROWS = 400; // cap rendered table rows; scatter + stats cover the full set
 
-type FitStats = {
-  mean: number;
-  sigma: number;
-  fwhm: number;
-  amplitude: number;
-  error: number;
+// ---- width accessors (measured = pad-free; fall back to fitted for legacy) ----
+const fittedQ = (p: BraggPeakWidth, a: number) => p.width_q[a];
+const measuredQ = (p: BraggPeakWidth, a: number): number | null => {
+  const m = p.measured_width_q;
+  if (m === undefined) return p.width_q[a];
+  return m === null ? null : m[a];
 };
+// For display (scatter / table / medians) prefer the pad-free measured width, but
+// fall back to the fitted width when measured is absent (older profiles store only
+// the fitted widths) so the dataset still plots.
+const displayQ = (p: BraggPeakWidth, a: number): number | null => {
+  const m = measuredQ(p, a);
+  if (m != null && Number.isFinite(m)) return m;
+  return Number.isFinite(p.width_q[a]) ? p.width_q[a] : null;
+};
+const fittedHkl = (p: BraggPeakWidth, a: number) => p.width_hkl[a];
+const measuredHkl = (p: BraggPeakWidth, a: number): number | null => {
+  const m = p.measured_width_hkl;
+  if (m === undefined || m === null) return null;
+  return m[a];
+};
+const resLimited = (p: BraggPeakWidth, a: number) =>
+  Boolean(p.resolution_limited?.[a]);
+const measurable = (p: BraggPeakWidth) => p.measured_width_q !== null;
 
-function finiteValues(values: number[]): number[] {
-  return values.filter((v) => Number.isFinite(v));
+function median(xs: (number | null | undefined)[]): number | null {
+  const v = xs.filter((x): x is number => x != null && Number.isFinite(x)).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const m = Math.floor(v.length / 2);
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
 }
 
-function extent(values: number[], pad = 0.06): [number, number] {
-  const xs = finiteValues(values);
-  if (xs.length === 0) return [0, 1];
-  let min = Math.min(...xs);
-  let max = Math.max(...xs);
-  if (min === max) {
-    const d = Math.abs(min) || 1;
-    min -= 0.5 * d;
-    max += 0.5 * d;
+// Approximate the half-voxel pad floor (not in the payload) from the boundary
+// between resolution-limited and clean measured widths.  `null` when underivable.
+function deriveFloor(peaks: BraggPeakWidth[], axis: number, hkl: boolean): number | null {
+  let flaggedMax = -Infinity;
+  let cleanMin = Infinity;
+  for (const p of peaks) {
+    const w = hkl ? measuredHkl(p, axis) : measuredQ(p, axis);
+    if (w == null || !Number.isFinite(w)) continue;
+    if (resLimited(p, axis)) flaggedMax = Math.max(flaggedMax, w);
+    else cleanMin = Math.min(cleanMin, w);
   }
-  const d = max - min;
-  return [Math.max(0, min - d * pad), max + d * pad];
+  if (flaggedMax > -Infinity && cleanMin < Infinity) return (flaggedMax + cleanMin) / 2;
+  if (flaggedMax > -Infinity) return flaggedMax;
+  return null;
+}
+
+function fmt(v: number | null, d = 3): string {
+  if (v == null || !Number.isFinite(v)) return "—";
+  return v.toFixed(d);
+}
+function hklStr(c: [number, number, number]): string {
+  const r = (x: number) => (Math.abs(x - Math.round(x)) < 0.05 ? String(Math.round(x)) : x.toFixed(2));
+  return `${r(c[0])} ${r(c[1])} ${r(c[2])}`;
 }
 
 function ticks(min: number, max: number, n = 5): number[] {
-  if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) return [0, 1];
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) return [min, max];
   return Array.from({ length: n }, (_, i) => min + (i * (max - min)) / (n - 1));
 }
 
-function fmt(v: number): string {
-  if (Math.abs(v) >= 10) return v.toFixed(1);
-  if (Math.abs(v) >= 1) return v.toFixed(2);
-  return v.toFixed(3);
-}
-
-// Width to plot for one axis. Prefer the pad-free *measured* width; fall back to
-// the punch width only for legacy profiles that predate the measured fields.
-// Returns NaN (skipped by every finite-filter downstream) when the peak is
-// unmeasurable, or — with `hideResLimited` — when that axis is resolution-limited
-// (its punch width is set by the half-voxel pad, the source of the width spike).
-function widthOf(peak: BraggPeakWidth, axis: number, hideResLimited = false): number {
-  const measured = peak.measured_width_q;
-  if (measured === undefined) return peak.width_q[axis]; // legacy JSON
-  if (measured === null) return NaN; // measured but unmeasurable -> drop
-  if (hideResLimited && peak.resolution_limited?.[axis]) return NaN;
-  return measured[axis];
-}
-
-function histogramCounts(
-  values: number[],
-  domain: [number, number],
-  binCount: number,
-) {
-  const xs = finiteValues(values);
-  const binWidth = (domain[1] - domain[0]) / binCount;
-  const counts = Array.from({ length: binCount }, () => 0);
-  for (const v of xs) {
-    if (v < domain[0] || v > domain[1]) continue;
-    const raw = Math.floor(((v - domain[0]) / (domain[1] - domain[0])) * binCount);
-    counts[Math.max(0, Math.min(binCount - 1, raw))] += 1;
-  }
-  const centers = counts.map((_count, i) => domain[0] + (i + 0.5) * binWidth);
-  return { counts, centers, binWidth };
-}
-
-function histogramBinCount(nPeaks: number): number {
-  return Math.max(128, Math.min(800, Math.ceil(Math.sqrt(nPeaks) * 40)));
-}
-
-function fitGaussianToHistogram(
-  values: number[],
-  domain: [number, number],
-  binCount: number,
-): FitStats | null {
-  const xs = finiteValues(values);
-  if (xs.length < 3) return null;
-  const { counts, centers, binWidth } = histogramCounts(xs, domain, binCount);
-  const maxCount = Math.max(...counts);
-  if (maxCount <= 0) return null;
-  const total = counts.reduce((acc, c) => acc + c, 0);
-  if (total <= 0) return null;
-  const weightedMean = centers.reduce((acc, center, i) => acc + center * counts[i], 0) / total;
-  const weightedSigma = Math.sqrt(
-    Math.max(
-      centers.reduce((acc, center, i) => acc + counts[i] * (center - weightedMean) ** 2, 0) / total,
-      0,
-    ),
-  );
-  const peakMean = centers[counts.indexOf(maxCount)];
-  const domainWidth = domain[1] - domain[0];
-  const minSigma = Math.max(binWidth * 0.35, domainWidth * 0.002);
-  const maxSigma = Math.max(minSigma * 1.1, domainWidth * 0.5);
-
-  const score = (mean: number, sigma: number): FitStats | null => {
-    if (!Number.isFinite(mean) || !Number.isFinite(sigma) || sigma <= 0) return null;
-    if (mean < domain[0] || mean > domain[1]) return null;
-    const g = centers.map((center) => Math.exp(-0.5 * ((center - mean) / sigma) ** 2));
-    const gg = g.reduce((acc, v) => acc + v * v, 0);
-    if (gg <= 0) return null;
-    const yg = g.reduce((acc, v, i) => acc + counts[i] * v, 0);
-    const amplitude = Math.max(0, yg / gg);
-    const error = g.reduce((acc, v, i) => acc + (counts[i] - amplitude * v) ** 2, 0);
-    return {
-      mean,
-      sigma,
-      fwhm: 2.354820045 * sigma,
-      amplitude,
-      error,
-    };
-  };
-
-  const means = [
-    weightedMean,
-    peakMean,
-    peakMean - binWidth,
-    peakMean + binWidth,
-    peakMean - 2 * binWidth,
-    peakMean + 2 * binWidth,
-  ];
-  const sigmas = [
-    minSigma,
-    binWidth * 0.5,
-    binWidth,
-    binWidth * 1.5,
-    binWidth * 2.5,
-    Math.max(minSigma, weightedSigma * 0.5),
-    Math.max(minSigma, weightedSigma),
-  ].map((s) => Math.min(Math.max(s, minSigma), maxSigma));
-
-  let best: FitStats | null = null;
-  for (const mean of means) {
-    for (const sigma of sigmas) {
-      const candidate = score(mean, sigma);
-      if (candidate && (!best || candidate.error < best.error)) best = candidate;
-    }
-  }
-
-  if (!best) return null;
-  let stepMean = Math.max(binWidth, best.sigma);
-  let stepSigma = Math.max(binWidth * 0.5, best.sigma * 0.5);
-  for (let iter = 0; iter < 24; iter += 1) {
-    let improved = false;
-    const candidates = [
-      [best.mean - stepMean, best.sigma],
-      [best.mean + stepMean, best.sigma],
-      [best.mean, best.sigma - stepSigma],
-      [best.mean, best.sigma + stepSigma],
-      [best.mean - stepMean, best.sigma - stepSigma],
-      [best.mean - stepMean, best.sigma + stepSigma],
-      [best.mean + stepMean, best.sigma - stepSigma],
-      [best.mean + stepMean, best.sigma + stepSigma],
-    ] as const;
-    for (const [mean, sigmaRaw] of candidates) {
-      const sigma = Math.min(Math.max(sigmaRaw, minSigma), maxSigma);
-      const candidate = score(mean, sigma);
-      if (candidate && candidate.error < best.error) {
-        best = candidate;
-        improved = true;
-      }
-    }
-    if (!improved) {
-      stepMean *= 0.55;
-      stepSigma *= 0.55;
-    }
-  }
-  return best;
-}
-
-function gaussianCurve(fit: FitStats) {
-  return (x: number) => fit.amplitude * Math.exp(-0.5 * ((x - fit.mean) / fit.sigma) ** 2);
-}
-
-function clampDomain(domain: [number, number], bounds: [number, number]): [number, number] {
-  const width = domain[1] - domain[0];
-  const boundsWidth = bounds[1] - bounds[0];
-  if (width >= boundsWidth) return bounds;
-  let lo = domain[0];
-  let hi = domain[1];
-  if (lo < bounds[0]) {
-    lo = bounds[0];
-    hi = lo + width;
-  }
-  if (hi > bounds[1]) {
-    hi = bounds[1];
-    lo = hi - width;
-  }
-  return [lo, hi];
-}
-
-function initialHistogramDomain(
-  allWidths: number[],
-  stats: Array<FitStats | null>,
-): { full: [number, number]; initial: [number, number] } {
-  const full = extent(allWidths, 0.4);
-  const fitRanges = stats
-    .filter((s): s is FitStats => s !== null)
-    .flatMap((s) => [s.mean - 3 * s.sigma, s.mean + 3 * s.sigma]);
-  const fitDomain = fitRanges.length ? extent(fitRanges, 0.12) : extent(allWidths, 0.18);
-  const fullWidth = full[1] - full[0];
-  const fitWidth = fitDomain[1] - fitDomain[0];
-  const minWindow = fullWidth * 0.34;
-  const center = 0.5 * (fitDomain[0] + fitDomain[1]);
-  const windowWidth = Math.min(fullWidth, Math.max(fitWidth, minWindow));
-  const initial: [number, number] = [
-    center - 0.5 * windowWidth,
-    center + 0.5 * windowWidth,
-  ];
-  return { full, initial: clampDomain(initial, full) };
-}
-
-function ChartFrame({
-  title,
-  xLabel,
-  yLabel,
-  hint,
-  yTickFormat = fmt,
-  children,
-  xDomain,
-  yDomain,
+// ---------------------------------------------------------------------------
+// Scatter — width vs |Q|, three axis series
+// ---------------------------------------------------------------------------
+function Scatter({
+  peaks,
+  selected,
+  onSelect,
+  padFloorQ,
 }: {
-  title: string;
-  xLabel: string;
-  yLabel: string;
-  hint?: string;
-  yTickFormat?: (v: number) => string;
-  children: (scale: {
-    x: (v: number) => number;
-    y: (v: number) => number;
-    innerW: number;
-    innerH: number;
-  }) => ReactNode;
-  xDomain: [number, number];
-  yDomain: [number, number];
+  peaks: BraggPeakWidth[];
+  selected: number;
+  onSelect: (i: number) => void;
+  padFloorQ: number | null;
 }) {
-  const innerW = SIZE.width - PAD.left - PAD.right;
-  const innerH = SIZE.height - PAD.top - PAD.bottom;
-  const x = (v: number) => PAD.left + ((v - xDomain[0]) / (xDomain[1] - xDomain[0])) * innerW;
-  const y = (v: number) => PAD.top + innerH - ((v - yDomain[0]) / (yDomain[1] - yDomain[0])) * innerH;
+  const qs = peaks.map((p) => p.q_abs).filter(Number.isFinite);
+  const ws: number[] = [];
+  peaks.forEach((p) => AXES.forEach((a) => { const w = displayQ(p, a.i); if (w != null) ws.push(w); }));
+  const qMin = Math.min(...qs, 0), qMax = Math.max(...qs, 1);
+  const wMin = Math.max(0, Math.min(...ws) * 0.92), wMax = Math.max(...ws) * 1.05 || 1;
+  const X = (q: number) => ((q - qMin) / (qMax - qMin || 1)) * 100;
+  const Y = (w: number) => (1 - (w - wMin) / (wMax - wMin || 1)) * 100;
+
+  // Large profiles (thousands of peaks) would mint tens of thousands of DOM dots;
+  // sample evenly down to a sane count, always keeping the selected peak.
+  const MAX_DOTS = 1200;
+  const stride = Math.max(1, Math.ceil(peaks.length / MAX_DOTS));
+  const sample = peaks.map((_, i) => i).filter((i) => i % stride === 0 || i === selected);
 
   return (
-    <div className="profile-chart">
-      <div className="profile-chart-head">
-        <div className="profile-chart-title">
-          <h3>{title}</h3>
-          {hint && <span>{hint}</span>}
-        </div>
-        <div className="profile-legend">
+    <div className="bragg-panel bragg-scatter">
+      <div className="bragg-panel-head">
+        <span className="bragg-eyebrow">Resolution function · width vs |Q|</span>
+        <div className="bragg-legend">
           {AXES.map((a) => (
-            <span key={a.key}>
-              <i style={{ background: a.color }} />
-              {a.label}
-            </span>
+            <span key={a.i} className="bragg-leg"><i style={{ background: a.color }} />{a.label}</span>
+          ))}
+          <span className="bragg-leg"><i className="bragg-leg-ring" />res-limited</span>
+        </div>
+      </div>
+      <div className="bragg-plot">
+        <div className="bragg-plot-grid" />
+        {ticks(wMin, wMax).map((t, i) => (
+          <span key={`y${i}`} className="bragg-ytick" style={{ top: `${Y(t)}%` }}>{t.toFixed(3)}</span>
+        ))}
+        {ticks(qMin, qMax).map((t, i) => (
+          <span key={`x${i}`} className="bragg-xtick" style={{ left: `${X(t)}%` }}>{t.toFixed(1)}</span>
+        ))}
+        {padFloorQ != null && (
+          <div className="bragg-padline" style={{ top: `${Y(padFloorQ)}%` }}>
+            <span>half-voxel pad {padFloorQ.toFixed(3)}</span>
+          </div>
+        )}
+        {sample.map((pi) =>
+          AXES.map((a) => {
+            const p = peaks[pi];
+            const w = displayQ(p, a.i);
+            if (w == null || !Number.isFinite(p.q_abs)) return null;
+            const flagged = resLimited(p, a.i);
+            return (
+              <button
+                key={`${pi}-${a.i}`}
+                type="button"
+                className={`bragg-dot${flagged ? " flagged" : ""}${pi === selected ? " sel" : ""}`}
+                style={{
+                  left: `${X(p.q_abs)}%`,
+                  top: `${Y(w)}%`,
+                  background: a.color,
+                  boxShadow: flagged ? `0 0 0 2px #0d1014, 0 0 0 4px ${a.color}` : undefined,
+                }}
+                title={`${hklStr(p.center_hkl)} · ${a.label} ${w.toFixed(3)} Å⁻¹`}
+                onClick={() => onSelect(pi)}
+              />
+            );
+          }),
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Histograms — per-axis width distribution
+// ---------------------------------------------------------------------------
+function Histograms({ peaks, showMeasured }: { peaks: BraggPeakWidth[]; showMeasured: boolean }) {
+  const all: number[] = [];
+  peaks.forEach((p) => AXES.forEach((a) => { const w = displayQ(p, a.i); if (w != null) all.push(w); }));
+  const lo = Math.max(0, Math.min(...all) * 0.95), hi = Math.max(...all) * 1.05 || 1;
+  const N = 11;
+  return (
+    <div className="bragg-panel bragg-hist">
+      <div className="bragg-panel-head">
+        <span className="bragg-eyebrow">Width distribution / axis</span>
+        <div className="bragg-legend">
+          <span className="bragg-leg"><i className="bragg-tick-solid" />fitted</span>
+          <span className="bragg-leg"><i className="bragg-tick-dash" />measured</span>
+        </div>
+      </div>
+      {AXES.map((a) => {
+        const fittedMed = median(peaks.map((p) => fittedQ(p, a.i)));
+        const measMed = median(peaks.map((p) => measuredQ(p, a.i)));
+        const counts = Array.from({ length: N }, () => 0);
+        peaks.forEach((p) => {
+          const w = displayQ(p, a.i);
+          if (w == null || w < lo || w > hi) return;
+          counts[Math.max(0, Math.min(N - 1, Math.floor(((w - lo) / (hi - lo)) * N)))]++;
+        });
+        const cMax = Math.max(1, ...counts);
+        const pos = (v: number | null) => (v == null ? null : ((v - lo) / (hi - lo)) * 100);
+        return (
+          <div key={a.i} className="bragg-hist-row">
+            <div className="bragg-hist-label">
+              <span style={{ color: a.color }}>{a.label}</span>
+              <span className="bragg-hist-med">med {fmt(measMed ?? fittedMed)} Å⁻¹</span>
+            </div>
+            <div className="bragg-bars">
+              {counts.map((c, i) => (
+                <span key={i} className="bragg-bar" style={{ height: `${(c / cMax) * 100}%`, background: c ? `${a.color}cc` : `${a.color}22` }} />
+              ))}
+              {pos(fittedMed) != null && <i className="bragg-bar-fit" style={{ left: `${pos(fittedMed)}%` }} />}
+              {showMeasured && pos(measMed) != null && <i className="bragg-bar-meas" style={{ left: `${pos(measMed)}%` }} />}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Peak table
+// ---------------------------------------------------------------------------
+function PeakTable({
+  peaks,
+  order,
+  selected,
+  sortKey,
+  onSort,
+  onSelect,
+}: {
+  peaks: BraggPeakWidth[];
+  order: number[];
+  selected: number;
+  sortKey: SortKey;
+  onSort: (k: SortKey) => void;
+  onSelect: (i: number) => void;
+}) {
+  return (
+    <div className="bragg-panel bragg-table">
+      <div className="bragg-panel-head">
+        <span className="bragg-eyebrow">Peak table · {peaks.length} peaks</span>
+        <div className="bragg-sort">
+          {(["q", "width", "intensity"] as SortKey[]).map((k) => (
+            <button key={k} type="button" className={sortKey === k ? "on" : ""} onClick={() => onSort(k)}>
+              {k === "q" ? "|Q|" : k === "width" ? "width" : "I"}
+            </button>
           ))}
         </div>
       </div>
-      <svg viewBox={`0 0 ${SIZE.width} ${SIZE.height}`} role="img" aria-label={title}>
-        <rect
-          x={PAD.left}
-          y={PAD.top}
-          width={innerW}
-          height={innerH}
-          className="profile-plot-bg"
-        />
-        {ticks(...xDomain).map((t) => (
-          <g key={`x-${t}`}>
-            <line x1={x(t)} x2={x(t)} y1={PAD.top} y2={PAD.top + innerH} className="profile-grid" />
-            <text x={x(t)} y={SIZE.height - 17} className="profile-tick" textAnchor="middle">
-              {fmt(t)}
-            </text>
-          </g>
-        ))}
-        {ticks(...yDomain).map((t) => (
-          <g key={`y-${t}`}>
-            <line x1={PAD.left} x2={PAD.left + innerW} y1={y(t)} y2={y(t)} className="profile-grid" />
-            <text x={PAD.left - 9} y={y(t) + 4} className="profile-tick" textAnchor="end">
-              {yTickFormat(t)}
-            </text>
-          </g>
-        ))}
-        <line x1={PAD.left} x2={PAD.left + innerW} y1={PAD.top + innerH} y2={PAD.top + innerH} className="profile-axis" />
-        <line x1={PAD.left} x2={PAD.left} y1={PAD.top} y2={PAD.top + innerH} className="profile-axis" />
-        {children({ x, y, innerW, innerH })}
-        <text x={PAD.left + innerW / 2} y={SIZE.height - 3} className="profile-axis-label" textAnchor="middle">
-          {xLabel}
-        </text>
-        <text x={15} y={PAD.top + innerH / 2} className="profile-axis-label" textAnchor="middle" transform={`rotate(-90 15 ${PAD.top + innerH / 2})`}>
-          {yLabel}
-        </text>
-      </svg>
-    </div>
-  );
-}
-
-function WidthScatter({ peaks, hideResLimited }: { peaks: BraggPeakWidth[]; hideResLimited: boolean }) {
-  const xDomain = extent(peaks.map((p) => p.q_abs));
-  const yDomain = extent(peaks.flatMap((p) => AXES.map((a) => widthOf(p, a.key, hideResLimited))));
-
-  return (
-    <ChartFrame
-      title="Peak width versus |Q|"
-      xLabel="|Q| (Å⁻¹)"
-      yLabel="width (Å⁻¹)"
-      xDomain={xDomain}
-      yDomain={yDomain}
-    >
-      {({ x, y }) => (
-        <>
-          {AXES.map((axis) => (
-            <g key={axis.key}>
-              {peaks.map((p) => {
-                const w = widthOf(p, axis.key, hideResLimited);
-                if (!Number.isFinite(p.q_abs) || !Number.isFinite(w)) return null;
+      <div className="bragg-thead">
+        <span>hkl</span><span>|Q|</span><span>I</span>
+        {AXES.map((a) => <span key={a.i} style={{ color: a.color }}>w {a.label}</span>)}
+        <span>fit</span>
+      </div>
+      <div className="bragg-tbody">
+        {order.slice(0, MAX_ROWS).map((pi) => {
+          const p = peaks[pi];
+          const anyFlag = AXES.some((a) => resLimited(p, a.i));
+          return (
+            <button
+              key={pi}
+              type="button"
+              className={`bragg-trow${pi === selected ? " sel" : ""}`}
+              onClick={() => onSelect(pi)}
+            >
+              <span className="bragg-hkl">{anyFlag && <i className="bragg-flag-dot" />}{hklStr(p.center_hkl)}</span>
+              <span>{p.q_abs.toFixed(2)}</span>
+              <span>{p.intensity != null ? Math.round(p.intensity).toLocaleString() : "—"}</span>
+              {AXES.map((a) => {
+                const w = displayQ(p, a.i);
                 return (
-                  <circle
-                    key={`${p.index}-${axis.key}`}
-                    cx={x(p.q_abs)}
-                    cy={y(w)}
-                    r={3}
-                    fill={axis.color}
-                    opacity={0.72}
-                  />
+                  <span key={a.i} style={{ color: resLimited(p, a.i) ? "#e8b454" : "#cdd4df" }}>
+                    {fmt(w)}
+                  </span>
                 );
               })}
-            </g>
-          ))}
-        </>
-      )}
-    </ChartFrame>
-  );
-}
-
-function Histogram({ peaks, hideResLimited }: { peaks: BraggPeakWidth[]; hideResLimited: boolean }) {
-  const [hoveredFit, setHoveredFit] = useState<{
-    axis: string;
-    color: string;
-    mean: number;
-    sigma: number;
-    x: number;
-    y: number;
-  } | null>(null);
-  const [drag, setDrag] = useState<{
-    pointerId: number;
-    startX: number;
-    currentX: number;
-  } | null>(null);
-  const allWidths = peaks.flatMap((p) => AXES.map((a) => widthOf(p, a.key, hideResLimited)));
-  const binCount = histogramBinCount(peaks.length);
-  const domains = useMemo(
-    () => {
-      const fullDomain = extent(allWidths, 0.4);
-      const fullFits = AXES.map((axis) =>
-        fitGaussianToHistogram(
-          peaks.map((p) => widthOf(p, axis.key, hideResLimited)),
-          fullDomain,
-          binCount,
-        ),
-      );
-      return initialHistogramDomain(allWidths, fullFits);
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [peaks, hideResLimited],
-  );
-  const [xDomain, setXDomain] = useState<[number, number]>(domains.initial);
-  useEffect(() => {
-    setXDomain(domains.initial);
-  }, [domains.initial]);
-  const binWidth = (domains.full[1] - domains.full[0]) / binCount;
-  const bins = AXES.map((axis) => {
-    const values = peaks.map((p) => widthOf(p, axis.key, hideResLimited));
-    const { counts } = histogramCounts(values, domains.full, binCount);
-    const fit = fitGaussianToHistogram(values, domains.full, binCount);
-    return { axis, counts, fit };
-  });
-  const fitMax = Math.max(
-    0,
-    ...bins.flatMap((b) => {
-      if (!b.fit) return [0];
-      const curve = gaussianCurve(b.fit);
-      return Array.from({ length: 400 }, (_, i) =>
-        curve(domains.full[0] + (i * (domains.full[1] - domains.full[0])) / 399),
-      );
-    }),
-  );
-  const yMax = Math.max(1, ...bins.flatMap((b) => b.counts), fitMax) * 1.16;
-
-  return (
-    <ChartFrame
-      title="Peak-width histogram"
-      xLabel="width (Å⁻¹)"
-      yLabel="number of peaks"
-      hint="Click and drag to select a region to zoom. Double-click to reset."
-      xDomain={xDomain}
-      yDomain={[0, yMax]}
-      yTickFormat={(v) => Math.round(v).toLocaleString()}
-    >
-      {({ x, y, innerW }) => {
-        const getLocalX = (clientX: number, target: Element) => {
-          const rect = target.getBoundingClientRect();
-          return Math.max(0, Math.min(innerW, clientX - rect.left));
-        };
-        const startDrag = (event: PointerEvent<SVGRectElement>) => {
-          event.currentTarget.setPointerCapture(event.pointerId);
-          setHoveredFit(null);
-          const localX = getLocalX(event.clientX, event.currentTarget);
-          setDrag({
-            pointerId: event.pointerId,
-            startX: localX,
-            currentX: localX,
-          });
-        };
-        const moveDrag = (event: PointerEvent<SVGRectElement>) => {
-          if (!drag || drag.pointerId !== event.pointerId) return;
-          setDrag({ ...drag, currentX: getLocalX(event.clientX, event.currentTarget) });
-        };
-        const endDrag = (event: PointerEvent<SVGRectElement>) => {
-          if (!drag || drag.pointerId !== event.pointerId) return;
-          const minX = Math.min(drag.startX, drag.currentX);
-          const maxX = Math.max(drag.startX, drag.currentX);
-          if (maxX - minX > 5) {
-            const domainWidth = xDomain[1] - xDomain[0];
-            const newDomainStart = xDomain[0] + (minX / innerW) * domainWidth;
-            const newDomainEnd = xDomain[0] + (maxX / innerW) * domainWidth;
-            setXDomain(clampDomain([newDomainStart, newDomainEnd], domains.full));
-          }
-          setDrag(null);
-        };
-        const resetZoom = () => setXDomain(domains.initial);
-        return (
-          <>
-            <rect
-              x={PAD.left}
-              y={PAD.top}
-              width={innerW}
-              height={SIZE.height - PAD.top - PAD.bottom}
-              className={`profile-drag-plane${drag ? " dragging" : ""}`}
-              onPointerDown={startDrag}
-              onPointerMove={moveDrag}
-              onPointerUp={endDrag}
-              onPointerCancel={endDrag}
-              onLostPointerCapture={() => setDrag(null)}
-              onDoubleClick={resetZoom}
-            />
-            {drag && Math.abs(drag.currentX - drag.startX) > 2 && (
-              <rect
-                x={PAD.left + Math.min(drag.startX, drag.currentX)}
-                y={PAD.top}
-                width={Math.abs(drag.currentX - drag.startX)}
-                height={SIZE.height - PAD.top - PAD.bottom}
-                fill="var(--accent)"
-                opacity={0.15}
-                stroke="var(--accent)"
-                strokeDasharray="4 2"
-                pointerEvents="none"
-              />
-            )}
-            {bins.map(({ axis, counts }) => (
-              <g key={axis.key}>
-                {counts.map((count, i) => {
-                  const val0 = domains.full[0] + i * binWidth;
-                  const val1 = domains.full[0] + (i + 1) * binWidth;
-                  if (val1 < xDomain[0] || val0 > xDomain[1]) return null;
-                  
-                  const x0 = Math.max(PAD.left, x(val0));
-                  const x1 = Math.min(PAD.left + innerW, x(val1));
-                  if (x1 <= x0) return null;
-                  
-                  const h = y(0) - y(count);
-                  return (
-                    <rect
-                      key={i}
-                      x={x0}
-                      y={y(count)}
-                      width={Math.max(1, x1 - x0)}
-                      height={h}
-                      fill={axis.color}
-                      opacity={0.4}
-                    />
-                  );
-                })}
-              </g>
-            ))}
-            {bins.map(({ axis, fit }) => {
-              if (!fit) return null;
-              const fitCurve = gaussianCurve(fit);
-              const points = Array.from({ length: 500 }, (_, i) => {
-                const xv = xDomain[0] + (i * (xDomain[1] - xDomain[0])) / 499;
-                return `${x(xv).toFixed(2)},${y(fitCurve(xv)).toFixed(2)}`;
-              }).join(" ");
-              const showTip = (event: MouseEvent<SVGPolylineElement>) => {
-                const svg = event.currentTarget.ownerSVGElement;
-                if (!svg) return;
-                const screenCtm = svg.getScreenCTM();
-                if (!screenCtm) return;
-                const pt = svg.createSVGPoint();
-                pt.x = event.clientX;
-                pt.y = event.clientY;
-                const loc = pt.matrixTransform(screenCtm.inverse());
-                setHoveredFit({
-                  axis: axis.label,
-                  color: axis.color,
-                  mean: fit.mean,
-                  sigma: fit.sigma,
-                  x: Math.min(Math.max(loc.x + 12, PAD.left + 6), SIZE.width - 162),
-                  y: Math.min(Math.max(loc.y - 48, PAD.top + 6), SIZE.height - 74),
-                });
-              };
-              return (
-                <g key={`fit-${axis.key}`}>
-                  <polyline
-                    points={points}
-                    className="profile-fit-line"
-                    style={{ stroke: axis.color }}
-                  />
-                  <polyline
-                    points={points}
-                    className="profile-fit-hit"
-                    onMouseMove={showTip}
-                    onMouseEnter={showTip}
-                    onMouseLeave={() => setHoveredFit(null)}
-                  />
-                </g>
-              );
-            })}
-            {hoveredFit && (
-              <g className="profile-tooltip" transform={`translate(${hoveredFit.x} ${hoveredFit.y})`}>
-                <rect width={150} height={60} rx={6} />
-                <circle cx={13} cy={15} r={4} fill={hoveredFit.color} />
-                <text x={24} y={19}>{hoveredFit.axis} Gaussian fit</text>
-                <text x={10} y={38}>mean {fmt(hoveredFit.mean)} Å⁻¹</text>
-                <text x={10} y={53}>sigma {fmt(hoveredFit.sigma)} Å⁻¹</text>
-              </g>
-            )}
-          </>
-        );
-      }}
-    </ChartFrame>
-  );
-}
-
-function SummaryRows({ peaks }: { peaks: BraggPeakWidth[] }) {
-  const allWidths = peaks.flatMap((p) => AXES.map((a) => widthOf(p, a.key)));
-  const domain = extent(allWidths, 0.4);
-  const binCount = histogramBinCount(peaks.length);
-  const rows = AXES.map((axis) => {
-    const fit = fitGaussianToHistogram(peaks.map((p) => widthOf(p, axis.key)), domain, binCount);
-    return { axis, fit };
-  });
-  return (
-    <div className="profile-summary">
-      {rows.map((row) => (
-        <div className="profile-summary-row" key={row.axis.key}>
-          <span><i style={{ background: row.axis.color }} />{row.axis.label}</span>
-          {row.fit ? (
-            <>
-              <em>Gaussian mean <b>{fmt(row.fit.mean)}</b> Å⁻¹</em>
-              <em>Sigma <b>{fmt(row.fit.sigma)}</b> Å⁻¹</em>
-              <em>FWHM <b>{fmt(row.fit.fwhm)}</b> Å⁻¹</em>
-            </>
-          ) : (
-            <em>Gaussian fit unavailable</em>
-          )}
-        </div>
-      ))}
+              <span className="bragg-fit">{p.fit_kind?.slice(0, 3) || "—"}</span>
+            </button>
+          );
+        })}
+        {order.length > MAX_ROWS && (
+          <div className="bragg-trow-more">
+            showing {MAX_ROWS} of {order.length} — sort to surface peaks of interest
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Selected-peak detail — intensity slices + fit ellipses + readout
+// ---------------------------------------------------------------------------
+function SelectedPeak({
+  peak,
+  peaks,
+  volumeId,
+  colormap,
+  setColormap,
+}: {
+  peak: BraggPeakWidth;
+  peaks: BraggPeakWidth[];
+  volumeId: string | undefined;
+  colormap: string;
+  setColormap: (c: string) => void;
+}) {
+  const [contrast, setContrast] = useState(1.5);
+  const lut = COLORMAPS[colormap] ?? COLORMAPS.inferno;
+  const [h, k, l] = peak.center_hkl;
+
+  const maxW = Math.max(...peak.width_hkl.map(Math.abs), 0.02);
+  const half = Math.min(0.6, Math.max(0.08, maxW * 3.5));
+
+  const floorHkl = AXES.map((a) => deriveFloor(peaks, a.i, true));
+  const ell = (xa: number, ya: number, src: (p: BraggPeakWidth, a: number) => number | null): Ellipse | null => {
+    const rx = src(peak, xa), ry = src(peak, ya);
+    return rx != null && ry != null ? { rx: Math.abs(rx), ry: Math.abs(ry) } : null;
+  };
+  const floorEll = (xa: number, ya: number): Ellipse | null =>
+    floorHkl[xa] != null && floorHkl[ya] != null ? { rx: floorHkl[xa]!, ry: floorHkl[ya]! } : null;
+
+  const tiles = [
+    { label: "a*·b*", color: "#f1a73a", plane: "hk0", value: l, cx: h, cy: k, xa: 0, ya: 1 },
+    { label: "a*·c*", color: "#34c98e", plane: "h0l", value: k, cx: h, cy: l, xa: 0, ya: 2 },
+    { label: "b*·c*", color: "#74a8ff", plane: "0kl", value: h, cx: k, cy: l, xa: 1, ya: 2 },
+  ];
+
+  return (
+    <div className="bragg-panel bragg-detail">
+      <div className="bragg-panel-head">
+        <span className="bragg-eyebrow">Selected peak · intensity slices + fit</span>
+        <span className="bragg-sel-hkl">{hklStr(peak.center_hkl)}</span>
+      </div>
+      <div className="bragg-sel-meta">
+        |Q| {peak.q_abs.toFixed(3)} Å⁻¹ · I {peak.intensity != null ? Math.round(peak.intensity).toLocaleString() : "—"} · {peak.fit_kind || "fit"}
+      </div>
+
+      <div className="bragg-contrast">
+        <span className="bragg-ctl-label">Contrast</span>
+        <input
+          type="range"
+          min={0.5}
+          max={3}
+          step={0.1}
+          value={contrast}
+          onChange={(e) => setContrast(Number(e.target.value))}
+          style={{
+            background: `linear-gradient(90deg, #4f8ff7 ${((contrast - 0.5) / 2.5) * 100}%, #232a33 ${((contrast - 0.5) / 2.5) * 100}%)`,
+          }}
+        />
+        <span className="bragg-ctl-val">× {contrast.toFixed(1)}</span>
+      </div>
+
+      <div className="bragg-tiles">
+        {tiles.map((t) => (
+          <BraggPeakSlice
+            key={t.label}
+            volumeId={volumeId}
+            plane={t.plane}
+            value={t.value}
+            cx={t.cx}
+            cy={t.cy}
+            half={half}
+            lut={lut}
+            contrast={contrast}
+            fitted={ell(t.xa, t.ya, fittedHkl)!}
+            measured={ell(t.xa, t.ya, measuredHkl)}
+            floor={floorEll(t.xa, t.ya)}
+            axisLabel={t.label}
+            axisColor={t.color}
+          />
+        ))}
+      </div>
+
+      <div className="bragg-leg-row">
+        <span className="bragg-leg"><i className="bragg-ell-leg-fit" />fitted</span>
+        <span className="bragg-leg"><i className="bragg-ell-leg-meas" />measured</span>
+        <span className="bragg-leg"><i className="bragg-ell-leg-floor" />|Q|-floor</span>
+      </div>
+
+      <div className="bragg-cmap">
+        <span className="bragg-ctl-label">Colormap</span>
+        <select value={colormap} onChange={(e) => setColormap(e.target.value)}>
+          {CMAPS.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <ColormapBar lut={lut} />
+      </div>
+
+      <div className="bragg-readout">
+        <span />
+        {AXES.map((a) => <span key={a.i} style={{ color: a.color }}>{a.label}</span>)}
+        <span className="bragg-readout-key">fitted</span>
+        {AXES.map((a) => <span key={a.i}>{fmt(fittedQ(peak, a.i))}</span>)}
+        <span className="bragg-readout-key">meas.</span>
+        {AXES.map((a) => (
+          <span key={a.i} style={{ color: resLimited(peak, a.i) ? "#e8b454" : "#cdd4df" }}>{fmt(measuredQ(peak, a.i))}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
 export function BraggProfileViewer() {
   const datasetsQ = useDatasets();
   const datasets = useMemo(() => datasetsQ.data ?? [], [datasetsQ.data]);
   useInitializeDataset(datasets);
-
   const datasetId = useDatasetStore((s) => s.datasetId);
   const setDataset = useDatasetStore((s) => s.setDataset);
-  const [integerHklOnly, setIntegerHklOnly] = useState(true);
-  const [hideResLimited, setHideResLimited] = useState(true);
+  const colormap = useViewerStore((s) => s.colormap);
+  const setColormap = useViewerStore((s) => s.setColormap);
 
   const profileQ = useBraggProfile(datasetId ?? undefined);
   const dataset = datasets.find((d) => d.id === datasetId);
   const profile = profileQ.data;
-  const rawPeaks = profile?.peaks ?? [];
-  
-  const peaks = useMemo(() => {
-    if (!integerHklOnly) return rawPeaks;
-    return rawPeaks.filter(p => {
-      const [h, k, l] = p.center_hkl;
-      return Math.abs(h - Math.round(h)) < 0.15 &&
-             Math.abs(k - Math.round(k)) < 0.15 &&
-             Math.abs(l - Math.round(l)) < 0.15;
-    });
-  }, [rawPeaks, integerHklOnly]);
+  const peaks = useMemo(() => profile?.peaks ?? [], [profile]);
 
-  const tilted = peaks.filter((p) => p.fit_kind === "tilted").length;
+  const [selected, setSelected] = useState(0);
+  const [sortKey, setSortKey] = useState<SortKey>("q");
+
+  // pre-punch volume so the peak is visible (ring-removed preferred, raw fallback)
+  const sliceVolumeId =
+    dataset?.stages.find((s) => s.name === "ringremoved" && s.exists)?.volume_id ??
+    dataset?.stages.find((s) => s.name === "raw" && s.exists)?.volume_id;
+  const meta = useMeta(sliceVolumeId);
+
+  const order = useMemo(() => {
+    const idx = peaks.map((_, i) => i);
+    idx.sort((a, b) => {
+      const pa = peaks[a], pb = peaks[b];
+      if (sortKey === "q") return pa.q_abs - pb.q_abs;
+      if (sortKey === "intensity") return (pb.intensity ?? -Infinity) - (pa.intensity ?? -Infinity);
+      return (measuredQ(pb, 1) ?? -Infinity) - (measuredQ(pa, 1) ?? -Infinity); // width = b* desc
+    });
+    return idx;
+  }, [peaks, sortKey]);
+
+  // ---- derived stats ----
+  const meas = peaks.filter(measurable);
+  const flagged = meas.filter((p) => AXES.some((a) => resLimited(p, a.i))).length;
+  const medQ = AXES.map((a) => median(peaks.map((p) => displayQ(p, a.i))));
+  const floorQ = AXES.map((a) => deriveFloor(peaks, a.i, false));
+  const padQ = median(floorQ);
+  const qs = peaks.map((p) => p.q_abs).filter(Number.isFinite);
+
+  const lat = meta.data?.lattice;
+  const grid = meta.data?.shape;
+
+  // Keep selection in range when the dataset / profile changes.
+  const selPeak = peaks[selected] ?? peaks[Math.floor(peaks.length / 2)];
+
+  const empty = (() => {
+    if (datasetsQ.isLoading) return <EmptyState title="Loading datasets…" />;
+    if (datasetsQ.isError) return <EmptyState error icon={<IconAlert />} title="Backend unreachable" hint="Start the API server and reload." />;
+    if (!datasetsQ.isLoading && datasets.length === 0) return <EmptyState icon={<IconLattice />} title="No datasets" hint="Load a volume and run the pipeline on the Configure page first." />;
+    if (!datasetId) return <EmptyState icon={<IconLattice />} title="No dataset selected" hint="Pick a dataset to view its Bragg profile." />;
+    if (profileQ.isLoading || !profile) return <EmptyState title="Loading Bragg profile…" />;
+    if (profileQ.isError) return <EmptyState error icon={<IconAlert />} title="Could not load Bragg profile" hint={(profileQ.error as Error).message} />;
+    if (profile && !profile.has_profile) return <EmptyState icon={<IconLattice />} title="No Bragg profile for this dataset" hint="Run the pipeline with Bragg-punch peak-shape fitting enabled to create the review profile." />;
+    if (profile?.has_profile && peaks.length === 0) return <EmptyState title="No peaks recorded" hint="The punch stage completed, but no Bragg peaks were detected." />;
+    return null;
+  })();
 
   return (
-    <div className="page-body">
-      <div className="toolbar">
-        <Field label="Dataset" grow>
-          <select value={datasetId ?? ""} onChange={(e) => setDataset(e.target.value)}>
-            {datasets.map((d) => (
-              <option key={d.id} value={d.id} title={d.raw_name}>
-                {d.temperature ?? d.stem}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Peaks to show" grow>
-          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", height: "100%", cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={integerHklOnly}
-              onChange={(e) => setIntegerHklOnly(e.target.checked)}
-            />
-            <span>Integer HKL only</span>
-          </label>
-        </Field>
-        <Field label="Width source" grow>
-          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", height: "100%", cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={hideResLimited}
-              onChange={(e) => setHideResLimited(e.target.checked)}
-            />
-            <span>Hide resolution-limited</span>
-          </label>
-        </Field>
-      </div>
-
-      {datasetsQ.isLoading && <EmptyState title="Loading datasets..." />}
-      {datasetsQ.isError && (
-        <EmptyState
-          error
-          icon={<IconAlert />}
-          title="Backend unreachable"
-          hint="Start the API server and reload."
-        />
-      )}
-      {profileQ.isLoading && <EmptyState title="Loading Bragg profile..." />}
-      {profileQ.isError && (
-        <EmptyState
-          error
-          icon={<IconAlert />}
-          title="Could not load Bragg profile"
-          hint={(profileQ.error as Error).message}
-        />
-      )}
-      {profile && !profile.has_profile && (
-        <EmptyState
-          icon={<IconLattice />}
-          title="No Bragg profile for this dataset"
-          hint="Run the Bragg punch stage with peak-shape fitting enabled to create the review profile."
-        />
-      )}
-      {profile?.has_profile && rawPeaks.length === 0 && (
-        <EmptyState
-          title="No peaks recorded"
-          hint="The punch stage completed, but no Bragg peaks were detected for this dataset."
-        />
-      )}
-      {profile?.has_profile && rawPeaks.length > 0 && peaks.length === 0 && (
-        <EmptyState
-          title="All peaks filtered out"
-          hint="Try disabling the Integer HKL filter to reveal peaks."
-        />
-      )}
-
-      {profile?.has_profile && peaks.length > 0 && (
-        <>
-          <SummaryRows peaks={peaks} />
-          <div className="profile-chart-grid">
-            <WidthScatter peaks={peaks} hideResLimited={hideResLimited} />
-            <Histogram peaks={peaks} hideResLimited={hideResLimited} />
+    <div className="bragg-page">
+      <div className="bragg-card">
+        <div className="bragg-title-row">
+          <div className="bragg-chips">
+            <label className="bragg-chip bragg-chip-select">
+              <span className="bragg-chip-key">Dataset</span>
+              <select value={datasetId ?? ""} onChange={(e) => { setDataset(e.target.value); setSelected(0); }}>
+                {datasets.map((d) => <option key={d.id} value={d.id} title={d.raw_name}>{d.temperature ?? d.stem}</option>)}
+              </select>
+            </label>
+            {profile?.has_profile && (
+              <span className="bragg-chip bragg-chip-fit">
+                <i /> {profile.fit_covariance ? "covariance fit" : "moment fit"}
+              </span>
+            )}
           </div>
-          <MetaStrip
-            items={[
-              { key: "Source", value: dataset?.raw_name },
-              { key: "Peaks", value: profile.n_peaks },
-              { key: "Tilted fits", value: `${tilted}/${profile.n_peaks}` },
-              { key: "Punch frame", value: profile.punch_frame ?? "unknown" },
-              { key: "Profile", value: profile.profile_path ?? "" },
-            ]}
-          />
-        </>
-      )}
+        </div>
+
+        {empty ?? (
+          <>
+            <div className="bragg-stats">
+              <div className="bragg-stat">
+                <span className="bragg-stat-eyebrow">Peaks profiled</span>
+                <span className="bragg-stat-row"><span className="bragg-stat-v">{peaks.length}</span><span className="bragg-stat-desc">{meas.length === peaks.length ? "all measurable" : `${meas.length} measurable`}</span></span>
+              </div>
+              <div className="bragg-stat">
+                <span className="bragg-stat-eyebrow">Median width · Å⁻¹</span>
+                <span className="bragg-stat-row bragg-stat-medrow">
+                  {AXES.map((a) => (
+                    <span key={a.i} className="bragg-stat-med">
+                      <span style={{ color: a.color }}>{a.label}</span> {fmt(medQ[a.i])}
+                    </span>
+                  ))}
+                </span>
+              </div>
+              <div className="bragg-stat">
+                <span className="bragg-stat-eyebrow">Resolution-limited</span>
+                <span className="bragg-stat-row"><span className="bragg-stat-v">{meas.length ? Math.round((flagged / meas.length) * 100) : 0}%</span><span className="bragg-stat-desc">{flagged} of {meas.length} peaks</span></span>
+              </div>
+              <div className="bragg-stat">
+                <span className="bragg-stat-eyebrow">|Q| range</span>
+                <span className="bragg-stat-row"><span className="bragg-stat-v">{qs.length ? `${Math.min(...qs).toFixed(1)}–${Math.max(...qs).toFixed(1)}` : "—"}</span><span className="bragg-stat-desc">Å⁻¹{padQ != null ? ` · floor ${padQ.toFixed(3)}` : ""}</span></span>
+              </div>
+              <div className="bragg-stat">
+                <span className="bragg-stat-eyebrow">Fit kind</span>
+                <span className="bragg-stat-row"><span className="bragg-stat-v bragg-stat-fit">{profile?.fit_covariance ? "covariance" : "moment"}</span><span className="bragg-stat-desc">{padQ != null ? `pad ${padQ.toFixed(3)} Å⁻¹` : ""}</span></span>
+              </div>
+            </div>
+
+            <div className="bragg-grid">
+              <Scatter peaks={peaks} selected={selected} onSelect={setSelected} padFloorQ={padQ} />
+              <Histograms peaks={peaks} showMeasured />
+            </div>
+
+            <div className="bragg-grid">
+              <PeakTable peaks={peaks} order={order} selected={selected} sortKey={sortKey} onSort={setSortKey} onSelect={setSelected} />
+              {selPeak && (
+                <SelectedPeak peak={selPeak} peaks={peaks} volumeId={sliceVolumeId} colormap={colormap} setColormap={setColormap} />
+              )}
+            </div>
+
+            <div className="bragg-meta">
+              {([
+                ["Source", dataset?.raw_name ?? "—"],
+                ["Punch frame", profile?.punch_frame ?? "unknown"],
+                ["Floor r", floorQ.every((f) => f != null) ? `(${floorQ.map((f) => f!.toFixed(3)).join(", ")})` : "—"],
+                ...(lat && lat.a != null ? [["Lattice", `a=${lat.a}${lat.b != null ? `, b=${lat.b}` : ""}${lat.c != null ? `, c=${lat.c} Å` : ""}`] as [string, string]] : []),
+                ...(grid ? [["Grid", grid.join(" × ")] as [string, string]] : []),
+              ] as [string, string][]).map(([key, value]) => (
+                <div key={key} className="bragg-meta-item"><span className="bragg-meta-key">{key}</span><span className="bragg-meta-val">{value}</span></div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

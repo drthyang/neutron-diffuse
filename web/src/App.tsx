@@ -45,7 +45,7 @@ const NAV: { id: Tab; label: string; desc: string; icon: ReactNode }[] = [
   {
     id: "bragg",
     label: "Bragg profile",
-    desc: "Review fitted Bragg peak ellipsoid widths after punching with |Q| trends and width histograms.",
+    desc: "Fitted radius vs. pad-free measured width for every punched peak across all three reciprocal axes — peaks sagging to the half-voxel floor are resolution-limited.",
     icon: <IconProfileWave />,
   },
   {
