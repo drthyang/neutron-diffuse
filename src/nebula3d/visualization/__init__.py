@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 from nebula3d.visualization.interactive import interactive_slices
 from nebula3d.visualization.overview import plot_overview
 from nebula3d.visualization.profiles import plot_azimuthal_map, plot_radial_profile

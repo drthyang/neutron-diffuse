@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 """3D-ΔPDF computation via Fourier transform of diffuse scattering.
 
 The three-dimensional difference pair distribution function (3D-ΔPDF) is:

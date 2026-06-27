@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 """Parametric powder-ring model: separable per-ring pseudo-Voigt × azimuthal texture.
 
 Model

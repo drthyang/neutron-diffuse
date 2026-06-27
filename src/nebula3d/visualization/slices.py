@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 """2D slice views through an HKLVolume.
 
 Each slice is defined by which two axes are displayed (the *plane*) and the

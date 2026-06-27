@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 """Background pipeline-job execution.
 
 The pipeline is CPU-bound and minutes long, so each run executes in a **separate

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 """Data processing pipeline.
 
 Input: symmetrised 3D HKL volume from Mantid.

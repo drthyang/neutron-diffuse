@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 """Interpolation-based inpainting for masked HKL voxels.
 
 Implements RBF (radial basis function) and biharmonic interpolation.

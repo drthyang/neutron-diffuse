@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 """Back-FFT consistency check for the API.
 
 Runs the |Q|-band-limited ΔPDF round trip (``nebula3d.pipeline.consistency_reconstruction``)

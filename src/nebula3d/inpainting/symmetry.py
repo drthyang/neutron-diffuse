@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 """Symmetry-based inpainting: fill masked voxels from crystallographic equivalents.
 
 For a crystal with point group G, voxels related by G-operations in reciprocal

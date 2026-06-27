@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 """Bragg peak removal (punch step) for 3D-ΔPDF preparation.
 
 Bragg peaks sit at (near-)integer (h, k, l) positions and are orders of magnitude

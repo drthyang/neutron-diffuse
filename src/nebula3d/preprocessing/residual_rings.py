@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 """Step 2 of powder ring removal: residual ring detection via Laue symmetry.
 
 Why this is needed

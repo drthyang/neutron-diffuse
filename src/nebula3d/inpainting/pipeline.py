@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 """High-level fill() API: orchestrates symmetry → TV → RBF fallback."""
 
 from __future__ import annotations

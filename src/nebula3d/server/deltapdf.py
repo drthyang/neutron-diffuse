@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 """Real-space 3D-ΔPDF loading and orthoslice extraction for the API.
 
 ΔPDF ``.h5`` files (written by :func:`nebula3d.pipeline.write_delta_pdf_h5` /

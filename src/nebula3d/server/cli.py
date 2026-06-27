@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 """``nebula3d-web`` console entry point: serve the API + SPA and open a browser."""
 
 from __future__ import annotations

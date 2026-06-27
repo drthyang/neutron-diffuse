@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 """FastAPI backend for the nebula3d web UI.
 
 The server is a thin presentation/orchestration layer over the ``nebula3d`` library:

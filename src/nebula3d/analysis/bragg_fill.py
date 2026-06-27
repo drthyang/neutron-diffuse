@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 """Backfill Bragg-punched holes — step 5 of the further analysis pipeline.
 
 The preferred real-data fill is local-background replacement: each punched

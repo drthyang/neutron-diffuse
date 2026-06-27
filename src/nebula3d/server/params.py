@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 """Map a curated pipeline-run request onto the validated stage defaults.
 
 This is the FastAPI-free home of :func:`build_params` so that both the API

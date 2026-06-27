@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 """Azimuthal sampling-density mask for symmetrised volumes.
 
 A symmetrised HKL volume can be densely measured along some azimuthal directions

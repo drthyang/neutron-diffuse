@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 """Volume loading (LRU cached) and 2D-slice extraction for the API.
 
 Slices are extracted with the *same* :func:`nebula3d.visualization.extract_slice`

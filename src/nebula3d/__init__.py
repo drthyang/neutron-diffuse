@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 """nebula3d — 3D diffuse-scattering processing toolkit.
 
 Input: symmetrized 3D HKL volume (e.g. from Mantid).

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 """Library pipeline orchestration: raw .nxs/HKL volume → 3D-ΔPDF.
 
 This is the in-process, testable home for the six-stage workflow that

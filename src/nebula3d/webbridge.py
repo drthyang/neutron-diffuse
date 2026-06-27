@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 """In-browser (Pyodide) bridge: drive the real pipeline + viewers, no server.
 
 This is the backend-less twin of :mod:`nebula3d.server` for the GitHub Pages build.

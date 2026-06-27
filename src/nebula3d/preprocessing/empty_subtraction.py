@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 """Step 1 of powder ring removal: subtract an empty-environment scan.
 
 The empty scan captures the ring contribution from the sample environment

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-han Yang
+
 """Dataset discovery: group raw inputs with their pipeline-stage outputs.
 
 A *dataset* is anchored by a raw input stem (for example one ``.nxs`` volume). Its stage

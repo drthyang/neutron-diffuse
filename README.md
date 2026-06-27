@@ -340,3 +340,19 @@ back-FFT consistency check: powder-ring removal, Bragg cleanup, Bragg-hole
 backfill, radial flatten, 3D-DeltaPDF transform, consistency QA, and interactive
 viewers. The package remains pre-1.0/alpha while the public API and file formats
 continue to evolve.
+
+## License and provenance
+
+Copyright (C) 2026 Tsung-han Yang.
+
+This project is licensed under the GNU Affero General Public License v3.0 or later.
+
+This is an independent personal software project. It is not affiliated with,
+sponsored by, endorsed by, funded by, developed for, or owned by any employer,
+institution, laboratory, university, government agency, funding organization,
+facility, or other organization.
+
+Commercial, closed-source, proprietary, or alternative licensing may be available
+only by separate written permission from the copyright holder.
+
+See `PROVENANCE.md` for the project provenance statement.
