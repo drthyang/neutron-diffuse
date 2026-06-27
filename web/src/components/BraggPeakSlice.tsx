@@ -43,7 +43,8 @@ function nearest(axis: number[], v: number): number {
 }
 
 // Robust upper colour limit from the window samples (p99 keeps a single hot voxel
-// from blowing out the scale); contrast brightens by lowering vmax.
+// from blowing out the scale).  vmax = robust × contrast, matching the other
+// viewers: higher contrast raises vmax → a dimmer image.
 function windowVmax(
   slice: Slice,
   cx: number,
@@ -66,7 +67,7 @@ function windowVmax(
   if (vals.length === 0) return 1;
   vals.sort((a, b) => a - b);
   const p99 = vals[Math.min(vals.length - 1, Math.floor(vals.length * 0.99))];
-  return Math.max(p99 / Math.max(contrast, 0.01), 1e-9);
+  return Math.max(p99 * Math.max(contrast, 0.01), 1e-9);
 }
 
 function SliceTile({

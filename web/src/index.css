@@ -958,21 +958,10 @@ input[type="range"]::-moz-range-track {
 .bragg-detail { gap: 11px; }
 .bragg-sel-hkl { font: 600 12px ui-monospace, monospace; color: #cfe0ff; }
 .bragg-sel-meta { font: 500 11px ui-monospace, monospace; color: #8b94a3; margin-top: -6px; }
-.bragg-contrast,
+.bragg-sliders { display: flex; gap: 16px; align-items: flex-end; }
+.bragg-sliders > * { flex: 1; min-width: 0; }
 .bragg-cmap { display: flex; align-items: center; gap: 10px; }
 .bragg-ctl-label { font: 600 9px system-ui; letter-spacing: 0.07em; text-transform: uppercase; color: #6c7686; flex: none; }
-.bragg-contrast input[type="range"] {
-  flex: 1;
-  -webkit-appearance: none;
-  appearance: none;
-  height: 4px;
-  border-radius: 2px;
-  background: #232a33;
-  outline: none;
-}
-.bragg-contrast input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5); cursor: pointer; }
-.bragg-contrast input[type="range"]::-moz-range-thumb { width: 13px; height: 13px; border: none; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5); cursor: pointer; }
-.bragg-ctl-val { font: 600 11px ui-monospace, monospace; color: #cdd4df; flex: none; min-width: 38px; text-align: right; }
 
 .bragg-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .bragg-tile { display: flex; flex-direction: column; gap: 5px; }

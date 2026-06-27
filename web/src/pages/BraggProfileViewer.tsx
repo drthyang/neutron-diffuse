@@ -9,7 +9,7 @@ import { useMemo, useState } from "react";
 import { useBraggProfile, useDatasets, useMeta } from "../api/hooks";
 import type { BraggPeakWidth } from "../api/types";
 import { BraggPeakSlice, type Ellipse } from "../components/BraggPeakSlice";
-import { ColormapBar, EmptyState, IconAlert, IconLattice } from "../components/ui";
+import { ColormapBar, EmptyState, IconAlert, IconLattice, Slider } from "../components/ui";
 import { COLORMAPS, SEQUENTIAL_NAMES } from "../colormaps/luts";
 import { useDatasetStore, useInitializeDataset } from "../state/datasetStore";
 import { useViewerStore } from "../state/viewerStore";
@@ -419,12 +419,14 @@ function SelectedPeak({
   colormap: string;
   setColormap: (c: string) => void;
 }) {
-  const [contrast, setContrast] = useState(1.5);
+  const [contrast, setContrast] = useState(1);
+  const [zoom, setZoom] = useState(1);
   const lut = COLORMAPS[colormap] ?? COLORMAPS.inferno;
   const [h, k, l] = peak.center_hkl;
 
   const maxW = Math.max(...peak.width_hkl.map(Math.abs), 0.02);
-  const half = Math.min(0.6, Math.max(0.08, maxW * 3.5));
+  const baseHalf = Math.min(0.6, Math.max(0.08, maxW * 3.5));
+  const half = baseHalf / zoom; // higher zoom → smaller window → more zoomed in
 
   const floorHkl = AXES.map((a) => deriveFloor(peaks, a.i, true));
   const ell = (xa: number, ya: number, src: (p: BraggPeakWidth, a: number) => number | null): Ellipse | null => {
@@ -450,20 +452,27 @@ function SelectedPeak({
         |Q| {peak.q_abs.toFixed(3)} Å⁻¹ · I {peak.intensity != null ? Math.round(peak.intensity).toLocaleString() : "—"} · {peak.fit_kind || "fit"}
       </div>
 
-      <div className="bragg-contrast">
-        <span className="bragg-ctl-label">Contrast</span>
-        <input
-          type="range"
-          min={0.5}
-          max={3}
+      <div className="bragg-sliders">
+        <Slider
+          label="Contrast"
+          readout={`× ${contrast.toFixed(1)}`}
+          min={0.1}
+          max={20}
           step={0.1}
           value={contrast}
-          onChange={(e) => setContrast(Number(e.target.value))}
-          style={{
-            background: `linear-gradient(90deg, #4f8ff7 ${((contrast - 0.5) / 2.5) * 100}%, #232a33 ${((contrast - 0.5) / 2.5) * 100}%)`,
-          }}
+          onChange={setContrast}
+          grow
         />
-        <span className="bragg-ctl-val">× {contrast.toFixed(1)}</span>
+        <Slider
+          label="Zoom"
+          readout={`× ${zoom.toFixed(1)}`}
+          min={1}
+          max={10}
+          step={0.5}
+          value={zoom}
+          onChange={setZoom}
+          grow
+        />
       </div>
 
       <div className="bragg-tiles">
