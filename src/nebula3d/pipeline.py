@@ -124,14 +124,20 @@ def _axis_widths_from_shape(
     vol: HKLVolume,
     shape_hkl: np.ndarray,
 ) -> tuple[list[float], list[float]]:
-    """Return ellipsoid half-widths along HKL grid axes and Cartesian Q axes."""
-    cov_hkl = np.linalg.inv(shape_hkl)
+    """Return ellipsoid half-widths along HKL grid axes and Cartesian Q axes.
+
+    The covariance is the (pseudo-)inverse of the shape matrix; the Q-space
+    covariance is the HKL covariance pushed through the UB matrix
+    (``cov_q = UB · cov_hkl · UBᵀ``).  Both use ``pinv`` / a direct congruence so a
+    degenerate peak shape (e.g. one extremely large measured width, giving a
+    near-singular shape matrix) yields a finite width rather than raising
+    ``LinAlgError: Singular matrix``.
+    """
+    cov_hkl = np.linalg.pinv(shape_hkl)
     widths_hkl = [
         float(np.sqrt(max(float(cov_hkl[i, i]), 0.0))) for i in range(3)
     ]
-    inv_ub = np.linalg.inv(vol.ub_matrix)
-    shape_q = inv_ub.T @ shape_hkl @ inv_ub
-    cov_q = np.linalg.inv(shape_q)
+    cov_q = vol.ub_matrix @ cov_hkl @ vol.ub_matrix.T
     widths_q = [
         float(np.sqrt(max(float(cov_q[i, i]), 0.0))) for i in range(3)
     ]
