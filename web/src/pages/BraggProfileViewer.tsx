@@ -175,12 +175,18 @@ function Scatter({
 function Histograms({ peaks, showMeasured }: { peaks: BraggPeakWidth[]; showMeasured: boolean }) {
   const all: number[] = [];
   peaks.forEach((p) => AXES.forEach((a) => { const w = displayQ(p, a.i); if (w != null) all.push(w); }));
-  const lo = Math.max(0, Math.min(...all) * 0.95), hi = Math.max(...all) * 1.05 || 1;
-  const N = 11;
+  all.sort((x, y) => x - y);
+  // Clip the long resolution-limited tail (outer ~1%) so the Gaussian bulk fills
+  // the axis; out-of-range widths are still counted, clamped into the edge bins.
+  const q = (f: number) =>
+    all.length ? all[Math.max(0, Math.min(all.length - 1, Math.round(f * (all.length - 1))))] : 0;
+  const lo = q(0.01);
+  const hi = Math.max(q(0.99), lo + 1e-6);
+  const N = 32;
   return (
     <div className="bragg-panel bragg-hist">
       <div className="bragg-panel-head">
-        <span className="bragg-eyebrow">Width distribution / axis</span>
+        <span className="bragg-eyebrow">Width distribution / axis · log n</span>
         <div className="bragg-legend">
           <span className="bragg-leg"><i className="bragg-tick-solid" />fitted</span>
           <span className="bragg-leg"><i className="bragg-tick-dash" />measured</span>
@@ -192,10 +198,13 @@ function Histograms({ peaks, showMeasured }: { peaks: BraggPeakWidth[]; showMeas
         const counts = Array.from({ length: N }, () => 0);
         peaks.forEach((p) => {
           const w = displayQ(p, a.i);
-          if (w == null || w < lo || w > hi) return;
+          if (w == null) return;
           counts[Math.max(0, Math.min(N - 1, Math.floor(((w - lo) / (hi - lo)) * N)))]++;
         });
-        const cMax = Math.max(1, ...counts);
+        const cMax = counts.reduce((m, c) => Math.max(m, c), 1);
+        // Log count axis: the width distribution is a tall spike at the resolution
+        // floor plus a long tail, so a linear axis hides the tail entirely.
+        const barH = (c: number) => (c > 0 ? (Math.log(c + 1) / Math.log(cMax + 1)) * 100 : 0);
         const pos = (v: number | null) => (v == null ? null : ((v - lo) / (hi - lo)) * 100);
         return (
           <div key={a.i} className="bragg-hist-row">
@@ -205,7 +214,7 @@ function Histograms({ peaks, showMeasured }: { peaks: BraggPeakWidth[]; showMeas
             </div>
             <div className="bragg-bars">
               {counts.map((c, i) => (
-                <span key={i} className="bragg-bar" style={{ height: `${(c / cMax) * 100}%`, background: c ? `${a.color}cc` : `${a.color}22` }} />
+                <span key={i} className="bragg-bar" style={{ height: `${barH(c)}%`, background: c ? `${a.color}cc` : `${a.color}22` }} />
               ))}
               {pos(fittedMed) != null && <i className="bragg-bar-fit" style={{ left: `${pos(fittedMed)}%` }} />}
               {showMeasured && pos(measMed) != null && <i className="bragg-bar-meas" style={{ left: `${pos(measMed)}%` }} />}

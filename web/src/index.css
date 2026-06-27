@@ -927,7 +927,7 @@ input[type="range"]::-moz-range-track {
 .bragg-hist-label { display: flex; align-items: baseline; justify-content: space-between; }
 .bragg-hist-label > span:first-child { font: 700 11px system-ui; }
 .bragg-hist-med { font: 500 10px ui-monospace, monospace; color: #7e8a9c; }
-.bragg-bars { position: relative; height: 46px; display: flex; align-items: flex-end; gap: 3px; border-bottom: 1px solid #2a323d; }
+.bragg-bars { position: relative; height: 54px; display: flex; align-items: flex-end; gap: 1.5px; border-bottom: 1px solid #2a323d; }
 .bragg-bar { flex: 1; min-height: 1px; border-radius: 1px 1px 0 0; }
 .bragg-bar-fit { position: absolute; top: 0; bottom: 0; width: 1.5px; background: #e8ebf0; transform: translateX(-50%); }
 .bragg-bar-meas { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1.5px dashed #8b94a3; transform: translateX(-50%); }
