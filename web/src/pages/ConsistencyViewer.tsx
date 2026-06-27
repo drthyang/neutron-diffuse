@@ -11,7 +11,6 @@ import { fetchConsistencyMeta, fetchConsistencySlice, saveConsistencyDpdf } from
 import { PYODIDE_MODE } from "../api/pyodideEngine";
 import { useDatasets } from "../api/hooks";
 import { COLORMAPS, SEQUENTIAL_NAMES, DIVERGING_NAMES, DIVERGING_NAME } from "../colormaps/luts";
-import { FogConnector } from "../components/FogConnector";
 import { SliceCanvas } from "../components/SliceCanvas";
 import { UnitCellGrid } from "../components/UnitCellGrid";
 import {
@@ -235,7 +234,6 @@ export function ConsistencyViewer() {
     return rm && Number.isFinite(rm) ? rm : 0;
   };
   const seqVmax = (Math.max(rmOf(0), rmOf(1)) || 1) * contrast;
-  const residScale = (rmOf(2) || 1) * contrast;
   const dpdfVmax = (dpdfSliceResult.data?.header.robust_max || 1) * dpdfContrast;
 
   const m = meta?.metrics;
@@ -554,9 +552,6 @@ export function ConsistencyViewer() {
             </div>
           </div>
 
-          {/* Forward-FFT connector — drifting nebula fog conveys Q → R */}
-          <FogConnector />
-
           {/* Stage 2 — ΔPDF g(R) */}
           <div className="qr-panel qr-panel--hi">
             <div className="qr-panel-head">
@@ -659,9 +654,6 @@ export function ConsistencyViewer() {
             </div>
           </div>
 
-          {/* Back-FFT connector — drifting nebula fog conveys R → Q′ */}
-          <FogConnector />
-
           {/* Stage 3 — Back-FFT reconstruction / residual */}
           <div className="qr-panel">
             <div className="qr-panel-head">
@@ -680,7 +672,7 @@ export function ConsistencyViewer() {
               <SliceCanvas
                 slice={backResult!.data!}
                 lut={seqLut}
-                vmax={backView === "recon" ? seqVmax : residScale}
+                vmax={seqVmax}
                 vmin={0}
                 log={backView === "recon" ? log : false}
                 fit

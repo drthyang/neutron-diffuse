@@ -2,7 +2,7 @@
 // examples/explore_delta_pdf_ortho.py.  Three linked orthogonal real-space cuts
 // with movable cut sliders, a contrast control, and a unit-cell gridline toggle.
 
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 
 import { useDatasets, useDpdfMeta } from "../api/hooks";
 import { COLORMAPS, DIVERGING_NAMES, DIVERGING_NAME } from "../colormaps/luts";
@@ -10,7 +10,6 @@ import { DpdfPanel } from "../components/DpdfPanel";
 import {
   ColormapBar,
   EmptyState,
-  Field,
   MetaStrip,
   Slider,
   Switch,
@@ -74,15 +73,18 @@ export function DeltaPdfViewer() {
   const volumeId = dataset?.stages.find((s) => s.name === "delta_pdf")?.volume_id;
   const meta = useDpdfMeta(volumeId).data;
 
+  const recenter = useCallback(() => {
+    if (!meta) return;
+    center(
+      Math.floor(meta.shape[0] / 2),
+      Math.floor(meta.shape[1] / 2),
+      Math.floor(meta.shape[2] / 2),
+    );
+  }, [meta, center]);
+
   useEffect(() => {
-    if (meta && !centered) {
-      center(
-        Math.floor(meta.shape[0] / 2),
-        Math.floor(meta.shape[1] / 2),
-        Math.floor(meta.shape[2] / 2),
-      );
-    }
-  }, [meta, centered, center]);
+    if (meta && !centered) recenter();
+  }, [meta, centered, recenter]);
 
   const lut = COLORMAPS[colormap] ?? COLORMAPS[DIVERGING_NAME];
   const a = meta?.lattice.a ?? null;
@@ -118,10 +120,39 @@ export function DeltaPdfViewer() {
     return inputs;
   };
 
+  // Per-axis cut slider rendered into a panel footer; the wrapper hue links the
+  // slider fill + label to that panel's badge (amber x · blue y · green z).
+  const cutSlider = (
+    hue: string,
+    label: string,
+    range: [number, number] | undefined,
+    n: number | undefined,
+    valAng: number,
+    lat: number | null,
+    latLetter: string,
+    value: number,
+    setIdx: (i: number) => void,
+  ) => (
+    <div className={`qr-foot-cut dpdf-cut ${hue}`}>
+      <Slider
+        label={label}
+        readout={meta ? undefined : "—"}
+        valueInputs={axisInputs(range, n, valAng, lat, latLetter, setIdx)}
+        min={0}
+        max={n ? n - 1 : 0}
+        value={value}
+        disabled={!meta}
+        onChange={setIdx}
+      />
+    </div>
+  );
+
   return (
-    <div className="page-body">
-      <div className="toolbar">
-        <Field label="Dataset">
+    <div className="page-body qr-page">
+      {/* ── Header: dataset · x·y·z orthoslice identity · recenter ───────── */}
+      <div className="qr-header">
+        <div className="qr-header-dataset">
+          <span className="qr-eyebrow">Dataset</span>
           <select
             value={datasetId ?? ""}
             onChange={(e) => setDataset(e.target.value)}
@@ -132,37 +163,78 @@ export function DeltaPdfViewer() {
               </option>
             ))}
           </select>
-        </Field>
+        </div>
 
-        <Slider
-          label="Window"
-          readout={`${windowFull.toFixed(0)} Å`}
-          min={10}
-          max={160}
-          step={2}
-          value={windowFull}
-          onChange={setWindowFull}
-        />
+        <div className="qr-divider" />
 
-        <Slider
-          label="Contrast"
-          readout={`× ${contrast.toFixed(1)}`}
-          min={0.1}
-          max={20}
-          step={0.1}
-          value={contrast}
-          onChange={setContrast}
-        />
+        <div className="qr-roundtrip">
+          <span className="qr-rt qr-rt--q">x</span>
+          <span className="qr-rt-arrow">·</span>
+          <span className="qr-rt qr-rt--r">y</span>
+          <span className="qr-rt-arrow">·</span>
+          <span className="qr-rt qr-rt--qp">z</span>
+        </div>
+        <span className="qr-eyebrow">Orthoslices</span>
 
-        <Switch label="Unit cells" checked={gridlines} onChange={setGridlines} />
-        <Field label="Colormap">
-          <select value={colormap} onChange={(e) => setColormap(e.target.value)}>
-            {DIVERGING_NAMES.map((name) => (
-              <option key={name} value={name}>{name}</option>
-            ))}
-          </select>
-          <ColormapBar lut={lut} />
-        </Field>
+        <span className="qr-desc">
+          Three linked real-space cuts about the origin
+        </span>
+
+        <div className="qr-header-actions">
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={!meta}
+            onClick={recenter}
+          >
+            Recenter cuts
+          </button>
+        </div>
+      </div>
+
+      {/* ── Display-control cluster: window · contrast · unit cells · cmap ── */}
+      <div className="qr-clusters">
+        <div className="qr-cluster">
+          <div className="qr-cluster-head">
+            <span className="qr-cluster-title">Real-space display · 3D-ΔPDF</span>
+            <div className="qr-cluster-toggle">
+              <Switch label="Unit cells" checked={gridlines} onChange={setGridlines} />
+            </div>
+          </div>
+          <div className="qr-cluster-controls">
+            <div className="qr-cluster-slider">
+              <Slider
+                label="Window"
+                readout={`${windowFull.toFixed(0)} Å`}
+                min={10}
+                max={160}
+                step={2}
+                value={windowFull}
+                onChange={setWindowFull}
+              />
+            </div>
+            <div className="qr-cluster-slider">
+              <Slider
+                label="Contrast"
+                readout={`× ${contrast.toFixed(1)}`}
+                min={0.1}
+                max={20}
+                step={0.1}
+                value={contrast}
+                onChange={setContrast}
+              />
+            </div>
+          </div>
+          <div className="qr-cluster-cmap">
+            <span className="field-label">Colormap</span>
+            <select value={colormap} onChange={(e) => setColormap(e.target.value)}>
+              {DIVERGING_NAMES.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+            <ColormapBar lut={lut} />
+          </div>
+        </div>
       </div>
 
       {datasetsQ.isSuccess && !volumeId && (
@@ -172,84 +244,65 @@ export function DeltaPdfViewer() {
         />
       )}
 
-      <div className="panel-grid">
-        {volumeId && (
-          <>
-            <div className="panel-col">
-              <Slider
-                label="z_L"
-                readout={meta ? undefined : "—"}
-                valueInputs={axisInputs(meta?.z_range, meta?.shape[2], zVal, c, "c", setCutZ)}
-                min={0}
-                max={meta ? meta.shape[2] - 1 : 0}
-                value={cutZ}
-                disabled={!meta}
-                onChange={setCutZ}
-              />
-              <DpdfPanel
-                title="x_H – y_K  ·  fixed z_L"
-                volumeId={volumeId}
-                plane="xy"
-                value={zVal}
-                lut={lut}
-                contrast={contrast}
-                gridlines={gridlines}
-                latX={a}
-                latY={b}
-                windowA={halfWindow}
-              />
-            </div>
-            <div className="panel-col">
-              <Slider
-                label="y_K"
-                readout={meta ? undefined : "—"}
-                valueInputs={axisInputs(meta?.y_range, meta?.shape[1], yVal, b, "b", setCutY)}
-                min={0}
-                max={meta ? meta.shape[1] - 1 : 0}
-                value={cutY}
-                disabled={!meta}
-                onChange={setCutY}
-              />
-              <DpdfPanel
-                title="x_H – z_L  ·  fixed y_K"
-                volumeId={volumeId}
-                plane="xz"
-                value={yVal}
-                lut={lut}
-                contrast={contrast}
-                gridlines={gridlines}
-                latX={a}
-                latY={c}
-                windowA={halfWindow}
-              />
-            </div>
-            <div className="panel-col">
-              <Slider
-                label="x_H"
-                readout={meta ? undefined : "—"}
-                valueInputs={axisInputs(meta?.x_range, meta?.shape[0], xVal, a, "a", setCutX)}
-                min={0}
-                max={meta ? meta.shape[0] - 1 : 0}
-                value={cutX}
-                disabled={!meta}
-                onChange={setCutX}
-              />
-              <DpdfPanel
-                title="y_K – z_L  ·  fixed x_H"
-                volumeId={volumeId}
-                plane="yz"
-                value={xVal}
-                lut={lut}
-                contrast={contrast}
-                gridlines={gridlines}
-                latX={b}
-                latY={c}
-                windowA={halfWindow}
-              />
-            </div>
-          </>
-        )}
-      </div>
+      {/* ── Three orthoslice panels — equal siblings, no connectors ──────── */}
+      {volumeId && (
+        <div className="qr-flow-row">
+          <DpdfPanel
+            badge="z_L"
+            badgeClass="qr-rt--qp"
+            title="x_H – y_K"
+            tag="fixed z · real"
+            volumeId={volumeId}
+            plane="xy"
+            value={zVal}
+            lut={lut}
+            contrast={contrast}
+            gridlines={gridlines}
+            latX={a}
+            latY={b}
+            windowA={halfWindow}
+            footer={cutSlider(
+              "dpdf-cut--z", "Cut z_L", meta?.z_range, meta?.shape[2], zVal, c, "c", cutZ, setCutZ,
+            )}
+          />
+          <DpdfPanel
+            badge="y_K"
+            badgeClass="qr-rt--r"
+            title="x_H – z_L"
+            tag="fixed y · real"
+            volumeId={volumeId}
+            plane="xz"
+            value={yVal}
+            lut={lut}
+            contrast={contrast}
+            gridlines={gridlines}
+            latX={a}
+            latY={c}
+            windowA={halfWindow}
+            footer={cutSlider(
+              "dpdf-cut--y", "Cut y_K", meta?.y_range, meta?.shape[1], yVal, b, "b", cutY, setCutY,
+            )}
+          />
+          <DpdfPanel
+            badge="x_H"
+            badgeClass="qr-rt--q"
+            title="y_K – z_L"
+            tag="fixed x · real"
+            volumeId={volumeId}
+            plane="yz"
+            value={xVal}
+            lut={lut}
+            contrast={contrast}
+            gridlines={gridlines}
+            latX={b}
+            latY={c}
+            windowA={halfWindow}
+            footer={cutSlider(
+              "dpdf-cut--x", "Cut x_H", meta?.x_range, meta?.shape[0], xVal, a, "a", cutX, setCutX,
+            )}
+          />
+        </div>
+      )}
 
       {meta && (
         <MetaStrip

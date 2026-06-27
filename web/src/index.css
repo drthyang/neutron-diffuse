@@ -2178,12 +2178,14 @@ input[type="range"]::-moz-range-track {
 /* breathing halo (not clipped, sits behind the core) */
 .orb-glow {
   position: absolute;
-  inset: -16%;
-  border-radius: 50%;
+  width: 200%;
+  height: 200%;
+  top: -50%;
+  left: -50%;
   background: radial-gradient(
     circle at 50% 50%,
-    color-mix(in srgb, var(--c2) 60%, transparent),
-    transparent 62%
+    color-mix(in srgb, var(--c2) 60%, transparent) 0%,
+    transparent 40%
   );
   filter: blur(14px);
   opacity: calc(0.7 * var(--orb-sat));
@@ -2205,9 +2207,9 @@ input[type="range"]::-moz-range-track {
 }
 .orb-blob {
   position: absolute;
-  width: 92px;
-  height: 92px;
-  border-radius: 50%;
+  width: 200px;
+  height: 200px;
+  margin: -54px;
   filter: blur(13px) saturate(var(--orb-sat));
   mix-blend-mode: screen;
   will-change: transform;
@@ -2215,19 +2217,19 @@ input[type="range"]::-moz-range-track {
 .orb-blob-1 {
   /* closest-side keeps the coloured disc well inside the square element so the
      blur + screen blend can't read its flat edges as a square in the corner */
-  background: radial-gradient(circle closest-side, var(--c1), transparent);
+  background: radial-gradient(circle closest-side, var(--c1), transparent 46%);
   top: 4px;
   left: 8px;
   animation: orb-drift-1 var(--orb-spin) ease-in-out infinite;
 }
 .orb-blob-2 {
-  background: radial-gradient(circle closest-side, var(--c2), transparent);
+  background: radial-gradient(circle closest-side, var(--c2), transparent 46%);
   bottom: 2px;
   right: 4px;
   animation: orb-drift-2 calc(var(--orb-spin) * 1.3) ease-in-out infinite;
 }
 .orb-blob-3 {
-  background: radial-gradient(circle closest-side, var(--c3), transparent);
+  background: radial-gradient(circle closest-side, var(--c3), transparent 46%);
   top: 28px;
   right: 24px;
   animation: orb-drift-3 calc(var(--orb-spin) * 0.85) ease-in-out infinite;
@@ -2808,7 +2810,7 @@ input[type="range"]::-moz-range-track {
 .qr-flow-row {
   display: flex;
   align-items: stretch;
-  gap: 6px;
+  gap: 14px;
 }
 .qr-panel {
   flex: 1 1 0;
@@ -2971,63 +2973,30 @@ input[type="range"]::-moz-range-track {
   color: var(--text-3);
 }
 
-/* — flow arrows — */
-/* drifting "nebula" connector between the flow panels (see FogConnector.tsx) */
-.qr-fog {
-  flex: 0 0 50px;
-  align-self: stretch;
-  position: relative;
-  overflow: hidden;
-}
-.qr-fog-puff,
-.qr-fog-spark {
-  position: absolute;
-  left: 0;
-  border-radius: 50%;
-  pointer-events: none;
-  animation-name: dustFlow;
-  animation-timing-function: linear;
-  animation-iteration-count: infinite;
-}
-.qr-fog-spark {
-  box-shadow: 0 0 3px rgba(160, 190, 255, 0.55);
-}
-@keyframes dustFlow {
-  0% {
-    transform: translateX(-14px);
-    opacity: 0;
-  }
-  14% {
-    opacity: 1;
-  }
-  82% {
-    opacity: 1;
-  }
-  100% {
-    transform: translateX(64px);
-    opacity: 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .qr-fog * {
-    display: none; /* the connector stays as a quiet gap when motion is reduced */
-  }
-}
-
 /* Back-FFT Recon/Residual segmented sits a touch smaller in the head */
 .qr-panel-head .segmented button {
   padding: 3px 10px;
   font-size: 10px;
 }
 
+/* ΔPDF orthoslice viewer — per-axis cut hue (wayfinding only): tints the
+   footer slider fill (via --accent) and label to match the panel badge. */
+.dpdf-cut--x {
+  --accent: #f1a73a;
+}
+.dpdf-cut--y {
+  --accent: #74a8ff;
+}
+.dpdf-cut--z {
+  --accent: #34c98e;
+}
+.dpdf-cut .field-label {
+  color: var(--accent);
+}
+
 @media (max-width: 980px) {
   .qr-clusters,
   .qr-flow-row {
     flex-wrap: wrap;
-  }
-  .qr-fog {
-    flex-basis: 100%;
-    height: 34px;
-    align-self: auto;
   }
 }
