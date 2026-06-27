@@ -76,6 +76,8 @@ class BraggPeakWidthOut(BaseModel):
     measured_width_hkl: list[float] | None = None
     measured_width_q: list[float] | None = None
     resolution_limited: list[bool] | None = None
+    principal_width_hkl: list[float] | None = None
+    principal_width_q: list[float] | None = None
     principal_directions_hkl: list[list[float]]
     fit_kind: str
 

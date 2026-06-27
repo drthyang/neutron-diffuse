@@ -929,8 +929,10 @@ input[type="range"]::-moz-range-track {
 .bragg-hist-med { font: 500 10px ui-monospace, monospace; color: #7e8a9c; }
 .bragg-bars { position: relative; height: 54px; display: flex; align-items: flex-end; gap: 1.5px; border-bottom: 1px solid #2a323d; }
 .bragg-bar { flex: 1; min-height: 1px; border-radius: 1px 1px 0 0; }
-.bragg-bar-fit { position: absolute; top: 0; bottom: 0; width: 1.5px; background: #e8ebf0; transform: translateX(-50%); }
+.bragg-bar-fit { position: absolute; top: 0; bottom: 0; width: 1.5px; background: rgba(232, 235, 240, 0.55); transform: translateX(-50%); }
 .bragg-bar-meas { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1.5px dashed #8b94a3; transform: translateX(-50%); }
+.bragg-hist-curve { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.bragg-leg-curve { width: 12px !important; height: 0 !important; border-radius: 0 !important; border-top: 1.4px solid #a8b1bf; }
 
 /* peak table */
 .bragg-table { padding: 0; gap: 0; overflow: hidden; }

@@ -90,6 +90,105 @@ function ticks(min: number, max: number, n = 5): number[] {
 }
 
 // ---------------------------------------------------------------------------
+// Per-axis Gaussian fit of the width histogram (coarse grid → local refine).
+// ---------------------------------------------------------------------------
+type FitStats = { mean: number; sigma: number; fwhm: number; amplitude: number; error: number };
+
+function histCounts(values: number[], domain: [number, number], bins: number) {
+  const xs = values.filter(Number.isFinite);
+  const bw = (domain[1] - domain[0]) / bins;
+  const counts = Array.from({ length: bins }, () => 0);
+  for (const v of xs) {
+    if (v < domain[0] || v > domain[1]) continue;
+    const raw = Math.floor(((v - domain[0]) / (domain[1] - domain[0])) * bins);
+    counts[Math.max(0, Math.min(bins - 1, raw))] += 1;
+  }
+  const centers = counts.map((_c, i) => domain[0] + (i + 0.5) * bw);
+  return { counts, centers, bw };
+}
+
+function fitGaussian(values: number[], domain: [number, number], bins: number): FitStats | null {
+  const xs = values.filter(Number.isFinite);
+  if (xs.length < 3) return null;
+  const { counts, centers, bw } = histCounts(xs, domain, bins);
+  const maxCount = Math.max(...counts);
+  const total = counts.reduce((a, c) => a + c, 0);
+  if (maxCount <= 0 || total <= 0) return null;
+  const wMean = centers.reduce((a, c, i) => a + c * counts[i], 0) / total;
+  const wSigma = Math.sqrt(Math.max(centers.reduce((a, c, i) => a + counts[i] * (c - wMean) ** 2, 0) / total, 0));
+  const peakMean = centers[counts.indexOf(maxCount)];
+  const span = domain[1] - domain[0];
+  const minSigma = Math.max(bw * 0.35, span * 0.002);
+  const maxSigma = Math.max(minSigma * 1.1, span * 0.5);
+  const score = (mean: number, sigma: number): FitStats | null => {
+    if (!Number.isFinite(mean) || !Number.isFinite(sigma) || sigma <= 0) return null;
+    if (mean < domain[0] || mean > domain[1]) return null;
+    const g = centers.map((c) => Math.exp(-0.5 * ((c - mean) / sigma) ** 2));
+    const gg = g.reduce((a, v) => a + v * v, 0);
+    if (gg <= 0) return null;
+    const amp = Math.max(0, g.reduce((a, v, i) => a + counts[i] * v, 0) / gg);
+    const err = g.reduce((a, v, i) => a + (counts[i] - amp * v) ** 2, 0);
+    return { mean, sigma, fwhm: 2.354820045 * sigma, amplitude: amp, error: err };
+  };
+  const means = [wMean, peakMean, peakMean - bw, peakMean + bw, peakMean - 2 * bw, peakMean + 2 * bw];
+  const sigmas = [minSigma, bw * 0.5, bw, bw * 1.5, bw * 2.5, Math.max(minSigma, wSigma * 0.5), Math.max(minSigma, wSigma)]
+    .map((s) => Math.min(Math.max(s, minSigma), maxSigma));
+  let best: FitStats | null = null;
+  for (const m of means) for (const s of sigmas) {
+    const cand = score(m, s);
+    if (cand && (!best || cand.error < best.error)) best = cand;
+  }
+  if (!best) return null;
+  let stepM = Math.max(bw, best.sigma), stepS = Math.max(bw * 0.5, best.sigma * 0.5);
+  for (let it = 0; it < 24; it++) {
+    let improved = false;
+    const cands: [number, number][] = [
+      [best.mean - stepM, best.sigma], [best.mean + stepM, best.sigma],
+      [best.mean, best.sigma - stepS], [best.mean, best.sigma + stepS],
+      [best.mean - stepM, best.sigma - stepS], [best.mean - stepM, best.sigma + stepS],
+      [best.mean + stepM, best.sigma - stepS], [best.mean + stepM, best.sigma + stepS],
+    ];
+    for (const [m, sr] of cands) {
+      const cand = score(m, Math.min(Math.max(sr, minSigma), maxSigma));
+      if (cand && cand.error < best.error) { best = cand; improved = true; }
+    }
+    if (!improved) { stepM *= 0.55; stepS *= 0.55; }
+  }
+  return best;
+}
+
+// ---------------------------------------------------------------------------
+// Accurate fitted ellipse on a slice plane from the principal-axis ellipsoid.
+// The slice passes through the peak centre, so the cross-section is the 2×2
+// block of the precision matrix M = Σ (1/rᵢ²) vᵢ vᵢᵀ restricted to the in-plane
+// axes (ix, iy); its eigen-decomposition gives the (possibly tilted) ellipse.
+// Returns r.l.u. semi-axes (rx along `angle`, ry perpendicular) + SVG-space angle.
+// ---------------------------------------------------------------------------
+function fittedEllipse(peak: BraggPeakWidth, ix: number, iy: number): Ellipse {
+  const dirs = peak.principal_directions_hkl;
+  const rs = peak.principal_width_hkl;
+  if (dirs && dirs.length === 3 && rs && rs.length === 3) {
+    let a = 0, b = 0, c = 0;
+    for (let i = 0; i < 3; i++) {
+      const w = Math.abs(rs[i]);
+      if (!(w > 0) || !dirs[i]) continue;
+      const inv = 1 / (w * w);
+      const vx = dirs[i][ix], vy = dirs[i][iy];
+      a += inv * vx * vx; b += inv * vx * vy; c += inv * vy * vy;
+    }
+    const half = (a + c) / 2;
+    const d = Math.sqrt(((a - c) / 2) ** 2 + b * b);
+    const l1 = half + d, l2 = half - d;
+    if (l1 > 0 && l2 > 0) {
+      // SVG y points down, so negate the y-component of the eigenvector.
+      const angle = (Math.atan2(-(l1 - a), b) * 180) / Math.PI;
+      return { rx: 1 / Math.sqrt(l1), ry: 1 / Math.sqrt(l2), angle };
+    }
+  }
+  return { rx: Math.abs(fittedHkl(peak, ix)), ry: Math.abs(fittedHkl(peak, iy)) };
+}
+
+// ---------------------------------------------------------------------------
 // Scatter — width vs |Q|, three axis series
 // ---------------------------------------------------------------------------
 function Scatter({
@@ -176,47 +275,54 @@ function Histograms({ peaks, showMeasured }: { peaks: BraggPeakWidth[]; showMeas
   const all: number[] = [];
   peaks.forEach((p) => AXES.forEach((a) => { const w = displayQ(p, a.i); if (w != null) all.push(w); }));
   all.sort((x, y) => x - y);
-  // Clip the long resolution-limited tail (outer ~1%) so the Gaussian bulk fills
-  // the axis; out-of-range widths are still counted, clamped into the edge bins.
   const q = (f: number) =>
     all.length ? all[Math.max(0, Math.min(all.length - 1, Math.round(f * (all.length - 1))))] : 0;
-  const lo = q(0.01);
-  const hi = Math.max(q(0.99), lo + 1e-6);
-  const N = 32;
+  // Trim only the extreme outliers so the bulk + Gaussian fill the axis.
+  const lo = Math.max(0, q(0.005));
+  const hi = Math.max(q(0.98), lo + 1e-6);
+  const domain: [number, number] = [lo, hi];
+  const N = 30;
   return (
     <div className="bragg-panel bragg-hist">
       <div className="bragg-panel-head">
-        <span className="bragg-eyebrow">Width distribution / axis · log n</span>
+        <span className="bragg-eyebrow">Width distribution / axis</span>
         <div className="bragg-legend">
-          <span className="bragg-leg"><i className="bragg-tick-solid" />fitted</span>
-          <span className="bragg-leg"><i className="bragg-tick-dash" />measured</span>
+          <span className="bragg-leg"><i className="bragg-leg-curve" />Gaussian fit</span>
+          {showMeasured && <span className="bragg-leg"><i className="bragg-tick-dash" />measured</span>}
         </div>
       </div>
       {AXES.map((a) => {
-        const fittedMed = median(peaks.map((p) => fittedQ(p, a.i)));
+        const values = peaks.map((p) => displayQ(p, a.i)).filter((v): v is number => v != null);
+        const { counts } = histCounts(values, domain, N);
+        const fit = fitGaussian(values, domain, N);
         const measMed = median(peaks.map((p) => measuredQ(p, a.i)));
-        const counts = Array.from({ length: N }, () => 0);
-        peaks.forEach((p) => {
-          const w = displayQ(p, a.i);
-          if (w == null) return;
-          counts[Math.max(0, Math.min(N - 1, Math.floor(((w - lo) / (hi - lo)) * N)))]++;
-        });
-        const cMax = counts.reduce((m, c) => Math.max(m, c), 1);
-        // Log count axis: the width distribution is a tall spike at the resolution
-        // floor plus a long tail, so a linear axis hides the tail entirely.
-        const barH = (c: number) => (c > 0 ? (Math.log(c + 1) / Math.log(cMax + 1)) * 100 : 0);
+        const yMax = Math.max(1, ...counts, fit?.amplitude ?? 0) * 1.08;
         const pos = (v: number | null) => (v == null ? null : ((v - lo) / (hi - lo)) * 100);
+        const curve = fit
+          ? Array.from({ length: 64 }, (_, i) => {
+              const x = lo + (i / 63) * (hi - lo);
+              const yv = fit.amplitude * Math.exp(-0.5 * ((x - fit.mean) / fit.sigma) ** 2);
+              return `${(i / 63) * 100},${Math.max(0, 100 - (yv / yMax) * 100)}`;
+            }).join(" ")
+          : "";
         return (
           <div key={a.i} className="bragg-hist-row">
             <div className="bragg-hist-label">
               <span style={{ color: a.color }}>{a.label}</span>
-              <span className="bragg-hist-med">med {fmt(measMed ?? fittedMed)} Å⁻¹</span>
+              <span className="bragg-hist-med">
+                {fit ? `μ ${fmt(fit.mean)} · σ ${fmt(fit.sigma)} · FWHM ${fmt(fit.fwhm)} Å⁻¹` : "no Gaussian fit"}
+              </span>
             </div>
             <div className="bragg-bars">
               {counts.map((c, i) => (
-                <span key={i} className="bragg-bar" style={{ height: `${barH(c)}%`, background: c ? `${a.color}cc` : `${a.color}22` }} />
+                <span key={i} className="bragg-bar" style={{ height: `${(c / yMax) * 100}%`, background: c ? `${a.color}cc` : `${a.color}22` }} />
               ))}
-              {pos(fittedMed) != null && <i className="bragg-bar-fit" style={{ left: `${pos(fittedMed)}%` }} />}
+              {fit && (
+                <svg className="bragg-hist-curve" viewBox="0 0 100 100" preserveAspectRatio="none">
+                  <polyline points={curve} fill="none" stroke={a.color} strokeWidth={1.4} vectorEffect="non-scaling-stroke" />
+                </svg>
+              )}
+              {pos(fit?.mean ?? null) != null && <i className="bragg-bar-fit" style={{ left: `${pos(fit!.mean)}%` }} />}
               {showMeasured && pos(measMed) != null && <i className="bragg-bar-meas" style={{ left: `${pos(measMed)}%` }} />}
             </div>
           </div>
@@ -372,7 +478,7 @@ function SelectedPeak({
             half={half}
             lut={lut}
             contrast={contrast}
-            fitted={ell(t.xa, t.ya, fittedHkl)!}
+            fitted={fittedEllipse(peak, t.xa, t.ya)}
             measured={ell(t.xa, t.ya, measuredHkl)}
             floor={floorEll(t.xa, t.ya)}
             axisLabel={t.label}

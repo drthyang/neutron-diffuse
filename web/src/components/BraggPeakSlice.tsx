@@ -12,8 +12,9 @@ import { fetchSlice } from "../api/client";
 import type { Slice } from "../api/types";
 
 export interface Ellipse {
-  rx: number; // semi-axis along the tile x (r.l.u.)
-  ry: number; // semi-axis along the tile y (r.l.u.)
+  rx: number; // semi-axis along `angle` (r.l.u.); tile x when no angle
+  ry: number; // semi-axis perpendicular to `angle` (r.l.u.); tile y when no angle
+  angle?: number; // rotation in degrees (SVG space); omit for axis-aligned
 }
 
 interface Props {
@@ -141,7 +142,14 @@ function SliceTile({
           {m && (
             <ellipse cx={C} cy={C} rx={m.rx} ry={m.ry} className="bragg-ell-meas" />
           )}
-          <ellipse cx={C} cy={C} rx={f.rx} ry={f.ry} className="bragg-ell-fit" />
+          <ellipse
+            cx={C}
+            cy={C}
+            rx={f.rx}
+            ry={f.ry}
+            className="bragg-ell-fit"
+            transform={fitted.angle ? `rotate(${fitted.angle} ${C} ${C})` : undefined}
+          />
         </svg>
       </div>
       <span className="bragg-tile-label" style={{ color: axisColor }}>
