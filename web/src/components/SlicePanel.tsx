@@ -1,13 +1,19 @@
 // One reciprocal-space stage panel (presentational).  The parent fetches every
 // stage's slice together and pools one global colour scale, so each panel just
 // renders the slice it is handed with the shared vmin/vmax.
+//
+// Chrome reuses the Q–R Band Transform panel system (`.qr-panel`): a header with
+// a numbered stage badge + stage name (+ an `output` tag on the final stage) and
+// a square slice image on the shared scale.  No caption — the stage name already
+// says what the step does, and the slices are the only thing meant to differ.
 
 import type { Slice } from "../api/types";
 import { SliceCanvas } from "./SliceCanvas";
-import { UnitCellGrid } from "./UnitCellGrid";
 
 interface Props {
+  index: number; // stage number shown in the badge
   title: string;
+  output?: boolean; // final stage carries a small green "output" tag
   data?: Slice;
   isFetching?: boolean;
   isError?: boolean;
@@ -16,21 +22,19 @@ interface Props {
   vmax: number;
   vmin?: number;
   log: boolean;
-  width?: number;
   bands?: [number, number];
   cutDistance?: number;
   reciprocalAxes?: boolean;
   latX?: number;
   latY?: number;
   latCut?: number;
-  windowA?: number;
   zoom?: number;
-  diverging?: boolean;
-  gridlines?: boolean;
 }
 
 export function SlicePanel({
+  index,
   title,
+  output = false,
   data,
   isFetching,
   isError,
@@ -39,59 +43,46 @@ export function SlicePanel({
   vmax,
   vmin = 0,
   log,
-  width = 320,
   bands,
   cutDistance,
   reciprocalAxes = false,
   latX,
   latY,
   latCut,
-  windowA,
   zoom,
-  diverging = false,
-  gridlines = false,
 }: Props) {
   return (
-    <div className="panel-card">
-      <div className="panel-head">
-        <span className="panel-title">{title}</span>
-        {isFetching && <span className="spin" />}
+    <div className="qr-panel">
+      <div className="qr-panel-head">
+        <span className="qr-panel-titlegroup">
+          <span className="qr-stage-badge">{index}</span>
+          <span className="qr-panel-title">{title}</span>
+        </span>
+        {output && <span className="qr-stage-output">output</span>}
       </div>
-      <div className="panel-body">
+      <div className="qr-img qr-img--free">
         {isError ? (
-          <div className="panel-err" style={{ width, height: width }}>
-            {error?.message}
-          </div>
+          <div className="panel-err">{error?.message}</div>
         ) : data ? (
-          <div style={{ position: "relative", width, height: windowA != null ? width : "auto" }}>
-            <SliceCanvas
-              slice={data}
-              lut={lut}
-              vmax={vmax}
-              vmin={vmin}
-              log={log}
-              width={width}
-              bands={bands}
-              cutDistance={cutDistance}
-              reciprocalAxes={reciprocalAxes}
-              latX={latX}
-              latY={latY}
-              latCut={latCut}
-              windowA={windowA}
-              zoom={zoom}
-              size={width}
-              diverging={diverging}
-            />
-            {gridlines && windowA != null && (
-              <UnitCellGrid half={windowA} latX={latX ?? null} latY={latY ?? null} />
-            )}
-          </div>
+          <SliceCanvas
+            slice={data}
+            lut={lut}
+            vmax={vmax}
+            vmin={vmin}
+            log={log}
+            fit
+            zoom={zoom}
+            bands={bands}
+            cutDistance={cutDistance}
+            reciprocalAxes={reciprocalAxes}
+            latX={latX}
+            latY={latY}
+            latCut={latCut}
+          />
         ) : (
-          <div className="skeleton" style={{ width, height: width }} />
+          <div className="skeleton" style={{ width: "100%", height: "100%" }} />
         )}
-      </div>
-      <div className="panel-foot">
-        {data ? `${data.header.x_label} × ${data.header.y_label}` : " "}
+        {isFetching && data && <span className="spin qr-img-spin" />}
       </div>
     </div>
   );

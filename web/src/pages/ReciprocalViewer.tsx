@@ -168,9 +168,11 @@ export function ReciprocalViewer() {
   const sliceVmax = contrast * globalVmax;
 
   return (
-    <div className="page-body">
-      <div className="toolbar">
-        <Field label="Dataset">
+    <div className="page-body qr-page">
+      {/* ── Header: dataset · raw → flattened pipeline identity · one-liner ── */}
+      <div className="qr-header">
+        <div className="qr-header-dataset">
+          <span className="qr-eyebrow">Dataset</span>
           <select
             value={datasetId ?? ""}
             onChange={(e) => setDataset(e.target.value)}
@@ -181,69 +183,96 @@ export function ReciprocalViewer() {
               </option>
             ))}
           </select>
-        </Field>
+        </div>
 
-        <Field label="Fixed axis">
-          <Segmented
-            options={AXES}
-            value={fixedAxis}
-            onChange={(a) => setFixedAxis(a as FixedAxis)}
-          />
-        </Field>
+        <div className="qr-divider" />
 
-        <Slider
-          grow
-          label={`Cut along ${fixedAxis}`}
-          readout={axisInfo ? undefined : "—"}
-          valueInput={
-            axisInfo
-              ? {
-                  value,
-                  prefix: `${fixedAxis} =`,
-                  suffix: "r.l.u.",
-                  onCommit: commitCut,
+        <div className="qr-roundtrip">
+          <span className="qr-rt qr-rt--q">raw</span>
+          <span className="qr-rt-arrow">→</span>
+          <span className="qr-rt">flattened</span>
+        </div>
+        <span className="qr-eyebrow">{stages.length || 5} stages</span>
+
+        <span className="qr-desc">
+          Each stage strips one artifact, leaving the diffuse signal
+        </span>
+      </div>
+
+      {/* ── Shared display-control cluster — every control is global ──────── */}
+      <div className="qr-clusters">
+        <div className="qr-cluster">
+          <div className="qr-cluster-head">
+            <span className="qr-cluster-title">Shared display · all stages</span>
+            <div className="qr-cluster-toggle">
+              <Switch label="Log scale" checked={log} onChange={setLog} />
+            </div>
+          </div>
+          <div className="qr-cluster-controls">
+            <Field label="Fixed axis">
+              <Segmented
+                options={AXES}
+                value={fixedAxis}
+                onChange={(a) => setFixedAxis(a as FixedAxis)}
+              />
+            </Field>
+            <div className="qr-cluster-cut">
+              <Slider
+                grow
+                label={`Cut along ${fixedAxis}`}
+                readout={axisInfo ? undefined : "—"}
+                valueInput={
+                  axisInfo
+                    ? {
+                        value,
+                        prefix: `${fixedAxis} =`,
+                        suffix: "r.l.u.",
+                        onCommit: commitCut,
+                      }
+                    : undefined
                 }
-              : undefined
-          }
-          min={0}
-          max={axisInfo ? axisInfo.n - 1 : 0}
-          value={idx}
-          disabled={!axisInfo}
-          onChange={setCutIndex}
-        />
-
-        <Slider
-          label="Contrast"
-          readout={`× ${contrast.toFixed(1)}`}
-          min={0.1}
-          max={20}
-          step={0.1}
-          value={contrast}
-          onChange={setContrast}
-        />
-
-        <Slider
-          label="Zoom"
-          readout={`× ${zoom.toFixed(1)}`}
-          min={1}
-          max={10}
-          step={0.5}
-          value={zoom}
-          onChange={setZoom}
-        />
-
-        <Switch label="Log scale" checked={log} onChange={setLog} />
-
-        <Field label="Colormap">
-          <select value={colormap} onChange={(e) => setColormap(e.target.value)}>
-            {SEQUENTIAL_NAMES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-          <ColormapBar lut={lut} />
-        </Field>
+                min={0}
+                max={axisInfo ? axisInfo.n - 1 : 0}
+                value={idx}
+                disabled={!axisInfo}
+                onChange={setCutIndex}
+              />
+            </div>
+            <div className="qr-cluster-slider">
+              <Slider
+                label="Contrast"
+                readout={`× ${contrast.toFixed(1)}`}
+                min={0.1}
+                max={20}
+                step={0.1}
+                value={contrast}
+                onChange={setContrast}
+              />
+            </div>
+            <div className="qr-cluster-slider">
+              <Slider
+                label="Zoom"
+                readout={`× ${zoom.toFixed(1)}`}
+                min={1}
+                max={10}
+                step={0.5}
+                value={zoom}
+                onChange={setZoom}
+              />
+            </div>
+          </div>
+          <div className="qr-cluster-cmap">
+            <span className="field-label">Colormap</span>
+            <select value={colormap} onChange={(e) => setColormap(e.target.value)}>
+              {SEQUENTIAL_NAMES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <ColormapBar lut={lut} />
+          </div>
+        </div>
       </div>
 
       {datasetsQ.isLoading && (
@@ -264,27 +293,32 @@ export function ReciprocalViewer() {
         />
       )}
 
-      <div className="panel-grid">
-        {stages.map((s, i) => (
-          <SlicePanel
-            key={s.volume_id}
-            title={STAGE_LABELS[s.name] ?? s.name}
-            data={sliceResults[i]?.data}
-            isFetching={sliceResults[i]?.isFetching}
-            isError={sliceResults[i]?.isError}
-            error={sliceResults[i]?.error as Error | null}
-            lut={lut}
-            vmax={sliceVmax}
-            vmin={0}
-            log={log}
-            reciprocalAxes
-            latX={latX}
-            latY={latY}
-            latCut={latCut}
-            zoom={zoom}
-          />
-        ))}
-      </div>
+      {/* ── Stage panels — same cut across every stage on one shared scale ── */}
+      {stages.length > 0 && (
+        <div className="qr-flow-row">
+          {stages.map((s, i) => (
+            <SlicePanel
+              key={s.volume_id}
+              index={i + 1}
+              title={STAGE_LABELS[s.name] ?? s.name}
+              output={i === stages.length - 1}
+              data={sliceResults[i]?.data}
+              isFetching={sliceResults[i]?.isFetching}
+              isError={sliceResults[i]?.isError}
+              error={sliceResults[i]?.error as Error | null}
+              lut={lut}
+              vmax={sliceVmax}
+              vmin={0}
+              log={log}
+              reciprocalAxes
+              latX={latX}
+              latY={latY}
+              latCut={latCut}
+              zoom={zoom}
+            />
+          ))}
+        </div>
+      )}
 
       {meta && (
         <MetaStrip
