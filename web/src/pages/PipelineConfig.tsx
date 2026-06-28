@@ -407,7 +407,6 @@ interface PunchGeom {
   // Spherical-frame radii (Å⁻¹): rρ radial, rθ polar, rφ azimuth.
   sphRadii: [number, number, number];
   margin: number;
-  phiTail: number;
   mode: string;
   isQ: boolean;
   unit: string;
@@ -768,7 +767,6 @@ function PunchDataOverlay({
     r2: geom.directBeamRadiiQ[2] + geom.directBeamMargin,
   };
   const ib = qEllipseForPlane(plane, directBeamGeom, lattice, ubMatrix);
-  const showTail = !geom.isQ && plane === "kl" && geom.phiTail > 0;
   const showMargin = !geom.isQ && geom.margin > 0;
   const showSat = geom.mode !== "integer";
   // |Q| transform band as origin-centred inner/outer boundaries on this plane,
@@ -869,23 +867,12 @@ function PunchDataOverlay({
                   </g>
                 );
               }
-              const ang = (Math.atan2(cy, cx) * 180) / Math.PI + 90;
               // Spherical frame: the ellipse is rebuilt from this node's Q so it
               // tilts to follow Q̂; q-frame uses the shared global ellipse.
               const e = ellipseForNode(
                 plane, geom, braggEllipse, lattice, ubMatrix, x, y, cutValue ?? 0);
               return (
                 <g key={key}>
-                  {showTail && (
-                    <ellipse
-                      cx={cx}
-                      cy={cy}
-                      rx={e.rx}
-                      ry={e.ry}
-                      transform={`rotate(${ang.toFixed(1)} ${cx} ${cy})`}
-                      className="punch-tail"
-                    />
-                  )}
                   {showMargin && (
                     <ellipse
                       cx={cx}
@@ -1154,7 +1141,6 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
       punchFitCovariance: st.punchFitCovariance,
       punchFitUnconstrained: st.punchFitUnconstrained,
       punchMargin: st.punchMargin,
-      punchPhiTail: st.punchPhiTail,
       incidentBeamQA: st.incidentBeamQA,
       incidentBeamQB: st.incidentBeamQB,
       incidentBeamQC: st.incidentBeamQC,
@@ -1192,7 +1178,6 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
     frame: punchFrame,
     sphRadii,
     margin: clampFloat(s.punchMargin, 0.02, 0, 0.5),
-    phiTail: clampFloat(s.punchPhiTail, 0.12, 0, 1.0),
     mode: s.punchMode || "both",
     isQ: true,
     unit: "Å⁻¹",
@@ -1800,17 +1785,6 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                       onChange={(e) => patch({ punchMargin: e.target.value })}
                     />
                   </Field>
-                  <Field label="φ-tail (K–L)">
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="0.12"
-                      value={s.punchPhiTail}
-                      title="Extra K–L tangential half-width along the powder-ring φ direction"
-                      onChange={(e) => patch({ punchPhiTail: e.target.value })}
-                    />
-                  </Field>
                 </div>
                 <div className="switch-row">
                   <Switch
@@ -1824,10 +1798,10 @@ export function PipelineConfig({ onStarted }: { onStarted: () => void }) {
                     }
                   />
                   <HelpTip>
-                    Fit a tilted 3×3 ellipsoid to each Bragg peak during punching
-                    and fold the φ-tail into it. The preview uses the exact UB-derived
-                    Q-space floor; the per-peak covariance tilt is fitted from data
-                    during the run and is best checked in the punched slices.
+                    Fit a tilted 3×3 ellipsoid to each Bragg peak during punching.
+                    The preview uses the exact UB-derived Q-space floor; the
+                    per-peak covariance tilt is fitted from data during the run and
+                    is best checked in the punched slices.
                   </HelpTip>
                 </div>
                 <div className="switch-row">

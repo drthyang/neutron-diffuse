@@ -354,7 +354,9 @@ class PunchParams:
     search_exclude_h_fractions: tuple[float, ...] | None = (0.3333, 0.6667)
     margin: float = 0.02
     max_radius_scale: float = 2.0
-    phi_tail_hkl: float = 0.12
+    # K–L powder-ring φ-tail: superseded by the spherical frame's rφ (azimuthal)
+    # axis, which orients the punch tangentially by construction.  Kept at 0 (off).
+    phi_tail_hkl: float = 0.0
     incident_beam_radii: tuple[float, float, float] = (0.24, 0.24, 0.90)
     incident_beam_margin: float = 0.12
     incident_beam_phi_tail_hkl: float = 0.0

@@ -153,7 +153,6 @@ export interface StageParamsIn {
   punch_radius_k?: number;
   punch_radius_l?: number;
   punch_margin?: number;
-  punch_phi_tail_hkl?: number;
   // Q-space punch: frame "spherical" (rρ,rθ,rφ, default) or "q" (a*,b*,c*) (Å⁻¹)
   punch_frame?: string;
   punch_q_radius?: number;

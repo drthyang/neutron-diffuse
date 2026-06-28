@@ -69,7 +69,6 @@ interface PipelineConfig {
   punchFitCovariance: boolean; // fit a tilted 3×3 resolution ellipsoid per peak
   punchFitUnconstrained: boolean; // do not floor/cap Bragg covariance-fit radii
   punchMargin: string;
-  punchPhiTail: string;
   incidentBeamQA: string;
   incidentBeamQB: string;
   incidentBeamQC: string;
@@ -134,7 +133,6 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
   punchFitCovariance: false,
   punchFitUnconstrained: false,
   punchMargin: "",
-  punchPhiTail: "",
   incidentBeamQA: "",
   incidentBeamQB: "",
   incidentBeamQC: "",
@@ -247,7 +245,6 @@ function formToParams(s: PipelineConfig): StageParamsIn {
   if (s.punchMinI) params.punch_min_intensity = Number(s.punchMinI);
   if (s.punchMode) params.punch_mode = s.punchMode;
   if (s.punchMargin) params.punch_margin = Number(s.punchMargin);
-  if (s.punchPhiTail) params.punch_phi_tail_hkl = Number(s.punchPhiTail);
   // Punch frame: spherical (rρ,rθ,rφ) by default, or the legacy a*/b*/c* q-frame.
   const frame = s.punchFrame === "q" ? "q" : "spherical";
   params.punch_frame = frame;

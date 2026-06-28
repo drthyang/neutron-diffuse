@@ -104,7 +104,7 @@ PRESETS = {
         "SEARCH_PROM": "0.8",
         "MARGIN": "0.02",
         "MAX_SCALE": "2.0",
-        "PHI_TAIL_HKL": "0.12",
+        "PHI_TAIL_HKL": "0.0",
         "INCIDENT_R_HKL": "0.24,0.24,0.90",
         "INCIDENT_MARGIN": "0.12",
         "INCIDENT_ELLIPSOID_R_HKL": "0.15,0.50,1.00",
@@ -131,7 +131,7 @@ PRESETS = {
         "SEARCH_EXCLUDE_H_WIDTH": "0.08",
         "MARGIN": "0.02",
         "MAX_SCALE": "2.0",
-        "PHI_TAIL_HKL": "0.12",
+        "PHI_TAIL_HKL": "0.0",
         "INCIDENT_R_HKL": "0.24,0.24,0.90",
         "INCIDENT_MARGIN": "0.12",
         "INCIDENT_ELLIPSOID_R_HKL": "0.15,0.50,1.00",
@@ -206,7 +206,7 @@ integer_local_nmad = (
 integer_local_min_prom = float(env_default("INTEGER_LOCAL_MIN_PROM", "0.0"))
 margin = float(env_default("MARGIN", "0.03"))
 max_scale = float(env_default("MAX_SCALE", "3.0"))
-phi_tail_hkl = float(env_default("PHI_TAIL_HKL", "0.12"))
+phi_tail_hkl = float(env_default("PHI_TAIL_HKL", "0.0"))
 incident_r_hkl = tuple(
     float(x) for x in env_default("INCIDENT_R_HKL", "0.24,0.24,0.90").split(",")
 )
