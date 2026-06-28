@@ -141,7 +141,9 @@ async function dispatch(req: WorkerRequest): Promise<void> {
       }
 
       case "load_demo": {
-        const dsId = (bridge!.make_demo_input as (n: number) => string)(24);
+        // FCC demo grid: 33³ keeps integer nodes on-grid (step 0.25 over ±4) so
+        // the Bragg peaks are crisp, while still running the full chain in seconds.
+        const dsId = (bridge!.make_demo_input as (n: number) => string)(33);
         reply(dsId);
         break;
       }
