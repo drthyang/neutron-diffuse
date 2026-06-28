@@ -263,7 +263,9 @@ function Scatter({
                 style={{
                   left: `${X(p.q_abs)}%`,
                   top: `${Y(w)}%`,
-                  background: a.color,
+                  // Semi-transparent fill so dense, overlapping points read as
+                  // density (and the grid shows through) instead of a solid blob.
+                  background: `${a.color}80`,
                   boxShadow: flagged ? `0 0 0 2px #0d1014, 0 0 0 4px ${a.color}` : undefined,
                 }}
                 title={`${hklStr(p.center_hkl)} · ${a.label} ${w.toFixed(3)} Å⁻¹`}
