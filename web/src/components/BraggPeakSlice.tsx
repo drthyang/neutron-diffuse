@@ -35,9 +35,16 @@ interface Props {
 
 const RASTER = 140; // square raster; CSS scales it to the tile
 
+// Nearest sample index, or -1 when the requested coordinate is *outside* the axis
+// range.  Returning -1 (rather than clamping to the edge index) keeps a zoomed-out
+// window from smearing the boundary voxel across the out-of-data margin — those
+// pixels render as "no data" instead.  Handles ascending or descending axes.
 function nearest(axis: number[], v: number): number {
   const n = axis.length;
   if (n < 2) return 0;
+  const lo = Math.min(axis[0], axis[n - 1]);
+  const hi = Math.max(axis[0], axis[n - 1]);
+  if (v < lo || v > hi) return -1;
   const t = ((v - axis[0]) / (axis[n - 1] - axis[0])) * (n - 1);
   return Math.max(0, Math.min(n - 1, Math.round(t)));
 }
@@ -58,9 +65,12 @@ function windowVmax(
   for (let py = 0; py < RASTER; py += 2) {
     const yr = cy - half + ((py + 0.5) / RASTER) * 2 * half;
     const iy = nearest(ys, yr);
+    if (iy < 0) continue;
     for (let px = 0; px < RASTER; px += 2) {
       const xr = cx - half + ((px + 0.5) / RASTER) * 2 * half;
-      const v = data[iy * nx + nearest(xs, xr)];
+      const ix = nearest(xs, xr);
+      if (ix < 0) continue;
+      const v = data[iy * nx + ix];
       if (Number.isFinite(v) && v > 0) vals.push(v);
     }
   }
@@ -104,8 +114,11 @@ function SliceTile({
       const iy = nearest(ys, yr);
       for (let px = 0; px < RASTER; px++) {
         const xr = cx - half + ((px + 0.5) / RASTER) * 2 * half;
-        const v = data[iy * nx + nearest(xs, xr)];
+        const ix = nearest(xs, xr);
         const o = (py * RASTER + px) * 4;
+        // Outside the data extent (zoomed out past the volume edge): render as
+        // an explicit no-data margin rather than smearing the boundary voxel.
+        const v = iy < 0 || ix < 0 ? NaN : data[iy * nx + ix];
         if (!Number.isFinite(v)) {
           out[o] = out[o + 1] = out[o + 2] = 40;
           out[o + 3] = 255;

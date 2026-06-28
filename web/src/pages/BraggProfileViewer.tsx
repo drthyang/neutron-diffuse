@@ -15,11 +15,18 @@ import { useDatasetStore, useInitializeDataset } from "../state/datasetStore";
 import { useViewerStore } from "../state/viewerStore";
 
 // Axis colour-coding shared across the whole page (matches Configure / Reciprocal).
-const AXES = [
-  { i: 0 as const, label: "a*", color: "#f1a73a" },
-  { i: 1 as const, label: "b*", color: "#74a8ff" },
-  { i: 2 as const, label: "c*", color: "#34c98e" },
-];
+// Labels are profile-driven: the spherical punch reports widths along (ρ, θ, φ),
+// the legacy frames along the reciprocal axes (a*, b*, c*).
+type Axis = { i: 0 | 1 | 2; label: string; color: string };
+const AXIS_COLORS = ["#f1a73a", "#74a8ff", "#34c98e"] as const;
+const DEFAULT_AXIS_LABELS = ["a*", "b*", "c*"] as const;
+function buildAxes(labels?: string[]): Axis[] {
+  return [0, 1, 2].map((i) => ({
+    i: i as 0 | 1 | 2,
+    label: labels?.[i] ?? DEFAULT_AXIS_LABELS[i],
+    color: AXIS_COLORS[i],
+  }));
+}
 const CMAPS = ["inferno", "magma", "viridis", "plasma", "turbo", "cividis"].filter(
   (c) => c in COLORMAPS || SEQUENTIAL_NAMES.includes(c),
 );
@@ -193,18 +200,20 @@ function fittedEllipse(peak: BraggPeakWidth, ix: number, iy: number): Ellipse {
 // ---------------------------------------------------------------------------
 function Scatter({
   peaks,
+  axes,
   selected,
   onSelect,
   padFloorQ,
 }: {
   peaks: BraggPeakWidth[];
+  axes: Axis[];
   selected: number;
   onSelect: (i: number) => void;
   padFloorQ: number | null;
 }) {
   const qs = peaks.map((p) => p.q_abs).filter(Number.isFinite);
   const ws: number[] = [];
-  peaks.forEach((p) => AXES.forEach((a) => { const w = displayQ(p, a.i); if (w != null) ws.push(w); }));
+  peaks.forEach((p) => axes.forEach((a) => { const w = displayQ(p, a.i); if (w != null) ws.push(w); }));
   const qMin = Math.min(...qs, 0), qMax = Math.max(...qs, 1);
   const wMin = Math.max(0, Math.min(...ws) * 0.92), wMax = Math.max(...ws) * 1.05 || 1;
   const X = (q: number) => ((q - qMin) / (qMax - qMin || 1)) * 100;
@@ -221,7 +230,7 @@ function Scatter({
       <div className="bragg-panel-head">
         <span className="bragg-eyebrow">Resolution function · width vs |Q|</span>
         <div className="bragg-legend">
-          {AXES.map((a) => (
+          {axes.map((a) => (
             <span key={a.i} className="bragg-leg"><i style={{ background: a.color }} />{a.label}</span>
           ))}
           <span className="bragg-leg"><i className="bragg-leg-ring" />res-limited</span>
@@ -241,7 +250,7 @@ function Scatter({
           </div>
         )}
         {sample.map((pi) =>
-          AXES.map((a) => {
+          axes.map((a) => {
             const p = peaks[pi];
             const w = displayQ(p, a.i);
             if (w == null || !Number.isFinite(p.q_abs)) return null;
@@ -271,9 +280,9 @@ function Scatter({
 // ---------------------------------------------------------------------------
 // Histograms — per-axis width distribution
 // ---------------------------------------------------------------------------
-function Histograms({ peaks, showMeasured }: { peaks: BraggPeakWidth[]; showMeasured: boolean }) {
+function Histograms({ peaks, axes, showMeasured }: { peaks: BraggPeakWidth[]; axes: Axis[]; showMeasured: boolean }) {
   const all: number[] = [];
-  peaks.forEach((p) => AXES.forEach((a) => { const w = displayQ(p, a.i); if (w != null) all.push(w); }));
+  peaks.forEach((p) => axes.forEach((a) => { const w = displayQ(p, a.i); if (w != null) all.push(w); }));
   all.sort((x, y) => x - y);
   const q = (f: number) =>
     all.length ? all[Math.max(0, Math.min(all.length - 1, Math.round(f * (all.length - 1))))] : 0;
@@ -281,7 +290,7 @@ function Histograms({ peaks, showMeasured }: { peaks: BraggPeakWidth[]; showMeas
   // Per-axis values + a first Gaussian fit over a robust data range, used only to
   // locate where each bell sits so we can widen the displayed range to show the
   // *full* curve (both wings) — not just the right half where data happens to be.
-  const perAxisVals = AXES.map((a) =>
+  const perAxisVals = axes.map((a) =>
     peaks.map((p) => displayQ(p, a.i)).filter((v): v is number => v != null),
   );
   const fitDomain: [number, number] = [Math.max(0, q(0.005)), Math.max(q(0.98), q(0.005) + 1e-6)];
@@ -306,7 +315,7 @@ function Histograms({ peaks, showMeasured }: { peaks: BraggPeakWidth[]; showMeas
           {showMeasured && <span className="bragg-leg"><i className="bragg-tick-dash" />measured</span>}
         </div>
       </div>
-      {AXES.map((a, ai) => {
+      {axes.map((a, ai) => {
         const values = perAxisVals[ai];
         const { counts } = histCounts(values, domain, N);
         const fit = fitGaussian(values, domain, N);
@@ -352,6 +361,7 @@ function Histograms({ peaks, showMeasured }: { peaks: BraggPeakWidth[]; showMeas
 // ---------------------------------------------------------------------------
 function PeakTable({
   peaks,
+  axes,
   order,
   selected,
   sortKey,
@@ -359,6 +369,7 @@ function PeakTable({
   onSelect,
 }: {
   peaks: BraggPeakWidth[];
+  axes: Axis[];
   order: number[];
   selected: number;
   sortKey: SortKey;
@@ -379,13 +390,13 @@ function PeakTable({
       </div>
       <div className="bragg-thead">
         <span>hkl</span><span>|Q|</span><span>I</span>
-        {AXES.map((a) => <span key={a.i} style={{ color: a.color }}>w {a.label}</span>)}
+        {axes.map((a) => <span key={a.i} style={{ color: a.color }}>w {a.label}</span>)}
         <span>fit</span>
       </div>
       <div className="bragg-tbody">
         {order.slice(0, MAX_ROWS).map((pi) => {
           const p = peaks[pi];
-          const anyFlag = AXES.some((a) => resLimited(p, a.i));
+          const anyFlag = axes.some((a) => resLimited(p, a.i));
           return (
             <button
               key={pi}
@@ -396,7 +407,7 @@ function PeakTable({
               <span className="bragg-hkl">{anyFlag && <i className="bragg-flag-dot" />}{hklStr(p.center_hkl)}</span>
               <span>{p.q_abs.toFixed(2)}</span>
               <span>{p.intensity != null ? Math.round(p.intensity).toLocaleString() : "—"}</span>
-              {AXES.map((a) => {
+              {axes.map((a) => {
                 const w = displayQ(p, a.i);
                 return (
                   <span key={a.i} style={{ color: resLimited(p, a.i) ? "#e8b454" : "#cdd4df" }}>
@@ -424,12 +435,14 @@ function PeakTable({
 function SelectedPeak({
   peak,
   peaks,
+  axes,
   volumeId,
   colormap,
   setColormap,
 }: {
   peak: BraggPeakWidth;
   peaks: BraggPeakWidth[];
+  axes: Axis[];
   volumeId: string | undefined;
   colormap: string;
   setColormap: (c: string) => void;
@@ -443,7 +456,7 @@ function SelectedPeak({
   const baseHalf = Math.min(0.6, Math.max(0.08, maxW * 3.5));
   const half = baseHalf * zoom; // higher zoom → larger window → zoom out (more context)
 
-  const floorHkl = AXES.map((a) => deriveFloor(peaks, a.i, true));
+  const floorHkl = axes.map((a) => deriveFloor(peaks, a.i, true));
   const ell = (xa: number, ya: number, src: (p: BraggPeakWidth, a: number) => number | null): Ellipse | null => {
     const rx = src(peak, xa), ry = src(peak, ya);
     return rx != null && ry != null ? { rx: Math.abs(rx), ry: Math.abs(ry) } : null;
@@ -527,11 +540,11 @@ function SelectedPeak({
 
       <div className="bragg-readout">
         <span />
-        {AXES.map((a) => <span key={a.i} style={{ color: a.color }}>{a.label}</span>)}
+        {axes.map((a) => <span key={a.i} style={{ color: a.color }}>{a.label}</span>)}
         <span className="bragg-readout-key">fitted</span>
-        {AXES.map((a) => <span key={a.i}>{fmt(fittedQ(peak, a.i))}</span>)}
+        {axes.map((a) => <span key={a.i}>{fmt(fittedQ(peak, a.i))}</span>)}
         <span className="bragg-readout-key">meas.</span>
-        {AXES.map((a) => (
+        {axes.map((a) => (
           <span key={a.i} style={{ color: resLimited(peak, a.i) ? "#e8b454" : "#cdd4df" }}>{fmt(measuredQ(peak, a.i))}</span>
         ))}
       </div>
@@ -558,6 +571,9 @@ export function BraggProfileViewer() {
   const [selected, setSelected] = useState(0);
   const [sortKey, setSortKey] = useState<SortKey>("q");
   const [integerHklOnly, setIntegerHklOnly] = useState(true);
+
+  // Per-axis width frame: spherical (ρ, θ, φ) or reciprocal (a*, b*, c*).
+  const axes = useMemo(() => buildAxes(profile?.width_labels), [profile?.width_labels]);
 
   // Optionally keep only near-integer-hkl peaks (the actual Bragg reflections),
   // hiding fractional satellite / diffuse entries.
@@ -589,9 +605,9 @@ export function BraggProfileViewer() {
 
   // ---- derived stats ----
   const meas = peaks.filter(measurable);
-  const flagged = meas.filter((p) => AXES.some((a) => resLimited(p, a.i))).length;
-  const medQ = AXES.map((a) => median(peaks.map((p) => displayQ(p, a.i))));
-  const floorQ = AXES.map((a) => deriveFloor(peaks, a.i, false));
+  const flagged = meas.filter((p) => axes.some((a) => resLimited(p, a.i))).length;
+  const medQ = axes.map((a) => median(peaks.map((p) => displayQ(p, a.i))));
+  const floorQ = axes.map((a) => deriveFloor(peaks, a.i, false));
   const padQ = median(floorQ);
   const qs = peaks.map((p) => p.q_abs).filter(Number.isFinite);
 
@@ -652,7 +668,7 @@ export function BraggProfileViewer() {
               <div className="bragg-stat">
                 <span className="bragg-stat-eyebrow">Median width · Å⁻¹</span>
                 <span className="bragg-stat-row bragg-stat-medrow">
-                  {AXES.map((a) => (
+                  {axes.map((a) => (
                     <span key={a.i} className="bragg-stat-med">
                       <span style={{ color: a.color }}>{a.label}</span> {fmt(medQ[a.i])}
                     </span>
@@ -674,14 +690,14 @@ export function BraggProfileViewer() {
             </div>
 
             <div className="bragg-grid">
-              <Scatter peaks={peaks} selected={selected} onSelect={setSelected} padFloorQ={padQ} />
-              <Histograms peaks={peaks} showMeasured />
+              <Scatter peaks={peaks} axes={axes} selected={selected} onSelect={setSelected} padFloorQ={padQ} />
+              <Histograms peaks={peaks} axes={axes} showMeasured />
             </div>
 
             <div className="bragg-grid">
-              <PeakTable peaks={peaks} order={order} selected={selected} sortKey={sortKey} onSort={setSortKey} onSelect={setSelected} />
+              <PeakTable peaks={peaks} axes={axes} order={order} selected={selected} sortKey={sortKey} onSort={setSortKey} onSelect={setSelected} />
               {selPeak && (
-                <SelectedPeak peak={selPeak} peaks={peaks} volumeId={sliceVolumeId} colormap={colormap} setColormap={setColormap} />
+                <SelectedPeak peak={selPeak} peaks={peaks} axes={axes} volumeId={sliceVolumeId} colormap={colormap} setColormap={setColormap} />
               )}
             </div>
 

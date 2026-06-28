@@ -148,6 +148,16 @@ def _shape_from_radii(radii: tuple[float, float, float]) -> np.ndarray:
     return np.diag([1.0 / (float(r) * float(r)) for r in radii])
 
 
+def _widths_along_dirs(cov_q: np.ndarray, dirs: Sequence[np.ndarray]) -> list[float]:
+    """RMS half-widths of a Q-space covariance projected onto unit directions.
+
+    The width along unit vector ``û`` is ``sqrt(ûᵀ Σ_Q û)`` — used to express the
+    fitted/measured peak shape along the local spherical frame (ρ̂, θ̂, φ̂) instead
+    of the Cartesian a*/b*/c* axes.
+    """
+    return [float(np.sqrt(max(float(u @ cov_q @ u), 0.0))) for u in dirs]
+
+
 def bragg_profile_from_records(
     vol: HKLVolume,
     remover: BraggRemover,
@@ -158,6 +168,10 @@ def bragg_profile_from_records(
     n_sigma = max(float(remover.integer_fit_radius_n_sigma), 0.0)
     steps = tuple(abs(s) for s in remover._steps(vol))  # noqa: SLF001
     pad_hkl = tuple(0.5 * s for s in steps)  # half-voxel: the punch-width pad floor
+    is_spherical = str(remover.punch_frame).lower() == "spherical"
+    ub = vol.ub_matrix
+    # Per-axis voxel Q-vectors (for the spherical-frame half-voxel pad along û).
+    voxel_q = [ub[:, j] * steps[j] for j in range(3)]
     rows = []
     for idx, peak in enumerate(peaks):
         if peak.shape_hkl is not None:
@@ -204,6 +218,35 @@ def bragg_profile_from_records(
             measured_width_hkl = None
             measured_width_q = None
             resolution_limited = None
+
+        # Spherical frame: report the fitted/measured Q-widths *along the local
+        # (ρ̂, θ̂, φ̂) unit vectors* of this peak instead of the Cartesian axes, so
+        # the readouts match the spherical punch axes (rρ radial, rθ polar, rφ
+        # azimuth).  width_hkl / principal_* stay as-is (the slice ellipses are on
+        # hkl planes); only the per-axis Q-widths are reframed.
+        if is_spherical:
+            frame = remover._spherical_frame(vol, tuple(peak.center_hkl))  # noqa: SLF001
+            if frame is not None:
+                dirs = list(frame)  # ρ̂, θ̂, φ̂
+                cov_q_fit = ub @ np.linalg.pinv(shape) @ ub.T
+                widths_q = _widths_along_dirs(cov_q_fit, dirs)
+                cov_hkl_meas = remover.measure_peak_covariance(  # noqa: SLF001
+                    vol, tuple(peak.center_hkl))
+                if cov_hkl_meas is not None:
+                    cov_q_meas = ub @ cov_hkl_meas @ ub.T
+                    measured_width_q = [
+                        n_sigma * w for w in _widths_along_dirs(cov_q_meas, dirs)
+                    ]
+                    pad_q = [
+                        0.5 * float(np.sqrt(sum((u @ vq) ** 2 for vq in voxel_q)))
+                        for u in dirs
+                    ]
+                    resolution_limited = [
+                        bool(mw < pad) for mw, pad in zip(measured_width_q, pad_q)
+                    ]
+                else:
+                    measured_width_q = None
+                    resolution_limited = None
         rows.append({
             "index": idx,
             "source_node_hkl": (
@@ -230,7 +273,9 @@ def bragg_profile_from_records(
         })
     return {
         "schema_version": 1,
-        "width_labels": ["Qx", "Qy", "Qz"],
+        # Per-axis Q-width frame: spherical (ρ, θ, φ) for the spherical punch, else
+        # the reciprocal axes.  The web page colour-codes and labels from this.
+        "width_labels": ["ρ", "θ", "φ"] if is_spherical else ["a*", "b*", "c*"],
         "hkl_width_labels": ["H", "K", "L"],
         "width_units": {"hkl": "r.l.u.", "q": "Å⁻¹"},
         "n_peaks": len(rows),
