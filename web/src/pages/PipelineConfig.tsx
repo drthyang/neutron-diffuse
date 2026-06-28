@@ -980,10 +980,12 @@ function PunchPreviewGrid({
                 bands={bands}
                 cutValue={cutValue}
               />
-            ) : (
+            ) : loading[spec.id] ? (
               <div className="punch-preview-empty">
-                {loading[spec.id] ? "Loading slice..." : "Slice unavailable"}
+                <div className="skeleton" style={{ width: "100%", height: "100%" }} />
               </div>
+            ) : (
+              <div className="punch-preview-empty">Slice unavailable</div>
             )}
             <div className="punch-legend">
               <span>

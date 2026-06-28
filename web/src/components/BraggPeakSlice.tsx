@@ -92,7 +92,8 @@ function SliceTile({
   floor,
   axisLabel,
   axisColor,
-}: Omit<Props, "volumeId" | "plane" | "value"> & { slice: Slice }) {
+  loading = false,
+}: Omit<Props, "volumeId" | "plane" | "value"> & { slice: Slice; loading?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -145,7 +146,7 @@ function SliceTile({
 
   return (
     <div className="bragg-tile">
-      <div className="bragg-tile-canvas">
+      <div className={`bragg-tile-canvas${loading ? " slice-loading" : ""}`}>
         <canvas ref={ref} />
         <svg viewBox="0 0 200 200" preserveAspectRatio="none">
           <line x1={C} y1="0" x2={C} y2="200" className="bragg-cross" />
@@ -196,8 +197,8 @@ export function BraggPeakSlice({ volumeId, plane, value, ...rest }: Props) {
   if (!q.data) {
     return (
       <div className="bragg-tile">
-        <div className="bragg-tile-canvas bragg-tile-empty">
-          <span>loading…</span>
+        <div className="bragg-tile-canvas">
+          <div className="skeleton" style={{ width: "100%", height: "100%" }} />
         </div>
         <span className="bragg-tile-label" style={{ color: rest.axisColor }}>
           {rest.axisLabel}
@@ -205,5 +206,5 @@ export function BraggPeakSlice({ volumeId, plane, value, ...rest }: Props) {
       </div>
     );
   }
-  return <SliceTile slice={q.data} {...rest} />;
+  return <SliceTile slice={q.data} loading={q.isFetching} {...rest} />;
 }
