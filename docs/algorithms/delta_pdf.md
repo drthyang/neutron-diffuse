@@ -38,8 +38,10 @@ Step by step (as implemented in `src/nebula3d/analysis/delta_pdf.py`):
 3. **Remove DC**: subtract the mean *after* windowing so `Σ I = 0` exactly.
    This zeroes the `r=0` self-correlation spike. (Subtracting before windowing
    leaves a nonzero windowed sum → a large spurious peak at `r=0`.)
-4. **Zero-pad symmetrically** to the next power of 2, keeping `Q=0` on the new
-   centre. One-sided padding shifts the origin and breaks step 5.
+4. **Zero-pad symmetrically** to the next fast FFT length (5-smooth,
+   `scipy.fft.next_fast_len` — just as fast as a power of two but a far
+   smaller pad), keeping `Q=0` on the new centre. One-sided padding shifts
+   the origin and breaks step 5.
 5. **`ifftshift` → `fftn` → `fftshift`**: move `Q=0` to the corner, transform,
    then recentre `r=0`.
 6. **Take the real part**: valid because the symmetrised (`mmm`) data is

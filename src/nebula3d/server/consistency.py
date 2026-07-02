@@ -39,6 +39,17 @@ _cache: OrderedDict[tuple, dict] = OrderedDict()
 _lock = threading.Lock()
 
 
+def set_cache_max(n: int) -> None:
+    """Cap the reconstruction cache (evicting oldest); the browser build
+    shrinks it — each entry holds four volume-sized arrays (data / recon /
+    residual / ΔPDF)."""
+    global _CACHE_MAX
+    with _lock:
+        _CACHE_MAX = max(1, int(n))
+        while len(_cache) > _CACHE_MAX:
+            _cache.popitem(last=False)
+
+
 def pdf_input_path(cfg: ServerConfig, dataset_id: str) -> Path | None:
     """The volume the ΔPDF was built from: flattened if present, else backfilled."""
     ds = find_dataset(cfg, dataset_id)

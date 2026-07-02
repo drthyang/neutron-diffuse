@@ -11,6 +11,33 @@ import numpy as np
 from numpy.typing import NDArray
 
 
+def q_magnitude_from_axes(
+    h_axis: NDArray[np.float64],
+    k_axis: NDArray[np.float64],
+    l_axis: NDArray[np.float64],
+    ub_matrix: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """|Q| in Å^-1 on the (nh, nk, nl) grid spanned by three 1-D axes.
+
+    Accumulates |Q|² from broadcast 1-D axes instead of materialising the full
+    (nh, nk, nl) meshgrid and the (..., 3) Cartesian stack: peak memory is
+    2 volume-sized arrays instead of ~10, which is what lets full-resolution
+    volumes run inside the browser's WASM heap (see docs/web.md).
+    """
+    h = np.asarray(h_axis, dtype=np.float64)[:, None, None]
+    k = np.asarray(k_axis, dtype=np.float64)[None, :, None]
+    l_ = np.asarray(l_axis, dtype=np.float64)[None, None, :]
+    ub = np.asarray(ub_matrix, dtype=np.float64)
+    q2: NDArray[np.float64] | None = None
+    for row in ub:
+        qc = row[0] * h + row[1] * k   # (nh, nk, 1) — small
+        qc = qc + row[2] * l_          # one full-volume array per component
+        np.square(qc, out=qc)
+        q2 = qc if q2 is None else np.add(q2, qc, out=q2)
+    assert q2 is not None
+    return np.sqrt(q2, out=q2)
+
+
 @dataclass
 class HKLVolume:
     """3D reciprocal-space intensity grid in fractional HKL coordinates.
@@ -84,11 +111,13 @@ class HKLVolume:
         return H, K, L
 
     def q_magnitude(self) -> NDArray[np.float64]:
-        """Return |Q| in Å^-1 for every voxel, shape (nh, nk, nl)."""
-        H, K, L = self.hkl_grid()
-        hkl = np.stack([H, K, L], axis=-1)  # (..., 3)
-        q_cart = hkl @ self.ub_matrix.T      # (..., 3) in Å^-1
-        return np.linalg.norm(q_cart, axis=-1)
+        """Return |Q| in Å^-1 for every voxel, shape (nh, nk, nl).
+
+        Memory-lean: see :func:`q_magnitude_from_axes` (2 volume-sized arrays
+        peak instead of the ~10 a meshgrid + (..., 3) stack would allocate).
+        """
+        return q_magnitude_from_axes(
+            self.h_axis, self.k_axis, self.l_axis, self.ub_matrix)
 
     @property
     def shape(self) -> tuple[int, int, int]:

@@ -45,11 +45,16 @@ hosted — the privacy-preserving path to a public, fully-functional app.
   at runtime. Pyodide runs in a dedicated Web Worker
   (`web/src/workers/pyodideWorker.ts`) so the UI never blocks; a boot-progress
   panel covers the ~15 MB WASM download (cached after first load).
-- **Memory ceiling.** Pyodide is a 32-bit-WASM heap, so large float64 volumes do
-  not fit (full-pipeline peak ≈ 3 GB at 48 M voxels). Every upload is pre-flighted
-  by `nebula3d.webbridge.inspect_input` (reads only the HDF5 shape, so it can't OOM)
-  and **rejected above ~23 M voxels** with a message pointing to the native build.
-  Full-resolution data goes through native `nebula3d-web`.
+- **Memory ceiling.** Pyodide's 32-bit-WASM heap tops out at 4 GB (Pyodide
+  ≥ 0.27). The pipeline is memory-lean in float64 — |Q| grids accumulate from
+  broadcast 1-D axes instead of meshgrids, the ΔPDF pads to
+  `scipy.fft.next_fast_len` instead of powers of two, intermediates are freed
+  promptly, and the slice caches are capped in-browser — so the worst stage
+  peaks at ~7.3 volume-sized arrays (measured; the gate assumes 8). That admits
+  **up to ~50 M voxels at full float64 precision** (e.g. a 301×401×401
+  full-resolution volume = 48.4 M voxels). Every upload is pre-flighted by
+  `nebula3d.webbridge.inspect_input` (reads only the HDF5 shape, so it can't OOM)
+  and rejected above the gate with a message pointing to the native build.
 
 Local dev for this build: `cd web && npm run dev:pyodide` (loads `.env.pages`,
 base `/`).

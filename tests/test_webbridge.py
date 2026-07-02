@@ -134,3 +134,80 @@ def test_consistency_meta_and_slice(ran_pipeline):
 def test_unknown_volume_raises(ran_pipeline):
     with pytest.raises(KeyError):
         webbridge.volume_meta_json("nope.ringremoved")
+
+
+def test_bragg_profile_json(ran_pipeline):
+    dataset_id, _datasets, _events = ran_pipeline
+    prof = json.loads(webbridge.bragg_profile_json(dataset_id))
+    assert prof["dataset_id"] == dataset_id
+    assert prof["has_profile"] is True
+    assert prof["n_peaks"] == len(prof["peaks"]) > 0
+    assert prof["width_labels"]
+
+
+def test_bragg_profile_json_missing_file(ran_pipeline):
+    from pathlib import Path
+
+    dataset_id, _datasets, _events = ran_pipeline
+    prof = json.loads(webbridge.bragg_profile_json(dataset_id))
+    Path(prof["profile_path"]).unlink()
+    prof2 = json.loads(webbridge.bragg_profile_json(dataset_id))
+    assert prof2["has_profile"] is False
+    assert prof2["peaks"] == []
+
+
+def test_bragg_profile_json_unknown_dataset(ran_pipeline):
+    with pytest.raises(KeyError):
+        webbridge.bragg_profile_json("nope")
+
+
+def test_save_dpdf_envelope(ran_pipeline):
+    dataset_id, _datasets, _events = ran_pipeline
+    env = bytes(webbridge.save_dpdf(dataset_id, q_min=0.5, q_max=3.0))
+    (header_len,) = struct.unpack_from("<I", env, 0)
+    header = json.loads(env[4 : 4 + header_len].decode("utf-8"))
+    assert header["filename"].endswith(".h5")
+    assert "delta_pdf" in header["filename"]
+    payload = env[4 + header_len:]
+    assert payload[:8] == b"\x89HDF\r\n\x1a\n"  # HDF5 magic signature
+    # The temp file must not linger in the workspace (unlinked after read).
+    cfg = webbridge._S.cfg
+    assert cfg is not None
+    assert header["filename"] not in {p.name for p in cfg.processed_dir.iterdir()}
+
+
+def test_inspect_input_admits_full_resolution_volume(tmp_path):
+    """A real full-resolution grid (301×401×401 = 48.4 M voxels, float64) must
+    pass the browser memory gate — the 4 GB Pyodide heap plus the memory-lean
+    float64 pipeline admit it (no precision reduction, see webbridge budget).
+
+    Metadata-only file: the gate reads just the HDF5 dataset shape, so the
+    dataset is never written (h5py allocates contiguous storage lazily).
+    """
+    import h5py
+
+    webbridge.setup(workdir=str(tmp_path / "work"))
+    path = tmp_path / "full_res.h5"
+    with h5py.File(path, "w") as f:
+        f.create_group("entry").create_dataset(
+            "data", shape=(301, 401, 401), dtype="f8")
+
+    report = json.loads(webbridge.inspect_input("full_res.h5", str(path)))
+    assert report["shape"] == [301, 401, 401]
+    assert report["n_voxels"] == 301 * 401 * 401
+    assert report["ok"] is True, report["message"]
+
+
+def test_inspect_input_still_rejects_oversized_volume(tmp_path):
+    """Beyond the physical 4 GB WASM ceiling the gate must still refuse."""
+    import h5py
+
+    webbridge.setup(workdir=str(tmp_path / "work"))
+    path = tmp_path / "huge.h5"
+    with h5py.File(path, "w") as f:
+        f.create_group("entry").create_dataset(
+            "data", shape=(501, 501, 501), dtype="f8")  # 125 M voxels
+
+    report = json.loads(webbridge.inspect_input("huge.h5", str(path)))
+    assert report["ok"] is False
+    assert "native build" in report["message"]

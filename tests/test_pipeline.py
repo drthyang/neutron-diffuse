@@ -167,3 +167,23 @@ def test_direct_beam_fill_uses_background_outside_not_adjacent_halo():
     assert np.allclose(new.data[holes], new.data[i0, i0, i0])
     # OLD: generic fill samples the adjacent −2 halo, so it goes negative.
     assert float(old.data[i0, i0, i0]) < 0.0
+
+
+def test_q_magnitude_matches_meshgrid_reference():
+    """The broadcast |Q| accumulation must match the meshgrid formulation.
+
+    q_magnitude used to build the full (nh,nk,nl) meshgrid + (...,3) Cartesian
+    stack (~10 volume-sized arrays); it now accumulates |Q|² from broadcast 1-D
+    axes.  Same float64 math, so it must agree to rounding error on an
+    arbitrary (non-orthogonal) UB matrix.
+    """
+    rng = np.random.default_rng(7)
+    ub = rng.standard_normal((3, 3)) * 1.5 + 2.0 * np.eye(3)
+    vol = HKLVolume.from_arrays(
+        rng.random((13, 11, 9)), (-2, 2), (-1.5, 1.5), (-1, 1), ub_matrix=ub)
+
+    H, K, L = vol.hkl_grid()
+    hkl = np.stack([H, K, L], axis=-1)
+    ref = np.linalg.norm(hkl @ ub.T, axis=-1)
+
+    assert np.allclose(vol.q_magnitude(), ref, rtol=1e-12, atol=1e-12)

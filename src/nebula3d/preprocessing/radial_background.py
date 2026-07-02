@@ -832,14 +832,20 @@ def confirm_ring_shells_across_h(
 def _plane_components(
     vol: HKLVolume,
     plane: str,
-) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+    with_q2: bool = True,
+) -> tuple[NDArray[np.float64] | None, NDArray[np.float64], NDArray[np.float64]]:
+    """Return ``(|Q|², x, y)``: squared |Q| and the two in-plane projections.
+
+    Everything is linear in (h, k, l), so each output is accumulated from
+    broadcast 1-D axes — no (nh, nk, nl) meshgrid, no (..., 3) Cartesian stack
+    (which would transiently allocate ~10 volume-sized arrays and dominate the
+    ring stage's memory).  ``with_q2=False`` skips |Q|² for callers that only
+    need the projections.
+    """
     axes = {"hk0": (0, 1), "h0l": (0, 2), "0kl": (1, 2)}
     if plane not in axes:
         raise ValueError(f"Unknown plane: {plane!r}")
     i, j = axes[plane]
-
-    H, K, L = vol.hkl_grid()
-    Q = np.stack([H, K, L], axis=-1) @ vol.ub_matrix.T  # (..., 3) Å⁻¹
 
     # Orthonormal in-plane basis from the two reciprocal axis vectors
     # (Gram–Schmidt, so it is correct even if the axes are not orthogonal).
@@ -849,7 +855,26 @@ def _plane_components(
     a2_perp = a2 - (a2 @ e1) * e1
     e2 = a2_perp / (np.linalg.norm(a2_perp) + 1e-12)
 
-    return Q, Q @ e1, Q @ e2
+    h = vol.h_axis[:, None, None]
+    k = vol.k_axis[None, :, None]
+    l_ = vol.l_axis[None, None, :]
+
+    def _linear(coeff: NDArray[np.float64]) -> NDArray[np.float64]:
+        out = coeff[0] * h + coeff[1] * k  # (nh, nk, 1) — small
+        return out + coeff[2] * l_
+
+    ub = vol.ub_matrix
+    x = _linear(ub.T @ e1)  # Q·e1 = hkl·(UBᵀe1)
+    y = _linear(ub.T @ e2)
+
+    q2: NDArray[np.float64] | None = None
+    if with_q2:
+        for row in ub:
+            qc = _linear(np.asarray(row, dtype=np.float64))
+            np.square(qc, out=qc)
+            q2 = qc if q2 is None else np.add(q2, qc, out=q2)
+
+    return q2, x, y
 
 
 def _offset_q_magnitude(
@@ -858,15 +883,15 @@ def _offset_q_magnitude(
     center_offset: tuple[float, float] = (0.0, 0.0),
     center_offset_h_slope: tuple[float, float] = (0.0, 0.0),
 ) -> NDArray[np.float64]:
-    Q, x, y = _plane_components(vol, plane)
+    q2, x, y = _plane_components(vol, plane)
+    assert q2 is not None
     cx0, cy0 = center_offset
     sx, sy = center_offset_h_slope
     if cx0 == 0.0 and cy0 == 0.0 and sx == 0.0 and sy == 0.0:
-        return np.linalg.norm(Q, axis=-1)
-    H, _, _ = vol.hkl_grid()
-    cx = cx0 + sx * H
+        return np.sqrt(q2, out=q2)
+    H = vol.h_axis[:, None, None]
+    cx = cx0 + sx * H  # (nh, 1, 1) — broadcasts against the projections
     cy = cy0 + sy * H
-    q2 = np.einsum("...i,...i->...", Q, Q)
     q2 = q2 - x * x - y * y + (x - cx) ** 2 + (y - cy) ** 2
     return np.sqrt(np.maximum(q2, 0.0))
 
@@ -888,12 +913,12 @@ def _azimuthal_angle(
     built from the in-plane reciprocal axes gives the correct angle for any
     orientation (and any lattice).
     """
-    _, x, y = _plane_components(vol, plane)
+    _, x, y = _plane_components(vol, plane, with_q2=False)
     cx0, cy0 = center_offset
     sx, sy = center_offset_h_slope
     if sx == 0.0 and sy == 0.0:
         return np.arctan2(y - cy0, x - cx0)
-    H, _, _ = vol.hkl_grid()
+    H = vol.h_axis[:, None, None]
     cx = cx0 + sx * H
     cy = cy0 + sy * H
     return np.arctan2(y - cy, x - cx)

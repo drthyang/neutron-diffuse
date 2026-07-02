@@ -614,7 +614,7 @@ def magnetic_satellite_centers(
     if not valid.any():
         return []
 
-    _, bin_idx, thr = BraggRemover._q_shell_thresholds(
+    bin_idx, thr = BraggRemover._q_shell_thresholds(
         vol, q_step=q_step, n_mad=n_mad, min_intensity=min_intensity,
     )
     cand = valid & (vol.data > thr[bin_idx])

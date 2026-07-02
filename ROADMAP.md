@@ -379,33 +379,28 @@ Before treating the pipeline as a stable release candidate:
 - Still open: add CI coverage that specifically exercises the Bragg
   guard/exclusion behavior, not just import/type checks.
 
-## In-Browser Engine — Large-Volume Ceiling  Blocked (needs new architecture)
+## In-Browser Engine — Large-Volume Ceiling  Resolved (float64, no precision loss)
 
-The GitHub Pages / Pyodide build runs the real pipeline in the browser, but the
-**32-bit WASM heap (~2 GB practical ceiling)** caps how large a volume it can
-reduce. Two prototypes on branch **`feat/in-browser-parallel-float32`** improve it
-without changing native behaviour:
+The GitHub Pages / Pyodide build now reduces **full-resolution float64 volumes
+up to ~50 M voxels** — a real 301×401×401 file (48.4 M voxels) fits — with no
+precision reduction and no architecture change. Two things closed the gap:
 
-- **Parallel ring removal** — shards the ~70% ring stage across a pool of Web
-  Workers (each its own Pyodide), bit-identical to serial.
-- **float32 build** — computes in float32 in-browser (native stays float64),
-  ~halving peak memory and roughly doubling the voxel cap (~23 M → ~56 M).
+- **Pyodide ≥ 0.27** raised the WASM heap ceiling from 2 GB to 4 GB
+  (`MAXIMUM_MEMORY=4GB`); the worker pins 0.27.7.
+- **A float64 memory rework of the computation core** cut the worst-stage
+  peak from ~10 volume-sized arrays to ~7.3 (measured):
+  - `q_magnitude` (and the ring stage's plane projections) accumulate from
+    broadcast 1-D axes — no `(nh,nk,nl)` meshgrids, no `(...,3)` stacks;
+  - the ΔPDF pads to `scipy.fft.next_fast_len` (5-smooth) instead of the next
+    power of two, materialises the real part instead of pinning the complex
+    spectrum, and frees each FFT intermediate before the next allocates;
+  - the |Q|-shell sorted scans (punch / backfill / flatten) drop each
+    volume-sized temporary as soon as it is consumed, with int32 shell
+    indices;
+  - the consistency check consumes the ΔPDF during the inverse FFT;
+  - the slice caches are capped in-browser and cleared before each run.
 
-**Still blocked:** a real full-resolution file (301×401×401 = **48.4 M voxels**,
-~1.55 GB float32 peak) OOMs near the WASM ceiling once Pyodide runtime overhead is
-added. float32 is necessary but not sufficient at this size.
-
-Options to revisit (a **different architecture** is likely needed):
-
-- **memory64 (wasm64) Pyodide build** — a 64-bit heap removes the ~2 GB ceiling;
-  experimental, larger download, Chrome/Firefox only (Safari lags).
-- **Out-of-core / chunked reduction** — stream the volume in slabs so peak memory
-  is bounded by the slab, not the whole grid (the parallel slab driver in
-  `nebula3d.webparallel` is a starting point).
-- **Server/serverless compute** — offload the reduction to a backend with the
-  Pages site as a thin client (trades the privacy / no-upload property).
-- **Optional downsampling** — a coarser in-browser preview mode for oversized
-  inputs, full resolution via the native install.
-
-Until then the in-browser engine targets modest volumes; full-resolution data
-goes through the native build (`pip install "nebula3d[web]" && nebula3d-web`).
+The float32 / parallel-worker prototypes on `feat/in-browser-parallel-float32`
+are superseded. Volumes beyond the ~50 M-voxel gate still go through the native
+build (`pip install "nebula3d[web]" && nebula3d-web`); a memory64 (wasm64)
+Pyodide build would lift even that, if ever needed.

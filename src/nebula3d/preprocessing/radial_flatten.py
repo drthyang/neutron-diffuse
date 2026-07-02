@@ -174,16 +174,23 @@ def flatten_radial_background(
         edges = np.array([q0, q0 + qs])  # type: ignore[assignment]
     q_grid = 0.5 * (edges[:-1] + edges[1:])
     nb = q_grid.size
-    bin_idx = np.clip(np.digitize(q, edges) - 1, 0, nb - 1)
+    # int32 indices: the shell count is tiny, and the full-volume index array
+    # is half the size of numpy's default int64.
+    bin_idx = np.clip(np.digitize(q, edges) - 1, 0, nb - 1).astype(
+        np.int32, copy=False)
 
     # Per-shell level from the *valid* voxels (sorted-segment scan, like the
-    # q_shell backfill lookup), so each shell is touched once.
+    # q_shell backfill lookup), so each shell is touched once.  Prompt frees:
+    # each flattened array covers most of the volume.
     flat_b = bin_idx[valid]
-    flat_i = data[valid].astype(np.float64)
+    del bin_idx  # full-volume index array no longer needed
     order = np.argsort(flat_b, kind="stable")
     sb = flat_b[order]
-    si = flat_i[order]
+    del flat_b
+    si = np.asarray(data[valid], dtype=np.float64)[order]
+    del order
     bounds = np.searchsorted(sb, np.arange(nb + 1))
+    del sb
 
     raw = np.full(nb, np.nan)
     counts = np.zeros(nb, dtype=int)
@@ -208,15 +215,19 @@ def flatten_radial_background(
         bg_curve = filled
 
     # Subtract the smooth curve at each voxel's exact |Q| (continuous, no shell
-    # step), leaving NaN/masked voxels untouched.
+    # step), leaving NaN/masked voxels untouched.  Masked ``where=`` ops instead
+    # of fancy indexing: boolean indexing materialises compressed copies of
+    # data/bg_at (up to 3 extra volume-sized arrays on mostly-finite data).
     bg_at = np.interp(
         q, q_grid, bg_curve, left=float(bg_curve[0]), right=float(bg_curve[-1])
     )
+    del q  # full-volume |Q| no longer needed
     data_out = data.copy()
     finite = np.isfinite(data)
-    data_out[finite] = data[finite] - bg_at[finite]
+    np.subtract(data, bg_at, out=data_out, where=finite)
+    del bg_at
     if clip_negative:
-        data_out[finite] = np.maximum(data_out[finite], 0.0)
+        np.maximum(data_out, 0.0, out=data_out, where=finite)
 
     vol_out = dataclasses.replace(vol, data=data_out)
     return RadialFlattenResult(

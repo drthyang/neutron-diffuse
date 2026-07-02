@@ -147,21 +147,7 @@ export function fetchConsistencyMeta(
 }
 
 export function fetchBraggProfile(datasetId: string): Promise<BraggProfile> {
-  if (PYODIDE_MODE) {
-    return Promise.resolve({
-      dataset_id: datasetId,
-      profile_path: null,
-      has_profile: false,
-      schema_version: 1,
-      width_labels: ["Qx", "Qy", "Qz"],
-      hkl_width_labels: ["H", "K", "L"],
-      width_units: { hkl: "r.l.u.", q: "Å⁻¹" },
-      n_peaks: 0,
-      fit_covariance: false,
-      punch_frame: null,
-      peaks: [],
-    });
-  }
+  if (PYODIDE_MODE) return engine.braggProfile(datasetId);
   return getJSON<BraggProfile>(`/api/bragg/${encodeURIComponent(datasetId)}/profile`);
 }
 
@@ -173,9 +159,17 @@ export async function saveConsistencyDpdf(
   rMax?: number,
 ): Promise<{ saved: boolean; path: string; filename: string }> {
   if (PYODIDE_MODE) {
-    throw new Error(
-      "Saving the ΔPDF to disk requires the desktop / server app (not the browser build).",
-    );
+    // No server disk in the browser build: compute the .h5 in the Worker and
+    // hand it to the user as a download.
+    const { filename, bytes } = await engine.saveDpdf(datasetId, qMin, qMax, rMin, rMax);
+    const blob = new Blob([bytes as BlobPart], { type: "application/x-hdf5" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    return { saved: true, path: filename, filename };
   }
   const qs = bandParams(qMin, qMax, rMin, rMax);
   const url = `/api/consistency/${encodeURIComponent(datasetId)}/save${qs ? `?${qs}` : ""}`;

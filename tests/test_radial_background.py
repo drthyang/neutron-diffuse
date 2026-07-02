@@ -319,14 +319,14 @@ def test_h_dependent_center_offset_changes_q_and_phi_by_slice():
 
     center_offset = (0.02, -0.03)
     h_slope = (0.10, 0.20)
-    Q, x, y = _plane_components(vol, "0kl")
+    q2, x, y = _plane_components(vol, "0kl")
     H, _, _ = vol.hkl_grid()
     cx = center_offset[0] + h_slope[0] * H
     cy = center_offset[1] + h_slope[1] * H
 
     q_expected = np.sqrt(
         np.maximum(
-            np.einsum("...i,...i->...", Q, Q)
+            q2
             - x * x - y * y
             + (x - cx) ** 2
             + (y - cy) ** 2,

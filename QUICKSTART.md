@@ -37,8 +37,9 @@ make ui                 # build the SPA into src/nebula3d/server/static
 Open the hosted app: **https://drthyang.github.io/nebula3d/**
 
 It runs the real `nebula3d` pipeline entirely in your browser via Pyodide — load
-your own `.nxs`/`.h5`, nothing is uploaded. Suited to volumes up to ~23 M
-voxels; larger data must use the native mode above.
+your own `.nxs`/`.h5`, nothing is uploaded. Suited to volumes up to ~50 M
+voxels at full float64 precision (a 301×401×401 full-resolution volume fits);
+larger data must use the native mode above.
 
 To run that build locally:
 

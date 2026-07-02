@@ -1085,7 +1085,7 @@ def build_manual(output_path: str) -> None:
          "(Subtracting before windowing leaves a nonzero windowed sum, creating a "
          "spurious large peak at r=0.)"),
         ("Zero-pad symmetrically",
-         "Pad to the next power-of-2 in each dimension, keeping Q=0 on the new centre. "
+         "Pad to the next fast FFT length (5-smooth) in each dimension, keeping Q=0 on the new centre. "
          "One-sided padding shifts the origin and breaks the ifftshift below. "
          "Zero-padding provides sinc-interpolation of the real-space grid; it does not "
          "increase intrinsic resolution, which is set by the Q_max and apodization window."),

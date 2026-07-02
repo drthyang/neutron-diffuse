@@ -24,10 +24,10 @@ from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.fft import fftfreq, fftn, fftshift, ifftn, ifftshift
+from scipy.fft import fftfreq, fftn, fftshift, ifftn, ifftshift, next_fast_len
 from scipy.ndimage import gaussian_filter
 
-from nebula3d.core import HKLVolume
+from nebula3d.core import HKLVolume, q_magnitude_from_axes
 
 Window = Literal["hann", "gaussian", "none"]
 
@@ -121,7 +121,7 @@ def compute_delta_pdf(
     gaussian_sigma:
         Width parameter for Gaussian window (fraction of Q_max).
     zero_pad:
-        Pad to next power-of-2 grid size for efficient FFT.
+        Pad to the next fast FFT length (5-smooth) for an efficient FFT.
     subtract_mean:
         Subtract the mean intensity before FFT to suppress the r=0 peak.
     real_space_angstrom:
@@ -213,9 +213,7 @@ def compute_delta_pdf(
         qmin, qmax = q_band
         if qmax <= qmin:
             raise ValueError("q_band must satisfy q_max > q_min")
-        H, K, L = np.meshgrid(h_axis, k_axis, l_axis, indexing="ij")
-        hkl = np.stack([H, K, L], axis=-1)
-        q_mag = np.linalg.norm(hkl @ vol.ub_matrix.T, axis=-1)
+        q_mag = q_magnitude_from_axes(h_axis, k_axis, l_axis, vol.ub_matrix)
         in_band = (q_mag >= qmin) & (q_mag <= qmax)
         if not np.any(in_band):
             raise ValueError(f"q_band {q_band} selects no voxels")
@@ -231,21 +229,27 @@ def compute_delta_pdf(
     # nonzero sum = ∫(data−mean)·w dQ, producing a spurious 10^5-amplitude
     # spike at r=0 that overwhelms near-origin structure.
     window_axes = _window_axes(data.shape, apodization, gaussian_sigma)
-    win = window_axes[0][:, None, None] * window_axes[1][None, :, None] \
-        * window_axes[2][None, None, :]
-    data = data * win
+    # Apply the separable window as three broadcast in-place multiplies —
+    # never materialising the full 3-D window array (a volume-sized float64).
+    data *= window_axes[0][:, None, None]
+    data *= window_axes[1][None, :, None]
+    data *= window_axes[2][None, None, :]
 
     subtracted_mean = 0.0
     if subtract_mean:
         subtracted_mean = float(data.mean())
         data -= subtracted_mean
 
-    # Zero-pad to next power-of-2 for efficiency.  Pad SYMMETRICALLY so the
-    # Q=0 origin (at index s//2 of each axis) stays at the centre of the
-    # padded array — one-sided padding would shift the origin and reintroduce
-    # the phase ramp that ifftshift (below) removes.
+    # Zero-pad to the next fast FFT length (5-smooth; scipy.fft.next_fast_len).
+    # pocketfft transforms these just as fast as powers of two, but the pad is
+    # far smaller (e.g. 360→375 instead of 360→512 — ~2.6× less memory for the
+    # padded and complex arrays), which is what keeps full-resolution volumes
+    # inside the browser's WASM heap.  Pad SYMMETRICALLY so the Q=0 origin (at
+    # index s//2 of each axis) stays at the centre of the padded array —
+    # one-sided padding would shift the origin and reintroduce the phase ramp
+    # that ifftshift (below) removes.
     if zero_pad:
-        padded_shape = tuple(_next_power_of_2(s) for s in data.shape)
+        padded_shape = tuple(next_fast_len(s) for s in data.shape)
     else:
         padded_shape = data.shape
     pad_width = []
@@ -258,9 +262,20 @@ def compute_delta_pdf(
     # [0,0,0] as the origin.  Without ifftshift the transform picks up a linear
     # phase ramp e^{-iπk} → (-1)^k, which flips the sign of real-space features
     # by pixel parity and splits each correlation peak into mixed +/- lobes.
-    # The correct centred transform is fftshift(fftn(ifftshift(·))).
-    ft = fftshift(fftn(ifftshift(data), workers=_FFT_WORKERS))
-    delta_pdf = np.real(ft)  # take real part (valid for centrosymmetric I(Q))
+    # The correct centred transform is fftshift(fftn(ifftshift(·))) — computed
+    # in explicit steps that free each intermediate before the next allocates
+    # (the complex spectrum alone is 2 padded volumes), and taking the real
+    # part BEFORE fftshift (they commute: fftshift only permutes elements) so
+    # the shift copies a float64 array, not a complex128 one.
+    data = ifftshift(data)
+    ft = fftn(data, workers=_FFT_WORKERS)
+    del data  # free the padded input before the real-part copy below
+    # Materialise the real part (valid for centrosymmetric I(Q)): np.real()
+    # returns a VIEW that would otherwise pin the complex128 buffer (2 padded
+    # volumes) for the DeltaPDF's whole lifetime.
+    delta_pdf = np.ascontiguousarray(ft.real)
+    del ft
+    delta_pdf = fftshift(delta_pdf)
 
     # Build real-space axes (use possibly-cropped local axes)
     nh, nk, nl = padded_shape
@@ -329,6 +344,7 @@ def invert_delta_pdf(
     deapodize: bool = True,
     add_back_smooth_bg: bool = True,
     window_floor: float = 1e-3,
+    consume: bool = False,
 ) -> HKLVolume:
     """Inverse-transform a 3D-ΔPDF back to its reciprocal-space diffuse volume.
 
@@ -358,6 +374,12 @@ def invert_delta_pdf(
     window_floor:
         Smallest window value (relative to its peak) the deapodization divides
         by; also defines the reliable-region ``mask``.
+    consume:
+        Release ``dpdf.data`` (replaced by an empty array) as soon as it has
+        been copied for the transform.  Opt-in for memory-critical callers
+        (the in-browser pipeline's consistency check) that never slice the
+        ΔPDF afterwards: the padded volume is 1 volume-equivalent that would
+        otherwise sit under the inverse FFT's complex transient.
 
     Returns
     -------
@@ -376,12 +398,22 @@ def invert_delta_pdf(
 
     # Exact inverse of fftshift(fftn(ifftshift(·))).  The stored ΔPDF is real
     # (FT of centrosymmetric I(Q)); ifftn of it is real up to round-off.
-    prep_pad = np.real(fftshift(ifftn(ifftshift(dpdf.data), workers=_FFT_WORKERS)))
+    # Stepwise with prompt frees, real part before fftshift (they commute) —
+    # same memory discipline as the forward transform in compute_delta_pdf.
+    work = ifftshift(dpdf.data)
+    if consume:
+        dpdf.data = np.empty((0, 0, 0), dtype=np.float64)
+    ft = ifftn(work, workers=_FFT_WORKERS)
+    del work
+    prep_pad = np.ascontiguousarray(ft.real)
+    del ft
+    prep_pad = fftshift(prep_pad)
 
     # Strip the symmetric zero-padding → the windowed, mean-subtracted volume.
     sl = tuple(slice(lo, lo + n)
                for (lo, _hi), n in zip(dpdf.pad_width, dpdf.cropped_shape))
     prep = prep_pad[sl] + dpdf.subtracted_mean   # restore mean → win·(I − bg)
+    del prep_pad  # the padded inverse is no longer needed
 
     win = (dpdf.window_axes[0][:, None, None]
            * dpdf.window_axes[1][None, :, None]
@@ -399,9 +431,12 @@ def invert_delta_pdf(
 
     ub = (np.asarray(dpdf.ub_matrix, dtype=np.float64)
           if dpdf.ub_matrix is not None else np.eye(3, dtype=np.float64))
+    # Zero-stride broadcast view instead of a materialised zeros volume: the
+    # reconstruction has no error estimate and nothing writes to it.
+    zero_sigma = np.broadcast_to(np.float64(0.0), recon.shape)
     return HKLVolume(
         data=recon.astype(np.float64),
-        sigma=np.zeros(recon.shape, dtype=np.float64),
+        sigma=zero_sigma,
         mask=reliable,
         h_axis=dpdf.h_axis_c.copy(),
         k_axis=dpdf.k_axis_c.copy(),
@@ -433,10 +468,6 @@ def _build_window(shape: tuple[int, ...], kind: Window, sigma: float) -> NDArray
     """Build a 3D separable apodization window."""
     wh, wk, wl = _window_axes(shape, kind, sigma)
     return wh[:, None, None] * wk[None, :, None] * wl[None, None, :]
-
-
-def _next_power_of_2(n: int) -> int:
-    return 1 if n == 0 else 2 ** int(np.ceil(np.log2(n)))
 
 
 def _q_max_from_axes(

@@ -39,12 +39,24 @@ PLANES: tuple[str, ...] = tuple(_PLANE.keys()) + tuple(_ALIASES.keys())
 # The reciprocal-space viewer displays every cleanup stage of one dataset at
 # once (raw → ring-removed → Bragg-punched → backfilled → flattened = up to 5
 # HKLVolumes), all sharing one cut slider.  The cache must hold all of them
-# simultaneously or each slider move evicts and re-loads ~130 MB volumes from
+# simultaneously or each slider move evicts and re-loads whole volumes from
 # disk, stalling the panels.  6 keeps a full dataset warm with one slot of
-# headroom (~0.8 GB worst case).
+# headroom.  Mind the sizing: each cached HKLVolume holds data + sigma
+# (float64) + mask, ≈ 17 bytes/voxel — ~780 MB for a 46 M-voxel volume, so the
+# worst case here is several GB.  Fine natively; the browser (WASM) build caps
+# this via set_cache_max() from nebula3d.webbridge.setup().
 _CACHE_MAX = 6
 _cache: OrderedDict[tuple[str, float], HKLVolume] = OrderedDict()
 _lock = threading.Lock()
+
+
+def set_cache_max(n: int) -> None:
+    """Cap the volume cache (evicting oldest); the browser build shrinks it."""
+    global _CACHE_MAX
+    with _lock:
+        _CACHE_MAX = max(1, int(n))
+        while len(_cache) > _CACHE_MAX:
+            _cache.popitem(last=False)
 
 
 def load_volume(path: Path) -> HKLVolume:
