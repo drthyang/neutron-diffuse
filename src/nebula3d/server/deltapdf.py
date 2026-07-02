@@ -41,6 +41,15 @@ _cache: OrderedDict[tuple[str, float], DeltaPdfData] = OrderedDict()
 _lock = threading.Lock()
 
 
+def set_cache_max(n: int) -> None:
+    """Cap the ΔPDF cache (evicting oldest); the browser build shrinks it."""
+    global _CACHE_MAX
+    with _lock:
+        _CACHE_MAX = max(1, int(n))
+        while len(_cache) > _CACHE_MAX:
+            _cache.popitem(last=False)
+
+
 @dataclass
 class DeltaPdfData:
     data: np.ndarray  # (nx, ny, nz)

@@ -33,13 +33,14 @@ from __future__ import annotations
 import json
 import math
 import shutil
+import struct
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 
 import nebula3d
-from nebula3d.pipeline import STAGES, run_pipeline
+from nebula3d.pipeline import STAGES, pipeline_paths, run_pipeline
 from nebula3d.server import consistency as _cons
 from nebula3d.server import datasets as _ds
 from nebula3d.server import deltapdf as _dpdf
@@ -63,18 +64,29 @@ __all__ = [
     "dpdf_slice",
     "consistency_meta_json",
     "consistency_slice",
+    "bragg_profile_json",
+    "save_dpdf",
 ]
 
-# In-browser memory budget.  Pyodide runs in a 32-bit-WASM heap, so a full
-# float64 reduction of a large volume can simply not fit (see the memory-ceiling
-# notes in docs/web.md, "In-browser run").  The Bragg-punch stage dominates
-# peak memory at roughly 8 live volume-sized float64 arrays (measured: ~3 GB at
-# 48 M voxels), so the per-voxel peak is ~8 × 8 bytes.  Volumes whose estimated
-# peak exceeds the budget are refused at load with a clear message rather than
-# allowed to crash mid-pipeline with a numpy MemoryError.  Native ``nebula3d-web``
-# has no such limit; this gate lives only here, in the browser bridge.
+# In-browser memory budget.  Pyodide runs in a 32-bit-WASM heap whose hard
+# ceiling is 4 GB (Pyodide ≥ 0.27; MAXIMUM_MEMORY=4GB), so a full float64
+# reduction of a very large volume can simply not fit (see the memory-ceiling
+# notes in docs/web.md, "In-browser run").  After the memory rework (broadcast
+# |Q| accumulation instead of meshgrids, next_fast_len FFT padding, prompt
+# frees, capped caches, consumed ΔPDF in the check stage) the worst stage —
+# the back-FFT consistency check — measures ~7.3 live volume-sized float64
+# arrays (58 B/voxel peak RSS on a 200³ run); every other stage is ≤6.
+# 8×8 B/voxel keeps ~10% safety margin on top of that measurement.  Volumes
+# whose estimated peak exceeds the budget are refused at load with a clear
+# message rather than allowed to crash mid-pipeline with a numpy MemoryError.
+# Native ``nebula3d-web`` has no such limit; this gate lives only here, in the
+# browser bridge.
 _PIPELINE_PEAK_BYTES_PER_VOXEL = 8 * 8
-_BROWSER_PEAK_BUDGET_BYTES = 1_500_000_000  # ~1.5 GB conservative WASM headroom
+# 4 GB WASM ceiling minus the Pyodide runtime + packages (~0.5 GB) and headroom
+# for growth fragmentation (wasm memory never shrinks) → 50 M voxels pass the
+# gate (e.g. a 301×401×401 full-resolution volume = 48.4 M voxels ≈ 2.9 GB
+# estimated peak).
+_BROWSER_PEAK_BUDGET_BYTES = 3_200_000_000
 
 
 # ---------------------------------------------------------------------------
@@ -100,12 +112,18 @@ def setup(workdir: str = "/work") -> str:
     """Create the virtual workspace (``raw/`` + ``processed/``); return its root.
 
     Idempotent: re-calling keeps any already-loaded input but ensures the dirs
-    exist and resets the config.
+    exist and resets the config.  Also shrinks the server-side slice caches:
+    natively they keep whole float64 volumes warm for snappy sliders, but in
+    the 4 GB WASM heap that residency would stack on top of the pipeline's own
+    peak (a full dataset's cache alone can exceed the heap at full resolution).
     """
     root = Path(workdir)
     (root / "raw").mkdir(parents=True, exist_ok=True)
     (root / "processed").mkdir(parents=True, exist_ok=True)
     _S.cfg = ServerConfig(data_root=root)
+    _vol.set_cache_max(2)
+    _dpdf.set_cache_max(1)
+    _cons.set_cache_max(1)
     return str(root)
 
 
@@ -338,6 +356,10 @@ def run(
     cfg = _require_cfg()
     if _S.input is None:
         raise RuntimeError("no input loaded; call load_input() first")
+    # Free any volumes the slice viewers have cached: the pipeline needs the
+    # whole WASM heap for its own peak, and stale cache entries for outputs
+    # this run will overwrite are useless anyway.
+    _clear_caches()
     stages = tuple(s for s in (stages_csv.split(",") if stages_csv else [])
                    if s) or STAGES
     params = build_params(_make_request(params_json, flatten_enabled))
@@ -389,6 +411,43 @@ def datasets_json() -> str:
             "stem": ds.stem, "stages": stages,
         })
     return _json(out)
+
+
+def bragg_profile_json(dataset_id: str) -> str:
+    """Per-peak Bragg punch metadata (mirrors GET /api/bragg/{id}/profile).
+
+    The punch stage writes ``*_profile.json`` next to its output volume — in
+    the browser that is the Pyodide virtual FS — so this only re-reads a small
+    JSON file.  The ``has_profile: false`` shape matches the native
+    ``BraggProfileOut`` defaults so the viewer's empty states are identical.
+    """
+    cfg = _require_cfg()
+    ds = _ds.find_dataset(cfg, dataset_id)
+    if ds is None:
+        raise KeyError(f"unknown dataset id {dataset_id!r}")
+    path = pipeline_paths(ds.raw_path, proc_dir=cfg.processed_dir).bragg_profile_json
+    if not path.exists():
+        return _json({
+            "dataset_id": dataset_id, "profile_path": str(path),
+            "has_profile": False, "schema_version": 1,
+            "width_labels": [], "hkl_width_labels": [], "width_units": {},
+            "n_peaks": 0, "fit_covariance": False, "punch_frame": None,
+            "peaks": [],
+        })
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return _json({
+        "dataset_id": dataset_id,
+        "profile_path": str(path),
+        "has_profile": True,
+        "schema_version": int(data.get("schema_version", 1)),
+        "width_labels": list(data.get("width_labels", [])),
+        "hkl_width_labels": list(data.get("hkl_width_labels", [])),
+        "width_units": dict(data.get("width_units", {})),
+        "n_peaks": int(data.get("n_peaks", 0)),
+        "fit_covariance": bool(data.get("fit_covariance", False)),
+        "punch_frame": data.get("punch_frame"),
+        "peaks": list(data.get("peaks", [])),
+    })
 
 
 def _resolve(volume_id: str, kind: str) -> _ds.StageStatus:
@@ -483,3 +542,28 @@ def consistency_slice(
     return _cons.consistency_slice_envelope(
         path, _band(q_min, q_max), _band(r_min, r_max),
         panel=panel, plane=plane, value=float(value))
+
+
+def save_dpdf(
+    dataset_id: str,
+    q_min: float | None = None,
+    q_max: float | None = None,
+    r_min: float | None = None,
+    r_max: float | None = None,
+) -> bytes:
+    """Band-limited ΔPDF ``.h5`` as a download envelope
+    (``[uint32 LE header_len][JSON {"filename"}][h5 bytes]``).
+
+    Mirrors POST /api/consistency/{id}/save, but the browser build has no disk
+    to save to: the file is written to the virtual FS, read back, unlinked (to
+    reclaim MEMFS space and keep dataset discovery clean), and handed to JS,
+    which turns it into a browser download.
+    """
+    cfg = _require_cfg()
+    path = _pdf_input(dataset_id)
+    out = _cons.save_reconstruction(
+        path, _band(q_min, q_max), _band(r_min, r_max), cfg.processed_dir)
+    payload = out.read_bytes()
+    out.unlink()
+    header = json.dumps({"filename": out.name}).encode("utf-8")
+    return struct.pack("<I", len(header)) + header + payload

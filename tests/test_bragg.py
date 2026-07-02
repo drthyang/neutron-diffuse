@@ -2,12 +2,12 @@
 
 import numpy as np
 import pytest
+from scipy.fft import next_fast_len
 
 from nebula3d.analysis.bragg import BraggRemover, bragg_mask
 from nebula3d.analysis.bragg_fill import backfill_bragg
 from nebula3d.analysis.delta_pdf import (
     DeltaPDF,
-    _next_power_of_2,
     compute_delta_pdf,
     invert_delta_pdf,
 )
@@ -546,13 +546,6 @@ def test_both_mode_is_sequential_union():
     assert not keep[sh, sk, sl]      # satellite gone
 
 
-def test_next_power_of_2():
-    assert _next_power_of_2(1) == 1
-    assert _next_power_of_2(7) == 8
-    assert _next_power_of_2(16) == 16
-    assert _next_power_of_2(17) == 32
-
-
 def test_delta_pdf_shape_and_finite():
     vol = _make_vol(shape=(8, 8, 8))
     dpdf = compute_delta_pdf(vol, apodization="hann", zero_pad=False)
@@ -560,12 +553,18 @@ def test_delta_pdf_shape_and_finite():
     assert np.isfinite(dpdf.data).all()
 
 
-def test_delta_pdf_zero_pad_increases_size():
-    vol = _make_vol(shape=(10, 10, 10))
+def test_delta_pdf_zero_pad_next_fast_len():
+    # 13 is not a fast FFT size; the pad is minimal (next_fast_len(13) == 14),
+    # not the old power-of-two blow-up to 16.
+    vol = _make_vol(shape=(13, 13, 13))
     dpdf = compute_delta_pdf(vol, apodization="none", zero_pad=True)
-    assert all(s >= 10 for s in dpdf.data.shape)
-    # next power of 2 after 10 is 16
-    assert dpdf.data.shape == (16, 16, 16)
+    n = next_fast_len(13)
+    assert 13 < n < 16
+    assert dpdf.data.shape == (n, n, n)
+    # Already-fast sizes are left unpadded.
+    vol10 = _make_vol(shape=(10, 10, 10))
+    dpdf10 = compute_delta_pdf(vol10, apodization="none", zero_pad=True)
+    assert dpdf10.data.shape == (10, 10, 10)
 
 
 def test_delta_pdf_hk0_slice():

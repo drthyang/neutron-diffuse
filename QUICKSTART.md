@@ -2,14 +2,31 @@
 
 `nebula3d` ships **one** application: a browser console (React UI) that
 runs the full cleanup → 3D-ΔPDF → consistency-check workflow. It has two
-interchangeable run modes that share the same UI:
+interchangeable run modes that share the same UI and the same reduction code:
 
 | Mode | Use it for | Needs |
 | --- | --- | --- |
-| **Native** (`nebula3d-web`) | Full-resolution local work; your data in `./data`. | Python 3.10+ |
-| **In-browser** (GitHub Pages) | Quick look / sharing; modest volumes; no install. | A browser |
+| **In-browser** (GitHub Pages) | The complete pipeline, no install; your data stays local. | A browser |
+| **Native** (`nebula3d-web`) | Local work with no size limit; your data in `./data`. | Python 3.10+ |
 
-## Native — recommended
+## In-browser — no install, fully static
+
+Open the hosted app: **https://drthyang.github.io/nebula3d/**
+
+It is a **fully static** GitHub Pages bundle — no backend — that runs the *real*,
+*complete* `nebula3d` pipeline entirely in your browser via Pyodide. Load your
+own `.nxs`/`.h5`; nothing is uploaded. It works at **full-resolution float64**,
+up to ~50 M voxels (a 301×401×401 volume fits); larger data uses the native mode
+below. This path has full feature parity with the native backend.
+
+To run that build locally:
+
+```bash
+make web-install
+cd web && npm run dev:pyodide      # http://localhost:5173
+```
+
+## Native — no size limit
 
 Runs the real pipeline locally with no size limit; reads `./data` by default.
 
@@ -30,21 +47,6 @@ From a source checkout, build the UI once first (otherwise only the API serves):
 ```bash
 make web-install        # npm install in web/
 make ui                 # build the SPA into src/nebula3d/server/static
-```
-
-## In-browser — no install
-
-Open the hosted app: **https://drthyang.github.io/nebula3d/**
-
-It runs the real `nebula3d` pipeline entirely in your browser via Pyodide — load
-your own `.nxs`/`.h5`, nothing is uploaded. Suited to volumes up to ~23 M
-voxels; larger data must use the native mode above.
-
-To run that build locally:
-
-```bash
-make web-install
-cd web && npm run dev:pyodide      # http://localhost:5173
 ```
 
 ## Using the console

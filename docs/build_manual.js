@@ -658,7 +658,7 @@ function sec4() {
     li([{ text: "Subtract smooth background:", bold: true }, { text: " I_new = I − GaussianBlur(I, σ) — see 4.4.3." }]),
     li([{ text: "Apodize:", bold: true }, { text: " multiply by a separable Hann / Gaussian window to suppress termination ripples." }]),
     li([{ text: "Remove DC:", bold: true }, { text: " subtract the post-window mean so ΣI = 0 exactly." }]),
-    li([{ text: "Zero-pad", bold: true }, { text: " symmetrically to the next power of two, keeping Q = 0 centred." }]),
+    li([{ text: "Zero-pad", bold: true }, { text: " symmetrically to the next fast FFT length (5-smooth), keeping Q = 0 centred." }]),
     li([{ text: "Transform:", bold: true }, { text: " ifftshift → fftn → fftshift." }]),
     li([{ text: "Take the real part", bold: true }, { text: " — valid because I(Q) = I(−Q) for centrosymmetric data." }]),
     h3("4.4.2  Real-Space Axes"),

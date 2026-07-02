@@ -30,6 +30,7 @@ from __future__ import annotations
 import concurrent.futures
 import dataclasses
 import json
+import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -577,27 +578,40 @@ def remove_rings(vol: HKLVolume, params: RingParams | None = None, *,
         return ip, sl_data2d - I_ring2d, out_mask_2d, False, None
 
     n_skipped = 0
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = {executor.submit(process_slice, ip): ip for ip in range(n)}
-        
-        done_count = 0
-        for future in concurrent.futures.as_completed(futures):
-            ip, data_2d, mask_2d, skipped, err_msg = future.result()
-            
-            _assign_plane(res_data, cfg, ip, data_2d)
-            if mask_2d is not None:
-                _assign_plane(out_mask, cfg, ip, mask_2d)
-                
-            if skipped:
-                n_skipped += 1
-            if err_msg:
-                _emit(progress, "rings", "progress", (done_count + 1) / n,
-                      f"{cfg.axis_name}[{ip}] fit failed ({err_msg}); left as-is")
+    done_count = 0
+    # Emscripten/Pyodide (the in-browser engine) cannot start threads, so run the
+    # slices serially there; native CPython parallelises across slices.
+    serial = sys.platform == "emscripten"
+    mode = "serial" if serial else "parallel"
 
-            done_count += 1
-            if done_count % 30 == 0 or done_count == n:
-                _emit(progress, "rings", "progress", done_count / n,
-                      f"{cfg.axis_name}[{done_count}/{n}] (parallel)")
+    def _consume(result: tuple[int, np.ndarray, np.ndarray | None, bool, str | None]) -> None:
+        nonlocal n_skipped, done_count
+        ip, data_2d, mask_2d, skipped, err_msg = result
+        _assign_plane(res_data, cfg, ip, data_2d)
+        if mask_2d is not None:
+            _assign_plane(out_mask, cfg, ip, mask_2d)
+        if skipped:
+            n_skipped += 1
+        if err_msg:
+            _emit(progress, "rings", "progress", (done_count + 1) / n,
+                  f"{cfg.axis_name}[{ip}] fit failed ({err_msg}); left as-is")
+        done_count += 1
+        if done_count % 30 == 0 or done_count == n:
+            _emit(progress, "rings", "progress", done_count / n,
+                  f"{cfg.axis_name}[{done_count}/{n}] ({mode})")
+
+    if serial:
+        for ip in range(n):
+            _consume(process_slice(ip))
+    else:
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = {executor.submit(process_slice, ip): ip for ip in range(n)}
+            for future in concurrent.futures.as_completed(list(futures)):
+                # Drop the future (and the plane result it retains) as soon as it
+                # is consumed — otherwise every completed plane stays referenced
+                # until the pool closes, ~1 extra volume in aggregate.
+                del futures[future]
+                _consume(future.result())
 
     out_vol = dataclasses.replace(vol, data=res_data, mask=out_mask)
     _emit(progress, "rings", "done", 1.0,
@@ -838,6 +852,7 @@ def pdf_consistency_check(
     *,
     h_values: Sequence[float] = _CHECK_H_VALUES,
     figure_path: Path | None = None,
+    consume_dpdf: bool = False,
 ) -> dict:
     """Back-FFT round-trip check: inverse-transform *dpdf* and compare to *vol*.
 
@@ -849,8 +864,13 @@ def pdf_consistency_check(
     and, when *figure_path* is given, writes a ``data | back-FFT | residual``
     comparison PNG.  A faithful ΔPDF gives ``r ≈ 1``; a gross mismatch flags a
     transform bug or an over-aggressive ``crop_hkl`` / apodization.
+
+    ``consume_dpdf=True`` releases ``dpdf.data`` during the inversion (this
+    check never reads it afterwards) — the memory-critical in-browser pipeline
+    passes it so the padded ΔPDF does not sit under the inverse FFT's complex
+    transient.
     """
-    recon = invert_delta_pdf(dpdf, deapodize=True)
+    recon = invert_delta_pdf(dpdf, deapodize=True, consume=consume_dpdf)
     data_vol = _crop_hkl(vol, p.crop_hkl)
     data = np.where(np.isfinite(data_vol.masked_data()), data_vol.data, 0.0)
     region = recon.mask & np.isfinite(data)
@@ -1136,6 +1156,7 @@ def run_pipeline(
             vol = nebula3d.load(paths.input)
             out = remove_rings(vol, p.rings, progress=progress)
             nebula3d.save(out, paths.ringremoved)
+            del vol, out  # free this stage's volumes before the next loads
 
     # --- stage 2: punch -----------------------------------------------------
     if want("punch"):
@@ -1149,6 +1170,7 @@ def run_pipeline(
             profile = getattr(out, "_bragg_profile", None)
             if profile is not None:
                 write_bragg_profile_json(profile, paths.bragg_profile_json)
+            del vol, out  # free this stage's volumes before the next loads
 
     # --- stage 3: backfill --------------------------------------------------
     if want("backfill"):
@@ -1159,6 +1181,7 @@ def run_pipeline(
             vol = nebula3d.load(stage_input("backfill"))
             out = backfill(vol, p.backfill, progress=progress)
             nebula3d.save(out, paths.backfilled)
+            del vol, out  # free this stage's volumes before the next loads
 
     # --- stage 4: flatten (optional) ---------------------------------------
     if want("flatten") and p.flatten_enabled:
@@ -1169,6 +1192,7 @@ def run_pipeline(
             vol = nebula3d.load(stage_input("flatten"))
             out = flatten(vol, p.flatten, progress=progress)
             nebula3d.save(out, paths.flattened)
+            del vol, out  # free this stage's volumes before the next loads
     elif want("flatten"):
         _emit(progress, "flatten", "skip", None,
               "flatten disabled (no background removed)")
@@ -1208,9 +1232,13 @@ def run_pipeline(
                 pdf_vol = nebula3d.load(pdf_input)
             if dpdf_obj is None:
                 dpdf_obj = delta_pdf(pdf_vol, p.delta_pdf)
+            # consume_dpdf: the ΔPDF is already saved to disk (pdf stage), and
+            # nothing after the check reads dpdf_obj — releasing its padded
+            # volume during the inverse FFT lowers this stage's peak, which
+            # matters in the browser's capped WASM heap.
             metrics = pdf_consistency_check(
                 pdf_vol, dpdf_obj, p.delta_pdf,
-                figure_path=paths.pdf_check_png)
+                figure_path=paths.pdf_check_png, consume_dpdf=True)
             paths.pdf_check_json.parent.mkdir(parents=True, exist_ok=True)
             paths.pdf_check_json.write_text(json.dumps(metrics, indent=2))
             _emit(progress, "pdf_check", "done", 1.0,

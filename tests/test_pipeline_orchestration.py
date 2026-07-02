@@ -146,7 +146,8 @@ def stubbed(monkeypatch):
     # Stage 6 (pdf_check) — stub the back-FFT comparison so orchestration tests
     # stay fast and don't need a real invertible DeltaPDF; it touches the figure
     # so the resume/skip guard (json+png both exist) behaves.
-    def pdf_check_stub(vol, dpdf, params, *, h_values=(0.0,), figure_path=None):
+    def pdf_check_stub(vol, dpdf, params, *, h_values=(0.0,), figure_path=None,
+                       consume_dpdf=False):
         calls.append("pdf_check")
         if figure_path is not None:
             Path(figure_path).write_bytes(b"")

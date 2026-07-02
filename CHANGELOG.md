@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Milestone: fully static, GitHub Pages-hosted app with feature parity.** The
+  browser console now runs the **complete** `nebula3d` reduction — every pipeline
+  stage, cleanup, 3D-ΔPDF, multi-volume, and consistency view — entirely
+  client-side via Pyodide, at **full-resolution float64** (up to ~50 M voxels;
+  a 301×401×401 volume fits). No server, no upload, no install: the app is a
+  static bundle served from **https://drthyang.github.io/nebula3d/**, deployed by
+  `.github/workflows/pages.yml` on push to `main`. The in-browser build is now a
+  first-class path alongside the native `nebula3d-web` backend, not a reduced
+  demo. Under Pyodide (no OS threads) ring removal falls back to serial slice
+  processing; native CPython still parallelises.
 - **Spherical-frame Bragg punch.** The default punch ellipsoid axes now follow
   the local spherical frame at each peak — `(rρ, rθ, rφ)` in Å⁻¹ with rρ radial
   (along Q̂), rφ azimuthal (a*–b* ring tangent, c* pole), rθ polar — so every

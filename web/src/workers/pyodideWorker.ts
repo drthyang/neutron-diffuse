@@ -18,7 +18,10 @@
 // importScripts is only available in classic workers; declare so TS is happy.
 declare function importScripts(...urls: string[]): void;
 
-const PYODIDE_VERSION = "0.26.2";
+// 0.27+ raises the WASM heap ceiling from 2 GB to 4 GB (MAXIMUM_MEMORY=4GB),
+// which is what lets full-resolution float64 volumes (~46 M voxels) reduce
+// in-browser; 0.27.7 also fixes a WebWorker asyncio memory leak.
+const PYODIDE_VERSION = "0.27.7";
 const PYODIDE_INDEX = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
 const STAGES = ["rings", "punch", "backfill", "flatten", "pdf", "pdf_check"] as const;
 
@@ -182,6 +185,8 @@ async function dispatch(req: WorkerRequest): Promise<void> {
       }
 
       case "slice_call": {
+        // Generic binary RPC: any bridge method returning Python `bytes`
+        // (slice envelopes, the ΔPDF download envelope, …).
         const proxy = (bridge![req.method] as (...a: unknown[]) => PyProxy)(...req.args);
         try {
           const u8 = proxy.toJs() as Uint8Array;

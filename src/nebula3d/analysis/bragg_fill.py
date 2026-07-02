@@ -19,7 +19,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy import ndimage
 
-from nebula3d.core import HKLVolume
+from nebula3d.core import HKLVolume, q_magnitude_from_axes
 from nebula3d.inpainting.pipeline import Method, fill
 
 BraggFillMethod = Method | Literal["local", "q_shell"]
@@ -132,21 +132,26 @@ def _local_background_fill(
     db_q_width: float = 0.15,
 ) -> HKLVolume:
     """Fill each punched connected component from its local valid shell."""
-    data = vol.data.copy()
-    sigma = vol.sigma.copy()
     holes = (~vol.mask) & np.isfinite(vol.data)
     if not holes.any():
         return dataclasses.replace(vol, mask=np.ones(vol.shape, dtype=bool))
 
     valid = vol.mask & np.isfinite(vol.data)
-    global_vals = data[valid]
-    global_fill = float(np.median(global_vals)) if global_vals.size else 0.0
-    global_sigma = float(np.median(sigma[valid])) if global_vals.size else 1.0
+    global_vals = vol.data[valid]
+    n_valid = global_vals.size
+    global_fill = float(np.median(global_vals)) if n_valid else 0.0
+    del global_vals  # compressed copy of most of the volume
+    global_sigma = float(np.median(vol.sigma[valid])) if n_valid else 1.0
     q_lookup = (
         _radial_background_lookup(vol, valid, q_step=q_shell_step,
                                   min_count=q_shell_min_count)
         if q_shell_fill else None
     )
+    # Copy for the fill AFTER building the |Q| lookup: the lookup transiently
+    # needs several volume-sized arrays, and allocating the output copies
+    # first would stack the two peaks.
+    data = vol.data.copy()
+    sigma = vol.sigma.copy()
 
     # Direct beam first: fill the origin hole (and its interior) from the diffuse
     # background just outside it in |Q|, then exclude it from the generic loop.
@@ -204,10 +209,14 @@ def _local_background_fill(
 
 @dataclasses.dataclass(frozen=True)
 class _QShellLookup:
-    """Precomputed robust radial background used by ``method="q_shell"``."""
+    """Precomputed robust radial background used by ``method="q_shell"``.
 
-    q: NDArray
-    bin_idx: NDArray[np.int_]
+    Holds only the (int32) shell index per voxel plus the tiny per-shell
+    tables — not the full-volume float64 |Q| array, which is transient in
+    :func:`_radial_background_lookup`.
+    """
+
+    bin_idx: NDArray[np.int32]
     levels: NDArray[np.float64]
     sigmas: NDArray[np.float64]
     counts: NDArray[np.int_]
@@ -224,8 +233,7 @@ def _radial_background_lookup(
     if not valid.any():
         zeros = np.zeros(1, dtype=float)
         return _QShellLookup(
-            q=q,
-            bin_idx=np.zeros(vol.shape, dtype=int),
+            bin_idx=np.zeros(vol.shape, dtype=np.int32),
             levels=zeros,
             sigmas=zeros,
             counts=np.zeros(1, dtype=int),
@@ -234,13 +242,23 @@ def _radial_background_lookup(
     qv = q[valid]
     edges = np.arange(float(qv.min()), float(qv.max()) + qs, qs)
     nb = max(len(edges) - 1, 1)
-    bin_idx = np.clip(np.digitize(q, edges) - 1, 0, nb - 1)
+    # int32 indices: the shell count is tiny, and the full-volume index array
+    # is half the size of numpy's default int64.
+    bin_idx = np.clip(np.digitize(q, edges) - 1, 0, nb - 1).astype(
+        np.int32, copy=False)
+    del q  # full-volume float64 no longer needed
 
+    # Sorted-segment scan with prompt frees: the flattened arrays cover most of
+    # the volume each, so dropping each one as soon as it is consumed keeps the
+    # peak at ~2 simultaneous copies instead of 5.
     flat_b = bin_idx[valid]
-    flat_i = vol.data[valid]
     order = np.argsort(flat_b, kind="stable")
-    sb, si = flat_b[order], flat_i[order]
+    sb = flat_b[order]
+    del flat_b
+    si = vol.data[valid][order]
+    del order
     bounds = np.searchsorted(sb, np.arange(nb + 1))
+    del sb
     levels = np.full(nb, np.nan)
     sigmas = np.full(nb, np.nan)
     counts = np.zeros(nb, dtype=int)
@@ -251,7 +269,7 @@ def _radial_background_lookup(
             continue
         levels[b] = float(np.median(seg))
         sigmas[b] = float(np.std(seg)) if seg.size > 1 else 0.0
-    return _QShellLookup(q=q, bin_idx=bin_idx, levels=levels, sigmas=sigmas, counts=counts)
+    return _QShellLookup(bin_idx=bin_idx, levels=levels, sigmas=sigmas, counts=counts)
 
 
 def _q_shell_component_values(
@@ -376,9 +394,7 @@ def _fill_direct_beam(
 
 def _q_in_region(vol: HKLVolume, region: tuple[slice, slice, slice]) -> NDArray:
     """|Q| (Å⁻¹) for a sub-box, built from the axes (cheap — no full-grid pass)."""
-    H, K, L = np.meshgrid(
+    return q_magnitude_from_axes(
         vol.h_axis[region[0]], vol.k_axis[region[1]], vol.l_axis[region[2]],
-        indexing="ij",
+        vol.ub_matrix,
     )
-    hkl = np.stack([H, K, L], axis=-1)
-    return np.linalg.norm(hkl @ vol.ub_matrix.T, axis=-1)

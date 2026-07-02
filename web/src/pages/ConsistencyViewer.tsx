@@ -565,7 +565,7 @@ export function ConsistencyViewer() {
               <div className="qr-panel-head-actions">
                 {saveState.status === "saved" && (
                   <span className="qr-saved" title={saveState.filename}>
-                    <span className="qr-dot" /> saved
+                    <span className="qr-dot" /> {PYODIDE_MODE ? "downloaded" : "saved"}
                   </span>
                 )}
                 {saveState.status === "error" && (
@@ -578,16 +578,18 @@ export function ConsistencyViewer() {
                   className="btn btn-primary qr-save-btn"
                   title={
                     PYODIDE_MODE
-                      ? "Saving to disk requires the desktop / server app"
+                      ? "Download the band-limited 3D-ΔPDF (final processed file) as .h5"
                       : "Save the band-limited 3D-ΔPDF (final processed file) to data/processed"
                   }
                   disabled={
-                    !selectedUsable || PYODIDE_MODE ||
+                    !selectedUsable ||
                     metaQ.isFetching || saveState.status === "saving"
                   }
                   onClick={saveDpdf}
                 >
-                  ↓ {saveState.status === "saving" ? "Saving…" : "Save ΔPDF"}
+                  ↓ {saveState.status === "saving"
+                    ? "Saving…"
+                    : PYODIDE_MODE ? "Download ΔPDF" : "Save ΔPDF"}
                 </button>
               </div>
             </div>

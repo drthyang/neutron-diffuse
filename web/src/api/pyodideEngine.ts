@@ -21,6 +21,7 @@
 // See docs/web.md ("In-browser run" / "Architecture") for context.
 
 import type {
+  BraggProfile,
   ConsistencyMeta,
   Dataset,
   DeltaPdfMeta,
@@ -306,5 +307,30 @@ export const engine = {
       datasetId, panel, plane, value,
       qMin ?? null, qMax ?? null, rMin ?? null, rMax ?? null,
     ]);
+  },
+  braggProfile(datasetId: string): Promise<BraggProfile> {
+    return jsonCall<BraggProfile>("bragg_profile_json", [datasetId]);
+  },
+  // Compute the band-limited ΔPDF .h5 in the Worker and return its bytes +
+  // filename, decoded from the same [uint32 hdr_len][JSON hdr][payload]
+  // envelope the slices use (transport: the generic binary "slice_call" RPC).
+  async saveDpdf(
+    datasetId: string,
+    qMin?: number,
+    qMax?: number,
+    rMin?: number,
+    rMax?: number,
+  ): Promise<{ filename: string; bytes: Uint8Array }> {
+    await ensureBooted();
+    const u8 = (await rpc("slice_call", {
+      method: "save_dpdf",
+      args: [datasetId, qMin ?? null, qMax ?? null, rMin ?? null, rMax ?? null],
+    })) as Uint8Array;
+    const headerLen = new DataView(u8.buffer, u8.byteOffset, u8.byteLength)
+      .getUint32(0, true);
+    const header = JSON.parse(
+      new TextDecoder().decode(u8.subarray(4, 4 + headerLen)),
+    ) as { filename: string };
+    return { filename: header.filename, bytes: u8.subarray(4 + headerLen) };
   },
 };

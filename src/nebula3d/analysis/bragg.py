@@ -746,7 +746,7 @@ class BraggRemover:
         shell_thr = None
         shell_bins = None
         if self.integer_n_mad is not None:
-            _, shell_bins, shell_thr = self._q_shell_thresholds(
+            shell_bins, shell_thr = self._q_shell_thresholds(
                 vol,
                 q_step=self.integer_q_step or self.search_q_step,
                 n_mad=float(self.integer_n_mad),
@@ -930,25 +930,34 @@ class BraggRemover:
         n_mad: float,
         min_intensity: float,
         min_shell_size: int = 20,
-    ) -> tuple[NDArray[np.float64], NDArray[np.int_], NDArray[np.float64]]:
-        """Robust per-|Q|-shell high-tail threshold arrays."""
+    ) -> tuple[NDArray[np.int32], NDArray[np.float64]]:
+        """Robust per-|Q|-shell high-tail threshold arrays ``(bin_idx, thr)``."""
         q = vol.q_magnitude()
         valid = vol.mask & np.isfinite(vol.data)
         if not valid.any():
-            return q, np.zeros(vol.shape, dtype=int), np.full(1, np.inf)
+            return np.zeros(vol.shape, dtype=np.int32), np.full(1, np.inf)
         qs = float(q_step)
         qv = q[valid]
         edges = np.arange(qv.min(), qv.max() + qs, qs)
         nb = max(len(edges) - 1, 1)
-        bin_idx = np.clip(np.digitize(q, edges) - 1, 0, nb - 1)
+        # int32 indices: the shell count is tiny, and the full-volume index
+        # array is half the size of numpy's default int64.
+        bin_idx = np.clip(np.digitize(q, edges) - 1, 0, nb - 1).astype(
+            np.int32, copy=False)
+        del q  # full-volume float64 no longer needed
 
         # Per-shell robust threshold (median + n·MAD), computed once over the
-        # sorted valid voxels so it is O(N log N), not O(N · n_bins).
+        # sorted valid voxels so it is O(N log N), not O(N · n_bins).  Prompt
+        # frees: each flattened array covers most of the volume, so dropping
+        # each as soon as it is consumed keeps the peak low.
         flat_b = bin_idx[valid]
-        flat_I = vol.data[valid]
         order = np.argsort(flat_b, kind="stable")
-        sb, sI = flat_b[order], flat_I[order]
+        sb = flat_b[order]
+        del flat_b
+        sI = vol.data[valid][order]
+        del order
         bounds = np.searchsorted(sb, np.arange(nb + 1))
+        del sb
         thr = np.full(nb, np.inf)
         for b in range(nb):
             seg = sI[bounds[b]:bounds[b + 1]]
@@ -959,7 +968,7 @@ class BraggRemover:
             scale = 1.4826 * mad if mad > 0 else (float(np.std(seg)) or 1.0)
             thr[b] = med + n_mad * scale
         thr = np.maximum(thr, min_intensity)
-        return q, bin_idx, thr
+        return bin_idx, thr
 
     def _detect_search(self, vol: HKLVolume) -> list[_PeakPunch]:
         """Peaks found as sharp |Q|-shell outliers (mode-agnostic to hkl).
@@ -978,7 +987,7 @@ class BraggRemover:
         valid = (vol.mask & np.isfinite(vol.data)) & ~self._search_excluded_h_mask(vol)
         if not valid.any():
             return []
-        _, bin_idx, thr = self._q_shell_thresholds(
+        bin_idx, thr = self._q_shell_thresholds(
             vol,
             q_step=self.search_q_step,
             n_mad=self.search_n_mad,
@@ -986,6 +995,7 @@ class BraggRemover:
         )
 
         cand = valid & (vol.data > thr[bin_idx])
+        del bin_idx  # full-volume index array no longer needed
         if not cand.any():
             return []
         # One centre per peak *summit*: a candidate voxel that is a local maximum
@@ -996,6 +1006,7 @@ class BraggRemover:
         scored = np.where(valid, vol.data, -np.inf)
         local_max = ndimage.maximum_filter(scored, size=3, mode="nearest")
         peaks = np.argwhere(cand & (scored >= local_max))
+        del scored, local_max, cand  # free the full-volume temporaries
         if self.search_min_prominence > 0 and peaks.size:
             keep_peak = []
             nh, nk, nl = vol.shape
