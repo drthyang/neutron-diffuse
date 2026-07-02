@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Pipeline ~22–31 % faster with bit-identical outputs.** Browser audit +
+  performance pass (see
+  [docs/reports/2026-07-02_browser_audit_perf.md](docs/reports/2026-07-02_browser_audit_perf.md)):
+  HDF5 stage outputs now use gzip-1 + byte-shuffle (lossless, ~8 % smaller,
+  ~2.6× faster writes), consecutive pipeline stages hand volumes over in
+  memory instead of re-reading compressed HDF5 (artifacts and resume
+  behaviour unchanged), and the ring-removal texture fit solves its per-|Q|
+  ridge systems in one stacked LAPACK call. Every stage artifact verified
+  SHA-256-identical before/after at two volume sizes, serial and parallel;
+  219 tests, ruff, and mypy clean; in-browser end-to-end run verified
+  (6/6 stages, consistency r = 0.99963, no console errors).
 - **Milestone: fully static, GitHub Pages-hosted app with feature parity.** The
   browser console now runs the **complete** `nebula3d` reduction — every pipeline
   stage, cleanup, 3D-ΔPDF, multi-volume, and consistency view — entirely

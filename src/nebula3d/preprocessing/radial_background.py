@@ -1122,6 +1122,13 @@ def _fit_azimuthal_texture(
                                 for _ in (0, 1)], float)
     reg = np.diag(order)
 
+    # Build every bin's ridge-regularised normal equations first, then solve
+    # them in one stacked LAPACK call: the per-system numbers are identical to
+    # solving each bin individually (same dgesv per matrix), but the ~n_q
+    # Python-level np.linalg.solve round-trips collapse into one gufunc loop.
+    lhs: list[NDArray[np.float64]] = []
+    rhs: list[NDArray[np.float64]] = []
+    idx: list[int] = []
     for b in range(n_q):
         w = counts[:, b].copy()
         y = ring[:, b]
@@ -1135,10 +1142,25 @@ def _fit_azimuthal_texture(
         # Scale the prior to the data term so `ridge` is relative, not absolute.
         scale = np.trace(AtA) / M
         Aty = B.T @ (wn * y)
+        lhs.append(AtA + ridge * scale * reg)
+        rhs.append(Aty)
+        idx.append(b)
+    if idx:
+        A_all = np.stack(lhs)
+        b_all = np.stack(rhs)
         try:
-            coeffs[b] = np.linalg.solve(AtA + ridge * scale * reg, Aty)
+            # b as (K, M, 1): explicit single-column RHS — unambiguous under
+            # both numpy 1.x and 2.x solve dispatch, and bit-identical to the
+            # per-bin solve (same LAPACK dgesv, nrhs=1, per matrix).
+            coeffs[idx] = np.linalg.solve(A_all, b_all[..., None])[..., 0]
         except np.linalg.LinAlgError:
-            coeffs[b], *_ = np.linalg.lstsq(AtA + ridge * scale * reg, Aty, rcond=None)
+            # A singular bin poisons the whole stack — redo bins one at a time
+            # with the original per-bin solve/lstsq fallback.
+            for i, b in enumerate(idx):
+                try:
+                    coeffs[b] = np.linalg.solve(A_all[i], b_all[i])
+                except np.linalg.LinAlgError:
+                    coeffs[b], *_ = np.linalg.lstsq(A_all[i], b_all[i], rcond=None)
     return _smooth_texture_shape_along_q(coeffs, q_smooth_bins)
 
 

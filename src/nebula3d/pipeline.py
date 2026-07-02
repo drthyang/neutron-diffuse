@@ -1147,6 +1147,22 @@ def run_pipeline(
     def want(stage: str) -> bool:
         return stage in selected
 
+    # In-memory pass-through between consecutive stages: each stage's output is
+    # still saved to disk (same artifacts, resume behaviour unchanged), but when
+    # the next stage's input is exactly the volume just computed, hand it over
+    # in memory instead of re-reading the compressed HDF5.  Residency is the
+    # same as the reload it replaces (one input volume alive during the stage),
+    # so the browser memory gate is unaffected; the loaded copy would have been
+    # bit-identical (lossless HDF5 round-trip), so results are unchanged.
+    carry: HKLVolume | None = None
+    carry_path: Path | None = None
+
+    def stage_load(src: Path) -> HKLVolume:
+        nonlocal carry, carry_path
+        vol = carry if (carry is not None and carry_path == src) else None
+        carry, carry_path = None, None  # consume (or drop a stale carry)
+        return vol if vol is not None else nebula3d.load(src)
+
     # --- stage 1: rings -----------------------------------------------------
     if want("rings"):
         if paths.ringremoved.exists() and not forced("rings"):
@@ -1156,7 +1172,8 @@ def run_pipeline(
             vol = nebula3d.load(paths.input)
             out = remove_rings(vol, p.rings, progress=progress)
             nebula3d.save(out, paths.ringremoved)
-            del vol, out  # free this stage's volumes before the next loads
+            carry, carry_path = out, paths.ringremoved
+            del vol, out  # free the input; `carry` hands the output onward
 
     # --- stage 2: punch -----------------------------------------------------
     if want("punch"):
@@ -1164,13 +1181,14 @@ def run_pipeline(
             _emit(progress, "punch", "skip", None,
                   f"{paths.braggpunched.name} exists")
         else:
-            vol = nebula3d.load(stage_input("punch"))
+            vol = stage_load(stage_input("punch"))
             out = punch_bragg(vol, p.punch, progress=progress)
             nebula3d.save(out, paths.braggpunched)
             profile = getattr(out, "_bragg_profile", None)
             if profile is not None:
                 write_bragg_profile_json(profile, paths.bragg_profile_json)
-            del vol, out  # free this stage's volumes before the next loads
+            carry, carry_path = out, paths.braggpunched
+            del vol, out  # free the input; `carry` hands the output onward
 
     # --- stage 3: backfill --------------------------------------------------
     if want("backfill"):
@@ -1178,10 +1196,11 @@ def run_pipeline(
             _emit(progress, "backfill", "skip", None,
                   f"{paths.backfilled.name} exists")
         else:
-            vol = nebula3d.load(stage_input("backfill"))
+            vol = stage_load(stage_input("backfill"))
             out = backfill(vol, p.backfill, progress=progress)
             nebula3d.save(out, paths.backfilled)
-            del vol, out  # free this stage's volumes before the next loads
+            carry, carry_path = out, paths.backfilled
+            del vol, out  # free the input; `carry` hands the output onward
 
     # --- stage 4: flatten (optional) ---------------------------------------
     if want("flatten") and p.flatten_enabled:
@@ -1189,10 +1208,11 @@ def run_pipeline(
             _emit(progress, "flatten", "skip", None,
                   f"{paths.flattened.name} exists")
         else:
-            vol = nebula3d.load(stage_input("flatten"))
+            vol = stage_load(stage_input("flatten"))
             out = flatten(vol, p.flatten, progress=progress)
             nebula3d.save(out, paths.flattened)
-            del vol, out  # free this stage's volumes before the next loads
+            carry, carry_path = out, paths.flattened
+            del vol, out  # free the input; `carry` hands the output onward
     elif want("flatten"):
         _emit(progress, "flatten", "skip", None,
               "flatten disabled (no background removed)")
@@ -1211,7 +1231,7 @@ def run_pipeline(
             if paths.delta_pdf.exists() and not is_current:
                 _emit(progress, "pdf", "progress", None,
                       f"{paths.delta_pdf.name} stale — recomputing")
-            pdf_vol = nebula3d.load(pdf_input)
+            pdf_vol = stage_load(pdf_input)
             dpdf_obj = delta_pdf(pdf_vol, p.delta_pdf, progress=progress)
             write_delta_pdf_h5(dpdf_obj, pdf_vol, p.delta_pdf,
                                pdf_input.name, paths.delta_pdf)
@@ -1229,7 +1249,7 @@ def run_pipeline(
             _emit(progress, "pdf_check", "start", None,
                   "back-FFT round-trip consistency check")
             if pdf_vol is None:
-                pdf_vol = nebula3d.load(pdf_input)
+                pdf_vol = stage_load(pdf_input)
             if dpdf_obj is None:
                 dpdf_obj = delta_pdf(pdf_vol, p.delta_pdf)
             # consume_dpdf: the ΔPDF is already saved to disk (pdf stage), and
