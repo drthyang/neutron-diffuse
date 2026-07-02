@@ -30,6 +30,7 @@ from __future__ import annotations
 import concurrent.futures
 import dataclasses
 import json
+import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -577,31 +578,40 @@ def remove_rings(vol: HKLVolume, params: RingParams | None = None, *,
         return ip, sl_data2d - I_ring2d, out_mask_2d, False, None
 
     n_skipped = 0
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = {executor.submit(process_slice, ip): ip for ip in range(n)}
-        
-        done_count = 0
-        for future in concurrent.futures.as_completed(list(futures)):
-            ip, data_2d, mask_2d, skipped, err_msg = future.result()
-            # Drop the future (and the plane result it retains) as soon as it
-            # is consumed — otherwise every completed plane stays referenced
-            # until the pool closes, ~1 extra volume in aggregate.
-            del futures[future]
+    done_count = 0
+    # Emscripten/Pyodide (the in-browser engine) cannot start threads, so run the
+    # slices serially there; native CPython parallelises across slices.
+    serial = sys.platform == "emscripten"
+    mode = "serial" if serial else "parallel"
 
-            _assign_plane(res_data, cfg, ip, data_2d)
-            if mask_2d is not None:
-                _assign_plane(out_mask, cfg, ip, mask_2d)
+    def _consume(result: tuple[int, np.ndarray, np.ndarray | None, bool, str | None]) -> None:
+        nonlocal n_skipped, done_count
+        ip, data_2d, mask_2d, skipped, err_msg = result
+        _assign_plane(res_data, cfg, ip, data_2d)
+        if mask_2d is not None:
+            _assign_plane(out_mask, cfg, ip, mask_2d)
+        if skipped:
+            n_skipped += 1
+        if err_msg:
+            _emit(progress, "rings", "progress", (done_count + 1) / n,
+                  f"{cfg.axis_name}[{ip}] fit failed ({err_msg}); left as-is")
+        done_count += 1
+        if done_count % 30 == 0 or done_count == n:
+            _emit(progress, "rings", "progress", done_count / n,
+                  f"{cfg.axis_name}[{done_count}/{n}] ({mode})")
 
-            if skipped:
-                n_skipped += 1
-            if err_msg:
-                _emit(progress, "rings", "progress", (done_count + 1) / n,
-                      f"{cfg.axis_name}[{ip}] fit failed ({err_msg}); left as-is")
-
-            done_count += 1
-            if done_count % 30 == 0 or done_count == n:
-                _emit(progress, "rings", "progress", done_count / n,
-                      f"{cfg.axis_name}[{done_count}/{n}] (parallel)")
+    if serial:
+        for ip in range(n):
+            _consume(process_slice(ip))
+    else:
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = {executor.submit(process_slice, ip): ip for ip in range(n)}
+            for future in concurrent.futures.as_completed(list(futures)):
+                # Drop the future (and the plane result it retains) as soon as it
+                # is consumed — otherwise every completed plane stays referenced
+                # until the pool closes, ~1 extra volume in aggregate.
+                del futures[future]
+                _consume(future.result())
 
     out_vol = dataclasses.replace(vol, data=res_data, mask=out_mask)
     _emit(progress, "rings", "done", 1.0,
