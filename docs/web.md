@@ -7,8 +7,11 @@ share the same UI and the same `nebula3d` reduction code:
 
 | Mode | `VITE_DATA_MODE` | Backend | Use it for |
 | --- | --- | --- | --- |
-| **Native** | unset (default) | FastAPI (`nebula3d-web`) over `/api` | Full-resolution local work, no size limit |
-| **In-browser** | `pyodide` | none — `nebula3d` runs in the browser via Pyodide | No-install / sharing / demo; modest volumes |
+| **In-browser** | `pyodide` | none — `nebula3d` runs in the browser via Pyodide | Fully static GitHub Pages app, no install; the complete pipeline at full-resolution float64 (up to ~50 M voxels) |
+| **Native** | unset (default) | FastAPI (`nebula3d-web`) over `/api` | Local work with no size limit |
+
+Both modes run the same `nebula3d` reduction code and expose the same views —
+the static in-browser build has **full feature parity** with the native backend.
 
 The standalone matplotlib viewers in `examples/explore_*.py` remain as a
 CLI fallback (see [commands.md](commands.md)).

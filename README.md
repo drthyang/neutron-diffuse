@@ -30,12 +30,20 @@ Bragg satellites, use `examples/investigate_bragg_diffuse.py`.
 
 `nebula3d` ships a single browser console (React) that unifies the
 cleanup and 3D-ΔPDF viewers and drives the whole pipeline from a raw `.nxs` with
-live progress. It has two interchangeable run modes that share the same UI:
+live progress. It has two interchangeable run modes that share the same UI and
+the same reduction code:
 
+- **In-browser (no install)** — the hosted app at
+  **https://drthyang.github.io/nebula3d/** is a **fully static** GitHub Pages
+  bundle that runs the *complete* `nebula3d` pipeline client-side via Pyodide, at
+  full-resolution float64 (up to ~50 M voxels — a 301×401×401 volume fits). Load
+  your own `.nxs`/`.h5`; nothing is uploaded, nothing is server-side.
 - **Native** — `pip install -e ".[web]"` then `nebula3d-web` (serves
-  http://127.0.0.1:8000); full-resolution local work.
-- **In-browser** — the hosted GitHub Pages build runs the real `nebula3d` pipeline
-  client-side via Pyodide on your own data, no install (modest volumes).
+  http://127.0.0.1:8000); the same UI backed by FastAPI for local work with no
+  size limit.
+
+The browser build now has **full feature parity** with the native backend — the
+static, hosted app is a first-class way to run nebula3d, not a reduced demo.
 
 A sidebar console with five views — a pipeline runner (the default landing
 view), reciprocal-space cleanup, 3D-ΔPDF orthoslices, multi-volume comparison,
@@ -338,7 +346,9 @@ GitHub Actions runs the same checks on Python 3.10, 3.11, and 3.12.
 Version 0.2.0. The recommended workflow is operational and now ends with the
 back-FFT consistency check: powder-ring removal, Bragg cleanup, Bragg-hole
 backfill, radial flatten, 3D-DeltaPDF transform, consistency QA, and interactive
-viewers. The package remains pre-1.0/alpha while the public API and file formats
+viewers. The complete pipeline now also runs **fully client-side** in the static
+GitHub Pages app, at full-resolution float64 with feature parity to the native
+backend. The package remains pre-1.0/alpha while the public API and file formats
 continue to evolve.
 
 ## License and provenance
