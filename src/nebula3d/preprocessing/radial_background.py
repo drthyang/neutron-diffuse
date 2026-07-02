@@ -568,18 +568,42 @@ class PatchedRadialRingModel:
     # Public API
     # ------------------------------------------------------------------
 
+    def _plane_coords(
+        self,
+        vol: HKLVolume,
+        q_mag: NDArray[np.float64] | None,
+        phi: NDArray[np.float64] | None,
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Per-voxel |Q| and azimuth for this model's plane, computing only the
+        ones the caller did not already supply (identical values either way)."""
+        if q_mag is None:
+            q_mag = _offset_q_magnitude(
+                vol, self.plane, self.center_offset, self.center_offset_h_slope
+            )
+        if phi is None:
+            phi = _azimuthal_angle(
+                vol, self.plane, self.center_offset, self.center_offset_h_slope
+            )
+        return q_mag, phi
+
     def fit(
         self,
         vol: HKLVolume,
         q_range: tuple[float, float] | None = None,
+        q_mag: NDArray[np.float64] | None = None,
+        phi: NDArray[np.float64] | None = None,
     ) -> RadialRingProfiles:
-        """Estimate per-patch ring profiles from *vol*."""
-        q_mag = _offset_q_magnitude(
-            vol, self.plane, self.center_offset, self.center_offset_h_slope
-        )
-        phi = _azimuthal_angle(
-            vol, self.plane, self.center_offset, self.center_offset_h_slope
-        )
+        """Estimate per-patch ring profiles from *vol*.
+
+        ``q_mag`` and ``phi`` may be supplied to reuse the per-voxel |Q| and
+        azimuth grids (both pure functions of the plane geometry, not the data)
+        when the caller already has them — e.g. the per-plane
+        :func:`~nebula3d.pipeline.remove_rings` driver computes them once for the
+        whole volume and passes the plane slice to both ``fit`` and ``subtract``
+        instead of rebuilding a meshgrid on every call.  When ``None`` they are
+        computed here exactly as before.
+        """
+        q_mag, phi = self._plane_coords(vol, q_mag, phi)
         valid = vol.mask & np.isfinite(vol.data)
 
         if q_range is None:
@@ -709,23 +733,21 @@ class PatchedRadialRingModel:
         self,
         vol: HKLVolume,
         profiles: RadialRingProfiles | None = None,
+        q_mag: NDArray[np.float64] | None = None,
+        phi: NDArray[np.float64] | None = None,
     ) -> tuple[HKLVolume, NDArray[np.float64]]:
         """Subtract the fitted ring profiles from *vol*.
 
         Returns ``(vol_sub, I_ring)``.  ``vol_sub.data = vol.data − I_ring``;
         if ``snr_mask_threshold`` is set, voxels where the ring dominates are
-        masked for the downstream backfill.
+        masked for the downstream backfill.  ``q_mag`` / ``phi`` may be supplied
+        to reuse already-computed coordinate grids (see :meth:`fit`).
         """
         prof = profiles or self._profiles
         if prof is None:
             raise RuntimeError("Call fit() before subtract().")
 
-        q_mag = _offset_q_magnitude(
-            vol, self.plane, self.center_offset, self.center_offset_h_slope
-        )
-        phi = _azimuthal_angle(
-            vol, self.plane, self.center_offset, self.center_offset_h_slope
-        )
+        q_mag, phi = self._plane_coords(vol, q_mag, phi)
         I_ring = prof.evaluate(q_mag, phi)
 
         data_sub = vol.data - I_ring

@@ -38,6 +38,16 @@ def _worker(
     force_from: str | None,
 ) -> None:
     """Process entry point: run the pipeline, streaming progress onto the queue."""
+    # The ring-removal stage parallelises across a nested process pool, but a
+    # daemonic process may not create children.  De-daemonise this worker's own
+    # view so the pool can start; the parent still records it as daemonic, so
+    # server shutdown still auto-terminates it.  Best-effort — if this fails the
+    # ring stage just falls back to its serial path.
+    try:
+        mp.current_process().daemon = False
+    except Exception:  # noqa: BLE001 - non-fatal; serial ring removal still works
+        pass
+
     def progress(stage: str, status: str, fraction: float | None,
                  message: str) -> None:
         queue.put({"type": "progress", "stage": stage, "status": status,

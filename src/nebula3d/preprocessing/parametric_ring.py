@@ -454,11 +454,29 @@ class ParametricRingModel:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+    def _plane_coords(
+        self,
+        vol: HKLVolume,
+        q_mag: NDArray[np.float64] | None,
+        phi: NDArray[np.float64] | None,
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Per-voxel |Q| and azimuth for this model's plane, computing only the
+        ones the caller did not already supply (identical values either way)."""
+        if q_mag is None:
+            q_mag = _offset_q_magnitude(
+                vol, self.plane, self.center_offset, self.center_offset_h_slope)
+        if phi is None:
+            phi = _azimuthal_angle(
+                vol, self.plane, self.center_offset, self.center_offset_h_slope)
+        return q_mag, phi
+
     def fit(
         self,
         vol: HKLVolume,
         q_range: tuple[float, float] | None = None,
         bragg_keep_mask: NDArray[np.bool_] | None = None,
+        q_mag: NDArray[np.float64] | None = None,
+        phi: NDArray[np.float64] | None = None,
     ) -> FittedParametricRingModel:
         """Fit the separable ring model to *vol*.
 
@@ -474,11 +492,13 @@ class ParametricRingModel:
             (``texture_irls_iter`` low) and so capture the bright-arc amplitude —
             without the high-side rejection conflating those arcs with Bragg and
             under-subtracting the ring.
+
+        ``q_mag`` / ``phi`` may be supplied to reuse already-computed coordinate
+        grids (pure functions of the plane geometry); see
+        :func:`~nebula3d.pipeline.remove_rings`, which computes them once per
+        volume and passes the plane slice to both ``fit`` and ``subtract``.
         """
-        q_mag = _offset_q_magnitude(
-            vol, self.plane, self.center_offset, self.center_offset_h_slope)
-        phi = _azimuthal_angle(
-            vol, self.plane, self.center_offset, self.center_offset_h_slope)
+        q_mag, phi = self._plane_coords(vol, q_mag, phi)
 
         valid = vol.mask & np.isfinite(vol.data)
         if bragg_keep_mask is not None:
@@ -573,16 +593,19 @@ class ParametricRingModel:
         self,
         vol: HKLVolume,
         model: FittedParametricRingModel | None = None,
+        q_mag: NDArray[np.float64] | None = None,
+        phi: NDArray[np.float64] | None = None,
     ) -> tuple[HKLVolume, NDArray[np.float64]]:
-        """Subtract the fitted ring model; return ``(vol_sub, I_ring)``."""
+        """Subtract the fitted ring model; return ``(vol_sub, I_ring)``.
+
+        ``q_mag`` / ``phi`` may be supplied to reuse already-computed coordinate
+        grids (see :meth:`fit`).
+        """
         m = model or self._model
         if m is None:
             raise RuntimeError("Call fit() before subtract().")
 
-        q_mag = _offset_q_magnitude(
-            vol, self.plane, self.center_offset, self.center_offset_h_slope)
-        phi = _azimuthal_angle(
-            vol, self.plane, self.center_offset, self.center_offset_h_slope)
+        q_mag, phi = self._plane_coords(vol, q_mag, phi)
         I_ring = m.evaluate(q_mag, phi)
 
         data_sub = vol.data - I_ring

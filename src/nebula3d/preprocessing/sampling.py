@@ -39,6 +39,8 @@ def azimuthal_sampling_mask(
     min_count_frac: float = 0.25,
     min_count: int = 1,
     q_range: tuple[float, float] | None = None,
+    q: NDArray[np.float64] | None = None,
+    phi: NDArray[np.float64] | None = None,
 ) -> NDArray[np.bool_]:
     """Keep-mask that drops voxels in azimuthally under-sampled (|Q|, φ) cells.
 
@@ -63,6 +65,12 @@ def azimuthal_sampling_mask(
     q_range : (q_min, q_max), optional
         Restrict the histogram/mask to this |Q| range.  Voxels outside it keep
         their current mask state.
+    q, phi : arrays, optional
+        Precomputed per-voxel |Q| (Å⁻¹) and in-plane azimuth (rad).  Both are
+        pure functions of the plane geometry, so a caller that already has them
+        (e.g. the per-plane :func:`~nebula3d.pipeline.remove_rings` driver) can
+        pass them in to skip rebuilding the meshgrid here.  Computed internally,
+        identically, when ``None``.
 
     Returns
     -------
@@ -70,8 +78,10 @@ def azimuthal_sampling_mask(
         ``vol.mask`` with under-sampled cells additionally set False.  Already
         masked / invalid voxels stay masked.
     """
-    q = vol.q_magnitude()
-    phi = _azimuthal_angle(vol, plane)
+    if q is None:
+        q = vol.q_magnitude()
+    if phi is None:
+        phi = _azimuthal_angle(vol, plane)
     valid = vol.mask & np.isfinite(vol.data)
 
     if q_range is None:
